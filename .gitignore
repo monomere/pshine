@@ -1,0 +1,19 @@
+# Ninja and clangd stuff.
+.ninja_log
+.cache
+
+# GL3W script.
+gl3w_gen.py
+
+# Compiled files.
+build
+
+# 3rd-party files, GL3W, etc.
+src/vendor
+
+# GL3W headers.
+include/GL
+include/KHR
+
+# temporary stuff, etc.
+.local

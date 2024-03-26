@@ -1,0 +1,23 @@
+cc = clang -fdiagnostics-color
+opt = 1
+cflags = -std=c2x -Iinclude
+debug = -g # -fsanitize=address,undefined
+libs = -lglfw -lm
+platform = unix
+
+rule cc
+  command = $cc -c $in -o $out $cflags -O$opt $debug -MD -MF $out.d
+  depfile = $out.d
+
+rule ld
+  command = $cc $in -o $out $libs $debug
+
+build build/gfx.c.o: cc src/gfx.c
+build build/main.c.o: cc src/main.c
+build build/vendor/gl3w.c.o: cc src/vendor/gl3w.c
+build build/$platform.c.o: cc src/$platform.c
+build build/main: ld $
+  build/gfx.c.o $
+  build/main.c.o $
+  build/$platform.c.o $
+  build/vendor/gl3w.c.o
