@@ -3,13 +3,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#define PSHINE_INTERNAL_
-#define PSHINE_MODNAME unix
-#include <pshine/mod.h>
+#include <pshine/util.h>
 
 // returns malloc'd buffer
 char *pshine_read_file(const char *fname, size_t *size) {
-	// PSHINE_DEBUG("reading file '%s'", fname);
+	PSHINE_DEBUG("reading file '%s'", fname);
 	int fdin = open(fname, O_RDONLY);
 	if (fdin == -1) {
 		perror("open");

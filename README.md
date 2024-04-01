@@ -9,18 +9,28 @@ TODO:
 - [ ] Terrain generation, textures.
 - [ ] Mesh LOD.
 
+## Cloning
+
+> requirements: git, wget, internet connection
+
+```bash
+git clone https://github.com/monomere/pshine
+cd pshine
+```
+
+The graphics backend uses [volk](https://github.com/zeux/volk) and
+[VMA](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator),
+so after cloning (only once):
+
+```bash
+wget -P include https://raw.githubusercontent.com/zeux/volk/master/volk.h
+wget -P src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
+wget -P include https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
+```
+
 ## Building
 
 > requirements: ninja, clang ≥16, glfw
-
-Once after cloning:
-
-```bash
-wget https://raw.githubusercontent.com/skaslev/gl3w/master/gl3w_gen.py
-python3 gl3w_gen.py
-mkdir -p src/vendor
-mv src/gl3w.c src/vendor
-```
 
 To build (incremental)
 ```bash
@@ -29,7 +39,7 @@ ninja
 
 # Running
 
-> requirements: opengl ≥4.6
+> requirements: vulkan ≥1.2
 
 ```bash
 build/main

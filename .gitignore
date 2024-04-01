@@ -11,9 +11,12 @@ build
 # 3rd-party files, GL3W, etc.
 src/vendor
 
-# GL3W headers.
-include/GL
-include/KHR
+# Vulkan-related 3rd-party headers.
+include/vk_mem_alloc.h
+include/volk.h
+
+# logs
+**/*.log
 
 # temporary stuff, etc.
 .local

@@ -1,23 +1,59 @@
+cxxstdlib = -stdlib=libc++
+cxxld = -fuse-ld=lld
+
 cc = clang -fdiagnostics-color
+cxx = clang++ -fdiagnostics-color
+ld = $cxx $cxxstdlib $cxxld
+
 opt = 1
 cflags = -std=c2x -Iinclude
-debug = -g # -fsanitize=address,undefined
+cxxflags = $cxxstdlib -std=c++2b -Iinclude -Wno-nullability-completeness
+
+glslc = glslc
+glslflags =
+
+debug = -g
+debugc =
+# -fsanitize=address,undefined
+debugcxx =
+
 libs = -lglfw -lm
 platform = unix
 
 rule cc
-  command = $cc -c $in -o $out $cflags -O$opt $debug -MD -MF $out.d
+  command = $cc -c $in -o $out $cflags -O$opt $debug $debugc -MD -MF $out.d
+  depfile = $out.d
+
+rule cxx
+  command = $cxx -c $in -o $out $cxxflags -O$opt $debug $debugcxx -MD -MF $out.d
+  depfile = $out.d
+
+rule glslc
+  command = $glslc $in -o $out $glslflags -O $debug -MD -MF $out.d
   depfile = $out.d
 
 rule ld
-  command = $cc $in -o $out $libs $debug
+  command = $ld $in -o $out $libs $debugc
 
-build build/gfx.c.o: cc src/gfx.c
+build build/vk.c.o: cc src/vk.c
+build build/game.c.o: cc src/game.c
 build build/main.c.o: cc src/main.c
-build build/vendor/gl3w.c.o: cc src/vendor/gl3w.c
+build build/data/tri.vert.spv: glslc data/tri.vert
+build build/data/tri.frag.spv: glslc data/tri.frag
+build build/data/mesh.vert.spv: glslc data/mesh.vert
+build build/data/mesh.frag.spv: glslc data/mesh.frag
+build build/vk_mem_alloc.cc.o: cxx src/vk_mem_alloc.cc
+build build/vendor/volk.c.o: cc src/vendor/volk.c
 build build/$platform.c.o: cc src/$platform.c
+build build/util.c.o: cc src/util.c
 build build/main: ld $
-  build/gfx.c.o $
+  build/vk.c.o $
   build/main.c.o $
+  build/game.c.o $
+  build/util.c.o $
   build/$platform.c.o $
-  build/vendor/gl3w.c.o
+  build/vendor/volk.c.o $
+  build/vk_mem_alloc.cc.o $
+  | $
+  build/data/tri.vert.spv build/data/tri.frag.spv $
+  build/data/mesh.vert.spv build/data/mesh.frag.spv
