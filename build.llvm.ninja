@@ -1,0 +1,7 @@
+# for a full llvm setup (libc++, clang, lld)
+
+cxxstdlib = -stdlib=libc++
+cxxld = -fuse-ld=lld
+
+cc = clang -fdiagnostics-color
+cxx = clang++ -fdiagnostics-color

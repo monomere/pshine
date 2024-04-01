@@ -1,0 +1,7 @@
+# use the system compilers (cc, default linker, default c++ stdlib)
+
+cxxstdlib =
+cxxld =
+
+cc = cc
+cxx = c++

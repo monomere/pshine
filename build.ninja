@@ -1,8 +1,5 @@
-cxxstdlib = -stdlib=libc++
-cxxld = -fuse-ld=lld
+include build.llvm.ninja
 
-cc = clang -fdiagnostics-color
-cxx = clang++ -fdiagnostics-color
 ld = $cxx $cxxstdlib $cxxld
 
 opt = 1

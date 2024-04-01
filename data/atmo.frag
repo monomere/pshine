@@ -150,10 +150,11 @@ float linearize_depth(float depth) {
 }
 
 layout (input_attachment_index = 0, binding = 1) uniform subpassInput u_input_color;
-layout (input_attachment_index = 1, binding = 2) uniform subpassInput u_input_depth;
+// layout (input_attachment_index = 1, binding = 2) uniform subpassInput u_input_depth;
 
 void main() {
 	vec4 color = subpassLoad(u_input_color).rgba;
-	float depth = subpassLoad(u_input_depth).a;
-	out_col = compute_color(color, linearize_depth(depth));
+	// float depth = subpassLoad(u_input_depth).a;
+	// out_col = compute_color(color, linearize_depth(depth));
+	out_col = vec4(1.0 - color.rgb, 1.0);
 }

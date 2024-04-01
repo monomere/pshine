@@ -30,12 +30,17 @@ wget -P include https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/Vulka
 
 ## Building
 
-> requirements: ninja, clang ≥16, glfw
+> requirements: ninja, gcc-compatible c/c++ compiler, glfw
 
 To build (incremental)
 ```bash
 ninja
 ```
+
+> **NB:** by default, the build.ninja file uses the full LLVM setup
+> with lld, clang, libc++, etc. To use the system-provided stuff
+> change the first line in `build.ninja` to include `build.system.ninja`
+> instead. Or make your own config if you want to (or need to)!
 
 # Running
 

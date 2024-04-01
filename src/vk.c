@@ -25,6 +25,14 @@ struct global_uniform_data {
 	float padding0;
 };
 
+struct atmo_uniform_data {
+	float4 planet; // xyz, w=radius
+	float radius;
+	float density_falloff;
+	unsigned int optical_depth_samples;
+	unsigned int scatter_point_samples;
+};
+
 struct material_uniform_data {
 	float4 color;
 };
@@ -68,9 +76,16 @@ struct per_frame_data {
 	} sync;
 	struct vulkan_buffer global_uniform_buffer;
 	struct vulkan_buffer material_uniform_buffer;
+	struct vulkan_buffer atmo_uniform_buffer;
 	VkDescriptorSet global_descriptor_set;
 	VkDescriptorSet material_descriptor_set; // TODO: move to material struct
+	VkDescriptorSet atmo_descriptor_set;
 	VkCommandBuffer command_buffer;
+};
+
+struct render_pass_transients {
+	struct vulkan_image color_0;
+	struct vulkan_image depth_0;
 };
 
 struct vulkan_renderer {
@@ -111,6 +126,8 @@ struct vulkan_renderer {
 		VkRenderPass main_pass;
 	} render_passes;
 
+	struct render_pass_transients *transients_own; // `*[.swapchain_image_count]`
+
 	VkCommandPool command_pool_graphics;
 	VkCommandPool command_pool_transfer;
 
@@ -119,6 +136,7 @@ struct vulkan_renderer {
 		VkDescriptorSetLayout global_layout;
 		VkDescriptorSetLayout material_layout;
 		VkDescriptorSetLayout static_mesh_layout;
+		VkDescriptorSetLayout atmo_layout;
 	} descriptors;
 
 	struct per_frame_data frames[FRAMES_IN_FLIGHT];
@@ -177,6 +195,8 @@ struct vulkan_image_alloc_info {
 	VkImageCreateInfo *image_info;
 	VmaAllocationCreateFlags allocation_flags;
 	VmaMemoryUsage memory_usage;
+	VkMemoryPropertyFlags required_memory_property_flags;
+	VkMemoryPropertyFlags preferred_memory_property_flags;
 	VmaAllocationInfo *out_allocation_info;
 	VkImageViewCreateInfo *view_info;
 };
@@ -192,6 +212,8 @@ static struct vulkan_image allocate_image(
 		info->image_info,
 		&(VmaAllocationCreateInfo){
 			.flags = info->allocation_flags,
+			.requiredFlags = info->required_memory_property_flags,
+			.preferredFlags = info->preferred_memory_property_flags,
 			.usage = info->memory_usage
 		},
 		&img.image,
@@ -721,20 +743,20 @@ static void init_rpasses(struct vulkan_renderer *r) {
 					.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
 				}
 			},
-			// (VkSubpassDescription){
-			// 	.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-			// 	.colorAttachmentCount = 1,
-			// 	.pColorAttachments = (VkAttachmentReference[]) {
-			// 		(VkAttachmentReference){
-			// 			.attachment = 0,
-			// 			.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			// 		},
-			// 	},
-			// 	.pDepthStencilAttachment = &(VkAttachmentReference){
-			// 		.attachment = 1,
-			// 		.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-			// 	}
-			// }
+			(VkSubpassDescription){
+				.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+				.colorAttachmentCount = 1,
+				.pColorAttachments = (VkAttachmentReference[]) {
+					(VkAttachmentReference){
+						.attachment = 0,
+						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					},
+				},
+				.pDepthStencilAttachment = &(VkAttachmentReference){
+					.attachment = 1,
+					.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+				}
+			}
 		},
 		.attachmentCount = 2,
 		.pAttachments = (VkAttachmentDescription[]){
@@ -759,7 +781,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
 			},
 			// (VkAttachmentDescription){
-			// 	.format = VK_FORMAT_R8G8B8_SRGB,
+			// 	.format = VK_FORMAT_R8G8B8A8_SRGB,
 			// 	.samples = VK_SAMPLE_COUNT_1_BIT,
 			// 	.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
 			// 	.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -785,15 +807,15 @@ static void init_rpasses(struct vulkan_renderer *r) {
 					= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
 					| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
 			},
-			// (VkSubpassDependency){
-			// 	.srcSubpass = 0,
-			// 	.dstSubpass = 1,
-			// 	.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			// 	.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			// 	.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			// 	.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
-			// 	.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-			// },
+			(VkSubpassDependency){
+				.srcSubpass = 0,
+				.dstSubpass = 1,
+				.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+				.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+				.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+				.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
+				.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+			},
 			// (VkSubpassDependency){
 			// 	.srcSubpass = 0,
 			// 	.dstSubpass = 1,
@@ -823,6 +845,7 @@ static void deinit_rpasses(struct vulkan_renderer *r) {
 static void init_fbufs(struct vulkan_renderer *r) {
 	r->swapchain_framebuffers_own = calloc(r->swapchain_image_count, sizeof(VkFramebuffer));
 	r->depth_images_own = calloc(r->swapchain_image_count, sizeof(struct vulkan_image));
+	r->transients_own = calloc(r->swapchain_image_count, sizeof(struct render_pass_transients));
 
 	for (uint32_t i = 0; i < r->swapchain_image_count; ++i) {
 		r->depth_images_own[i] = allocate_image(r, &(struct vulkan_image_alloc_info){
@@ -834,7 +857,7 @@ static void init_fbufs(struct vulkan_renderer *r) {
 				.extent = {
 					.width = r->swapchain_extent.width,
 					.height = r->swapchain_extent.height,
-					.depth = 1
+					.depth = 1,
 				},
 				.format = r->depth_format,
 				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -848,6 +871,41 @@ static void init_fbufs(struct vulkan_renderer *r) {
 				.format = r->depth_format,
 				.subresourceRange = (VkImageSubresourceRange){
 					.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+					.baseArrayLayer = 0,
+					.layerCount = 1,
+					.baseMipLevel = 0,
+					.levelCount = 1,
+				}
+			}
+		});
+
+		r->transients_own[i].color_0 = allocate_image(r, &(struct vulkan_image_alloc_info){
+			.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+			.preferred_memory_property_flags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
+			.allocation_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+			.image_info = &(VkImageCreateInfo){
+				.imageType = VK_IMAGE_TYPE_2D,
+				.arrayLayers = 1,
+				.extent = {
+					.width = r->swapchain_extent.width,
+					.height = r->swapchain_extent.height,
+					.depth = 1,
+				},
+				.format = VK_FORMAT_R8G8B8A8_SRGB,
+				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.samples = VK_SAMPLE_COUNT_1_BIT,
+				.mipLevels = 1,
+				.tiling = VK_IMAGE_TILING_OPTIMAL,
+				.usage
+					= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
+					| VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+					| VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT
+			},
+			.view_info = &(VkImageViewCreateInfo){
+				.viewType = VK_IMAGE_VIEW_TYPE_2D,
+				.format = VK_FORMAT_R8G8B8A8_SRGB,
+				.subresourceRange = (VkImageSubresourceRange){
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 					.baseArrayLayer = 0,
 					.layerCount = 1,
 					.baseMipLevel = 0,
@@ -1181,6 +1239,26 @@ static void init_descriptors(struct vulkan_renderer *r) {
 		}
 	}, NULL, &r->descriptors.static_mesh_layout);
 	NAME_VK_OBJECT(r, r->descriptors.static_mesh_layout, VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT_EXT, "static mesh descriptor set layout");
+
+	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 2,
+		.pBindings = (VkDescriptorSetLayoutBinding[]){
+			(VkDescriptorSetLayoutBinding){
+				.binding = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			(VkDescriptorSetLayoutBinding){
+				.binding = 1,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+		}
+	}, NULL, &r->descriptors.atmo_layout);
+	NAME_VK_OBJECT(r, r->descriptors.atmo_layout, VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT_EXT, "atmosphere descriptor set layout");
 }
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
@@ -1188,6 +1266,7 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.global_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.material_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.static_mesh_layout, NULL);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.atmo_layout, NULL);
 }
 
 
@@ -1218,28 +1297,22 @@ static void init_frame(
 		NULL
 	);
 
+	f->atmo_uniform_buffer = allocate_buffer(
+		r,
+		get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * FRAMES_IN_FLIGHT,
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+		VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+		NULL
+	);
+
 	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		.descriptorPool = r->descriptors.pool,
 		.descriptorSetCount = 1,
 		.pSetLayouts = &r->descriptors.global_layout
 	}, &f->global_descriptor_set));
-
-	vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[]){
-		(VkWriteDescriptorSet){
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-			.dstSet = f->global_descriptor_set,
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.pBufferInfo = &(VkDescriptorBufferInfo){
-				.buffer = f->global_uniform_buffer.buffer,
-				.offset = 0,
-				.range = sizeof(struct global_uniform_data)
-			}
-		}
-	}, 0, NULL);
 
 	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1248,7 +1321,27 @@ static void init_frame(
 		.pSetLayouts = &r->descriptors.material_layout
 	}, &f->material_descriptor_set));
 
+	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = r->descriptors.pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &r->descriptors.atmo_layout
+	}, &f->atmo_descriptor_set));
+
 	vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[]){
+		(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.dstSet = f->atmo_descriptor_set,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.pBufferInfo = &(VkDescriptorBufferInfo){
+				.buffer = f->atmo_uniform_buffer.buffer,
+				.offset = 0,
+				.range = sizeof(struct atmo_uniform_data)
+			}
+		},
 		(VkWriteDescriptorSet){
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.descriptorCount = 1,
@@ -1260,6 +1353,19 @@ static void init_frame(
 				.buffer = f->material_uniform_buffer.buffer,
 				.offset = 0,
 				.range = sizeof(struct material_uniform_data)
+			}
+		},
+		(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+			.dstSet = f->global_descriptor_set,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.pBufferInfo = &(VkDescriptorBufferInfo){
+				.buffer = f->global_uniform_buffer.buffer,
+				.offset = 0,
+				.range = sizeof(struct global_uniform_data)
 			}
 		}
 	}, 0, NULL);
@@ -1381,6 +1487,17 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		memcpy(data, &new_data, sizeof(new_data));
 		vmaUnmapMemory(r->allocator, f->material_uniform_buffer.allocation);
 	}
+	{
+		struct atmo_uniform_data new_data = {
+			.planet = float4rgba(0.0f, 0.0f, 0.0f, 100.0f),
+			.density_falloff = 0.5f
+		};
+		char *data;
+		vmaMapMemory(r->allocator, f->atmo_uniform_buffer.allocation, (void**)&data);
+		data += get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * current_frame;
+		memcpy(data, &new_data, sizeof(new_data));
+		vmaUnmapMemory(r->allocator, f->atmo_uniform_buffer.allocation);
+	}
 
 	float aspect_ratio = r->swapchain_extent.width /(float) r->swapchain_extent.height;
 	float4x4 view_mat = {};
@@ -1443,6 +1560,23 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			vkCmdDrawIndexed(f->command_buffer, p->graphics_data->mesh_ref->index_count, 1, 0, 0, 0);
 		}
 	}
+
+	// TODO: r->pipelines.atmosphere_pipeline
+
+	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.atmosphere_pipeline);
+	vkCmdBindDescriptorSets(
+		f->command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		r->pipelines.atmosphere_pipeline_layout,
+		2,
+		1,
+		&f->atmo_descriptor_set,
+		1, (uint32_t[]){
+			get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * current_frame
+		}
+	);
+	vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
 
 	vkCmdEndRenderPass(f->command_buffer);
 	CHECKVK(vkEndCommandBuffer(f->command_buffer));
