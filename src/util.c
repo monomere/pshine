@@ -1,4 +1,5 @@
 #include <pshine/util.h>
+#include <stdarg.h>
 
 size_t pshine_log_sink_count;
 struct pshine_log_sink *pshine_log_sinks;

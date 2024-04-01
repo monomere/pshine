@@ -190,7 +190,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 	else if (pshine_is_key_down(game->renderer, PSHINE_KEY_S)) delta_pos.z -= 1.0f;
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_SPACE)) delta_pos.y += 1.0f;
 	else if (pshine_is_key_down(game->renderer, PSHINE_KEY_LEFT_SHIFT)) delta_pos.y -= 1.0f;
-	const float speed = 100.0f;
+	const float speed = 10000.0f;
 	float3 cam_pos = float3vs(&game->camera_position.x);
 	*(float3*)(&game->camera_position.x) = float3add(cam_pos, float3mul(float3norm(delta_pos), speed * delta_time));
 }

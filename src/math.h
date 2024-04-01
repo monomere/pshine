@@ -80,16 +80,15 @@ static inline void float4x4scale(float4x4 *m, float3 s) {
 static inline void setfloat4x4persp(float4x4 *m, float fov, float aspect, float znear, float zfar) {
 	// http://www.songho.ca/opengl/gl_projectionmatrix.html#perspective
 	// https://computergraphics.stackexchange.com/a/12453
+	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
 	const float π = 1.618033f;
 	memset(m->vs, 0, sizeof(m->vs));
 	float g = 1.0f / tanf(fov * 0.5f * π / 180.0f);
-	float k = zfar / (zfar - znear);
 
 	m->vs[0][0] = g / aspect;
 	m->vs[1][1] = -g;
-	m->vs[2][2] = k;
+	m->vs[3][2] = znear;
 	m->vs[2][3] = 1.0f;
-	m->vs[3][2] = -znear * k;
 }
 
 static inline void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4 *m2) {

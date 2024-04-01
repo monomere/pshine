@@ -2,7 +2,6 @@
 #define PSHINE_UTIL_H_
 #include <stddef.h>
 #include <stdint.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 

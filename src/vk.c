@@ -425,7 +425,7 @@ static void init_glfw(struct vulkan_renderer *r) {
 	if (!glfwInit()) PSHINE_PANIC("could not initialize GLFW");
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	r->window = glfwCreateWindow(640, 480, "pshine2", NULL, NULL);
+	r->window = glfwCreateWindow(1920 / 1.5f, 1080 / 1.5f, "pshine2", NULL, NULL);
 	if (r->window == NULL) PSHINE_PANIC("could not create window");
 }
 
@@ -628,6 +628,7 @@ static void init_swapchain(struct vulkan_renderer *r) {
 	r->depth_format = find_optimal_format(r, 2, (VkFormat[]){
 		VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT
 	}, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_TILING_OPTIMAL);
+	PSHINE_INFO("swapchain extent: %ux%u", r->swapchain_extent.width, r->swapchain_extent.height);
 
 	// {
 	// 	uint32_t surface_format_count = 0;
@@ -713,13 +714,27 @@ static void init_rpasses(struct vulkan_renderer *r) {
 					(VkAttachmentReference){
 						.attachment = 0,
 						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-					}
+					},
 				},
 				.pDepthStencilAttachment = &(VkAttachmentReference){
 					.attachment = 1,
 					.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
 				}
-			}
+			},
+			// (VkSubpassDescription){
+			// 	.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+			// 	.colorAttachmentCount = 1,
+			// 	.pColorAttachments = (VkAttachmentReference[]) {
+			// 		(VkAttachmentReference){
+			// 			.attachment = 0,
+			// 			.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			// 		},
+			// 	},
+			// 	.pDepthStencilAttachment = &(VkAttachmentReference){
+			// 		.attachment = 1,
+			// 		.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+			// 	}
+			// }
 		},
 		.attachmentCount = 2,
 		.pAttachments = (VkAttachmentDescription[]){
@@ -741,14 +756,24 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
 				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-			}
+				.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+			},
+			// (VkAttachmentDescription){
+			// 	.format = VK_FORMAT_R8G8B8_SRGB,
+			// 	.samples = VK_SAMPLE_COUNT_1_BIT,
+			// 	.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+			// 	.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+			// 	.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+			// 	.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			// 	.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			// 	.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			// },
 		},
-		.dependencyCount = 1,
+		.dependencyCount = 0,
 		.pDependencies = (VkSubpassDependency[]){
 			(VkSubpassDependency){
 				.srcSubpass = VK_SUBPASS_EXTERNAL,
-				.dstSubpass = 0,
+				.dstSubpass = 1,
 				.srcStageMask
 					= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
 					| VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
@@ -760,6 +785,24 @@ static void init_rpasses(struct vulkan_renderer *r) {
 					= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
 					| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
 			},
+			// (VkSubpassDependency){
+			// 	.srcSubpass = 0,
+			// 	.dstSubpass = 1,
+			// 	.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			// 	.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			// 	.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			// 	.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
+			// 	.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+			// },
+			// (VkSubpassDependency){
+			// 	.srcSubpass = 0,
+			// 	.dstSubpass = 1,
+			// 	.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+			// 	.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+			// 	.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			// 	.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
+			// 	.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+			// }
 		}
 	}, NULL, &r->render_passes.main_pass));
 	vkDebugMarkerSetObjectNameEXT(r->device, &(VkDebugMarkerObjectNameInfoEXT){
@@ -968,7 +1011,7 @@ static struct vulkan_pipeline create_pipeline(struct vulkan_renderer *r, const s
 			.depthTestEnable = VK_TRUE,
 			.depthWriteEnable = VK_TRUE,
 			.stencilTestEnable = VK_FALSE,
-			.depthCompareOp = VK_COMPARE_OP_LESS,
+			.depthCompareOp = VK_COMPARE_OP_GREATER,
 			.maxDepthBounds = 1.0f,
 			.minDepthBounds = 0.0f,
 			.back = {},
@@ -1312,7 +1355,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		.clearValueCount = 2,
 		.pClearValues = (VkClearValue[]){
 			(VkClearValue){ .color = (VkClearColorValue){ .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-			(VkClearValue){ .depthStencil = (VkClearDepthStencilValue){ .depth = 1.0f, .stencil = 0 } }
+			(VkClearValue){ .depthStencil = (VkClearDepthStencilValue){ .depth = 0.0f, .stencil = 0 } }
 		}
 	}, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1426,7 +1469,9 @@ static void render(struct vulkan_renderer *r, uint32_t current_frame) {
 		.pSignalSemaphores = &f->sync.render_finish_semaphore,
 		.waitSemaphoreCount = 1,
 		.pWaitSemaphores = &f->sync.image_avail_semaphore,
-		.pWaitDstStageMask = &(VkPipelineStageFlags){ VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }
+		.pWaitDstStageMask = &(VkPipelineStageFlags){
+			VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+		}
 	}, f->sync.in_flight_fence));
 	CHECKVK(vkQueuePresentKHR(r->queues[QUEUE_PRESENT], &(VkPresentInfoKHR){
 		.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
