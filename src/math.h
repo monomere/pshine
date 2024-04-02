@@ -27,6 +27,8 @@ typedef union {
 	struct { float4 v4s[4]; };
 } float4x4;
 
+static inline float4 float4xyz3w(float3 xyz, float w) { return (float4){{ xyz.x, xyz.y, xyz.z, w }}; }
+static inline float4 float4xyzw(float x, float y, float z, float w) { return (float4){{ x, y, z, w }}; }
 static inline float4 float4rgba(float r, float g, float b, float a) { return (float4){{ r, g, b, a }}; }
 
 static inline float3 float3vs(const float vs[3]) { return (float3){{ vs[0], vs[1], vs[2] }}; }

@@ -727,14 +727,14 @@ static void deinit_swapchain(struct vulkan_renderer *r) {
 static void init_rpasses(struct vulkan_renderer *r) {
 	CHECKVK(vkCreateRenderPass(r->device, &(VkRenderPassCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-		.subpassCount = 1,
+		.subpassCount = 2,
 		.pSubpasses = (VkSubpassDescription[]){
 			(VkSubpassDescription){
 				.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
 				.colorAttachmentCount = 1,
 				.pColorAttachments = (VkAttachmentReference[]) {
 					(VkAttachmentReference){
-						.attachment = 0,
+						.attachment = 2,
 						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 					},
 				},
@@ -749,6 +749,13 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.pColorAttachments = (VkAttachmentReference[]) {
 					(VkAttachmentReference){
 						.attachment = 0,
+						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+					},
+				},
+				.inputAttachmentCount = 1,
+				.pInputAttachments = (VkAttachmentReference[]) {
+					(VkAttachmentReference){
+						.attachment = 2,
 						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 					},
 				},
@@ -758,7 +765,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				}
 			}
 		},
-		.attachmentCount = 2,
+		.attachmentCount = 3,
 		.pAttachments = (VkAttachmentDescription[]){
 			(VkAttachmentDescription){
 				.format = r->surface_format.format,
@@ -780,18 +787,18 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 				.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
 			},
-			// (VkAttachmentDescription){
-			// 	.format = VK_FORMAT_R8G8B8A8_SRGB,
-			// 	.samples = VK_SAMPLE_COUNT_1_BIT,
-			// 	.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-			// 	.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-			// 	.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-			// 	.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-			// 	.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			// 	.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			// },
+			(VkAttachmentDescription){
+				.format = VK_FORMAT_R8G8B8A8_SRGB,
+				.samples = VK_SAMPLE_COUNT_1_BIT,
+				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			},
 		},
-		.dependencyCount = 0,
+		.dependencyCount = 2, // TODO: synchronization
 		.pDependencies = (VkSubpassDependency[]){
 			(VkSubpassDependency){
 				.srcSubpass = VK_SUBPASS_EXTERNAL,
@@ -817,10 +824,10 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 			},
 			// (VkSubpassDependency){
-			// 	.srcSubpass = 0,
+			// 	.srcSubpass = 1,
 			// 	.dstSubpass = 1,
-			// 	.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-			// 	.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+			// 	.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			// 	.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			// 	.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 			// 	.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
 			// 	.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
@@ -916,10 +923,11 @@ static void init_fbufs(struct vulkan_renderer *r) {
 
 		CHECKVK(vkCreateFramebuffer(r->device, &(VkFramebufferCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-			.attachmentCount = 2,
+			.attachmentCount = 3,
 			.pAttachments = (VkImageView[]){
 				r->swapchain_image_views_own[i],
 				r->depth_images_own[i].view,
+				r->transients_own[i].color_0.view
 			},
 			.renderPass = r->render_passes.main_pass,
 			.width = r->swapchain_extent.width,
@@ -969,6 +977,8 @@ struct pipeline_info {
 	uint32_t subpass;
 	const char *layout_name;
 	const char *pipeline_name;
+	bool depth_test;
+	bool blend;
 };
 
 struct vulkan_pipeline {
@@ -1066,7 +1076,7 @@ static struct vulkan_pipeline create_pipeline(struct vulkan_renderer *r, const s
 		.pDepthStencilState = &(VkPipelineDepthStencilStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
 			.depthBoundsTestEnable = VK_FALSE,
-			.depthTestEnable = VK_TRUE,
+			.depthTestEnable = info->depth_test ? VK_TRUE : VK_FALSE,
 			.depthWriteEnable = VK_TRUE,
 			.stencilTestEnable = VK_FALSE,
 			.depthCompareOp = VK_COMPARE_OP_GREATER,
@@ -1083,7 +1093,7 @@ static struct vulkan_pipeline create_pipeline(struct vulkan_renderer *r, const s
 				.colorWriteMask
 					= VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
 					| VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-				.blendEnable = VK_FALSE,
+				.blendEnable = info->blend ? VK_TRUE : VK_FALSE,
 				.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
 				.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
 				.colorBlendOp = VK_BLEND_OP_ADD,
@@ -1134,11 +1144,32 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			r->descriptors.material_layout,
 			r->descriptors.static_mesh_layout,
 		},
+		.blend = false,
+		.depth_test = true,
 		.layout_name = "static mesh pipeline layout",
 		.pipeline_name = "static mesh pipeline"
 	});
 	r->pipelines.mesh_pipeline = mesh_pipeline.pipeline;
 	r->pipelines.mesh_pipeline_layout = mesh_pipeline.layout;
+	struct vulkan_pipeline atmo_pipeline = create_pipeline(r, &(struct pipeline_info){
+		.vert_fname = "build/data/atmo.vert.spv",
+		.frag_fname = "build/data/atmo.frag.spv",
+		.render_pass = r->render_passes.main_pass,
+		.subpass = 1,
+		.push_constant_range_count = 0,
+		.set_layout_count = 3,
+		.set_layouts = (VkDescriptorSetLayout[]){
+			r->descriptors.global_layout,
+			r->descriptors.material_layout,
+			r->descriptors.atmo_layout,
+		},
+		.blend = false,
+		.depth_test = false,
+		.layout_name = "atmosphere pipeline layout",
+		.pipeline_name = "atmosphere pipeline"
+	});
+	r->pipelines.atmosphere_pipeline = atmo_pipeline.pipeline;
+	r->pipelines.atmosphere_pipeline_layout = atmo_pipeline.layout;
 }
 
 static void deinit_pipelines(struct vulkan_renderer *r) {
@@ -1274,6 +1305,7 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 
 static void init_frame(
 	struct vulkan_renderer *r,
+	uint32_t frame_index,
 	struct per_frame_data *f,
 	size_t planet_count
 ) {
@@ -1313,6 +1345,7 @@ static void init_frame(
 		.descriptorSetCount = 1,
 		.pSetLayouts = &r->descriptors.global_layout
 	}, &f->global_descriptor_set));
+	
 
 	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1328,11 +1361,11 @@ static void init_frame(
 		.pSetLayouts = &r->descriptors.atmo_layout
 	}, &f->atmo_descriptor_set));
 
-	vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[]){
+	vkUpdateDescriptorSets(r->device, 4, (VkWriteDescriptorSet[]){
 		(VkWriteDescriptorSet){
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 			.dstSet = f->atmo_descriptor_set,
 			.dstBinding = 0,
 			.dstArrayElement = 0,
@@ -1340,6 +1373,19 @@ static void init_frame(
 				.buffer = f->atmo_uniform_buffer.buffer,
 				.offset = 0,
 				.range = sizeof(struct atmo_uniform_data)
+			}
+		},
+		(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+			.dstSet = f->atmo_descriptor_set,
+			.dstBinding = 1,
+			.dstArrayElement = 0,
+			.pImageInfo = &(VkDescriptorImageInfo){
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageView = r->transients_own[frame_index].color_0.view,
+				.sampler = VK_NULL_HANDLE
 			}
 		},
 		(VkWriteDescriptorSet){
@@ -1404,7 +1450,7 @@ static void init_frames(struct vulkan_renderer *r) {
 		planet_count += b->type == PSHINE_CELESTIAL_BODY_PLANET;
 	}
 	for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
-		init_frame(r, &r->frames[i], planet_count);
+		init_frame(r, i, &r->frames[i], planet_count);
 	}
 }
 
@@ -1446,27 +1492,6 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 
 static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t image_index) {
 	struct per_frame_data *f = &r->frames[current_frame];
-
-	CHECKVK(vkBeginCommandBuffer(f->command_buffer, &(VkCommandBufferBeginInfo){
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-	}));
-	vkCmdBeginRenderPass(f->command_buffer, &(VkRenderPassBeginInfo){
-		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-		.renderPass = r->render_passes.main_pass,
-		.framebuffer = r->swapchain_framebuffers_own[image_index],
-		.renderArea = (VkRect2D){
-			.offset = { 0, 0 },
-			.extent = r->swapchain_extent
-		},
-		.clearValueCount = 2,
-		.pClearValues = (VkClearValue[]){
-			(VkClearValue){ .color = (VkClearColorValue){ .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-			(VkClearValue){ .depthStencil = (VkClearDepthStencilValue){ .depth = 0.0f, .stencil = 0 } }
-		}
-	}, VK_SUBPASS_CONTENTS_INLINE);
-
-	// vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.tri_pipeline);
-	// vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
 
 	{
 		struct global_uniform_data new_data = {
@@ -1526,6 +1551,44 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		}
 	}
 
+	{
+		struct pshine_celestial_body *b = r->game->celestial_bodies[0];
+		struct atmo_uniform_data new_data = {
+			.density_falloff = 0.1f,
+			.optical_depth_samples = 5,
+			.scatter_point_samples = 5,
+			.planet = float4xyz3w(float3vs(&b->position.x), b->radius),
+			.radius = b->radius + 20.0f
+		};
+		char *data_raw;
+		vmaMapMemory(r->allocator, f->atmo_uniform_buffer.allocation, (void**)&data_raw);
+		data_raw += get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * current_frame;
+		memcpy(data_raw, &new_data, sizeof(new_data));
+		vmaUnmapMemory(r->allocator, f->atmo_uniform_buffer.allocation);
+	}
+
+	CHECKVK(vkBeginCommandBuffer(f->command_buffer, &(VkCommandBufferBeginInfo){
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+	}));
+	vkCmdBeginRenderPass(f->command_buffer, &(VkRenderPassBeginInfo){
+		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+		.renderPass = r->render_passes.main_pass,
+		.framebuffer = r->swapchain_framebuffers_own[image_index],
+		.renderArea = (VkRect2D){
+			.offset = { 0, 0 },
+			.extent = r->swapchain_extent
+		},
+		.clearValueCount = 3,
+		.pClearValues = (VkClearValue[]){
+			(VkClearValue){ .color = (VkClearColorValue){ .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
+			(VkClearValue){ .depthStencil = (VkClearDepthStencilValue){ .depth = 0.0f, .stencil = 0 } },
+			(VkClearValue){ .color = (VkClearColorValue){ .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
+		}
+	}, VK_SUBPASS_CONTENTS_INLINE);
+
+	// vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.tri_pipeline);
+	// vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
+
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.mesh_pipeline);
 
 	vkCmdBindDescriptorSets(
@@ -1560,8 +1623,6 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			vkCmdDrawIndexed(f->command_buffer, p->graphics_data->mesh_ref->index_count, 1, 0, 0, 0);
 		}
 	}
-
-	// TODO: r->pipelines.atmosphere_pipeline
 
 	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.atmosphere_pipeline);

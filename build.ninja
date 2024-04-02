@@ -39,6 +39,8 @@ build build/data/tri.vert.spv: glslc data/tri.vert
 build build/data/tri.frag.spv: glslc data/tri.frag
 build build/data/mesh.vert.spv: glslc data/mesh.vert
 build build/data/mesh.frag.spv: glslc data/mesh.frag
+build build/data/atmo.vert.spv: glslc data/atmo.vert
+build build/data/atmo.frag.spv: glslc data/atmo.frag
 build build/vk_mem_alloc.cc.o: cxx src/vk_mem_alloc.cc
 build build/vendor/volk.c.o: cc src/vendor/volk.c
 build build/$platform.c.o: cc src/$platform.c
@@ -53,4 +55,5 @@ build build/main: ld $
   build/vk_mem_alloc.cc.o $
   | $
   build/data/tri.vert.spv build/data/tri.frag.spv $
-  build/data/mesh.vert.spv build/data/mesh.frag.spv
+  build/data/mesh.vert.spv build/data/mesh.frag.spv $
+  build/data/atmo.vert.spv build/data/atmo.frag.spv
