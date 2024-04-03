@@ -726,12 +726,6 @@ static void init_swapchain(struct vulkan_renderer *r) {
 			.image = r->swapchain_images_own[i],
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
 			.format = r->surface_format.format,
-			.components = {
-				.r = VK_COMPONENT_SWIZZLE_IDENTITY,
-				.g = VK_COMPONENT_SWIZZLE_IDENTITY,
-				.b = VK_COMPONENT_SWIZZLE_IDENTITY,
-				.a = VK_COMPONENT_SWIZZLE_IDENTITY,
-			},
 			.subresourceRange = {
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 				.baseMipLevel = 0,
@@ -785,16 +779,16 @@ static void init_rpasses(struct vulkan_renderer *r) {
 						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 					},
 				},
-				.inputAttachmentCount = 1,
+				.inputAttachmentCount = 2,
 				.pInputAttachments = (VkAttachmentReference[]) {
 					(VkAttachmentReference){
 						.attachment = 2,
 						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 					},
-				},
-				.pDepthStencilAttachment = &(VkAttachmentReference){
-					.attachment = 1,
-					.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+					(VkAttachmentReference){
+						.attachment = 1,
+						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					},
 				}
 			}
 		},
@@ -818,7 +812,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
 				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
 			},
 			(VkAttachmentDescription){
 				.format = VK_FORMAT_R8G8B8A8_SRGB,
@@ -831,7 +825,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			},
 		},
-		.dependencyCount = 3, // TODO: synchronization
+		.dependencyCount = 4, // TODO: synchronization
 		.pDependencies = (VkSubpassDependency[]){
 			(VkSubpassDependency){
 				.srcSubpass = VK_SUBPASS_EXTERNAL,
@@ -864,15 +858,15 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
 				.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 			},
-			// (VkSubpassDependency){
-			// 	.srcSubpass = 1,
-			// 	.dstSubpass = 1,
-			// 	.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			// 	.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			// 	.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			// 	.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
-			// 	.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-			// }
+			(VkSubpassDependency){
+				.srcSubpass = 0,
+				.dstSubpass = 1,
+				.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+				.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+				.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+				.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
+				.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+			},
 		}
 	}, NULL, &r->render_passes.main_pass));
 	vkDebugMarkerSetObjectNameEXT(r->device, &(VkDebugMarkerObjectNameInfoEXT){
@@ -894,6 +888,7 @@ static void init_fbufs(struct vulkan_renderer *r) {
 	r->swapchain_framebuffers_own = calloc(r->swapchain_image_count, sizeof(VkFramebuffer));
 	r->depth_image = allocate_image(r, &(struct vulkan_image_alloc_info){
 		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+		.preferred_memory_property_flags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
 		.allocation_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
 		.image_info = &(VkImageCreateInfo){
 			.imageType = VK_IMAGE_TYPE_2D,
@@ -908,13 +903,16 @@ static void init_fbufs(struct vulkan_renderer *r) {
 			.samples = VK_SAMPLE_COUNT_1_BIT,
 			.mipLevels = 1,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
-			.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+			.usage
+				= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+				| VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
+				| VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
 			.format = r->depth_format,
 			.subresourceRange = (VkImageSubresourceRange){
-				.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+				.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
 				.baseArrayLayer = 0,
 				.layerCount = 1,
 				.baseMipLevel = 0,
@@ -1316,7 +1314,7 @@ static void init_descriptors(struct vulkan_renderer *r) {
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = 2,
+		.bindingCount = 3,
 		.pBindings = (VkDescriptorSetLayoutBinding[]){
 			(VkDescriptorSetLayoutBinding){
 				.binding = 0,
@@ -1326,6 +1324,12 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			},
 			(VkDescriptorSetLayoutBinding){
 				.binding = 1,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			(VkDescriptorSetLayoutBinding){
+				.binding = 2,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -1409,7 +1413,7 @@ static void init_frame(
 	}, &f->atmo_descriptor_set));
 	NAME_VK_OBJECT(r, f->atmo_descriptor_set, VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT, "atmosphere ds #%u", frame_index);
 
-	vkUpdateDescriptorSets(r->device, 4, (VkWriteDescriptorSet[]){
+	vkUpdateDescriptorSets(r->device, 5, (VkWriteDescriptorSet[]){
 		(VkWriteDescriptorSet){
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.descriptorCount = 1,
@@ -1433,6 +1437,19 @@ static void init_frame(
 			.pImageInfo = &(VkDescriptorImageInfo){
 				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 				.imageView = r->transients.color_0.view,
+				.sampler = VK_NULL_HANDLE
+			}
+		},
+		(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+			.dstSet = f->atmo_descriptor_set,
+			.dstBinding = 2,
+			.dstArrayElement = 0,
+			.pImageInfo = &(VkDescriptorImageInfo){
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageView = r->depth_image.view,
 				.sampler = VK_NULL_HANDLE
 			}
 		},
@@ -1608,7 +1625,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	{
 		struct pshine_celestial_body *b = r->game->celestial_bodies[0];
 		struct atmo_uniform_data new_data = {
-			.density_falloff = 0.1f,
+			.density_falloff = 1.19f,
 			.optical_depth_samples = 5,
 			.scatter_point_samples = 5,
 			.planet = float4xyz3w(float3vs(b->position.values), b->radius),

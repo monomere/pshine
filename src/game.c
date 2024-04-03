@@ -164,7 +164,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->celestial_bodies = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
 	game->celestial_bodies[0] = calloc(1, sizeof(struct pshine_planet));
 	init_planet((void*)game->celestial_bodies[0]);
-	game->camera_position.xyz.z = -400.0f;
+	game->camera_position.xyz.z = -200.0f;
 }
 
 void pshine_deinit_game(struct pshine_game *game) {

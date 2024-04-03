@@ -4,7 +4,7 @@ layout (location = 0) out vec4 out_col;
 
 layout (location = 0) in vec2 i_uv;
 
-layout (std140, binding = 0) uniform GLOBAL_UNIFORMS {
+layout (set = 0, binding = 0) uniform GLOBAL_UNIFORMS {
 	vec4 sun;
 	vec4 camera; // plane, znear, unused
 	vec4 camera_up;
@@ -12,7 +12,7 @@ layout (std140, binding = 0) uniform GLOBAL_UNIFORMS {
 	vec4 camera_pos;
 } global;
 
-layout (std140, binding = 0) uniform ATMO_UNIFORMS {
+layout (set = 2, binding = 0) uniform ATMO_UNIFORMS {
 	vec4 planet; // xyz, w=radius
 	float radius;
 	float density_falloff;
@@ -44,8 +44,8 @@ vec2 intersect_ray_sphere(
 }
 
 float compute_local_density(vec3 pos) {
-	float height = distance(atmo.planet.xyz, pos) - atmo.planet.w;
-	float height01 = height / (atmo.radius + atmo.planet.w);
+	float height = length(atmo.planet.xyz - pos) - atmo.planet.w;
+	float height01 = height / (atmo.radius - atmo.planet.w);
 	return exp(-height01 * atmo.density_falloff) * (1 - height01);
 }
 
@@ -78,11 +78,11 @@ float compute_light(
 			atmo.planet.xyz,
 			atmo.radius,
 			current,
-			-global.sun.xyz
+			normalize(-global.sun.xyz)
 		).y;
 		float sun_ray_optical_depth = compute_optical_depth(
 			current,
-			-global.sun.xyz,
+			normalize(-global.sun.xyz),
 			sun_ray_len
 		);
 		float view_ray_optical_depth = compute_optical_depth(
@@ -99,16 +99,17 @@ float compute_light(
 }
 
 vec4 compute_color(vec4 col, float depth) {
-	vec2 ray_uv = global.camera.xy * (i_uv * 2.0 - 1.0);
+	vec2 uv_flipped = vec2(i_uv.x, 1.0 - i_uv.y);
+	vec2 ray_uv = global.camera.xy * (uv_flipped * 2.0 - 1.0);
 
 	vec3 ray_target
-		= cross(global.camera_up.xyz, global.camera_right.xyz)
+		= cross(global.camera_right.xyz, global.camera_up.xyz)
 			* global.camera.z
 		+ global.camera_right.xyz * ray_uv.x
 		+ global.camera_up.xyz * ray_uv.y;
 
 	vec3 ray_origin = global.camera_pos.xyz;
-	vec3 ray_direction = normalize(ray_origin - ray_target);
+	vec3 ray_direction = normalize(ray_target);
 
 	float dst_to_surface = intersect_ray_sphere(
 		atmo.planet.xyz,
@@ -131,30 +132,28 @@ vec4 compute_color(vec4 col, float depth) {
 	);
 
 	if (dst_thru_atmo > 0.0) {
-		return vec4(vec3(
-			dst_thru_atmo / (2.0 * atmo.radius)
-		), 1.0);
-		// vec3 ray_org_atmo = ray_org + ray_dir * dst_to_atmo;
-		// float light = compute_light(ray_org_atmo, ray_dir, dst_thru_atmo);
-		// return col * (1 - light) + light;
+		// return vec4(vec3(
+		// 	dst_thru_atmo / (2.0 * atmo.radius)
+		// ), 1.0);
+		const float epsilon = 0.0001;
+		vec3 ray_origin_atmo = ray_origin + ray_direction * (dst_to_atmo + epsilon);
+		float light = compute_light(ray_origin_atmo, ray_direction, dst_thru_atmo - epsilon * 2.0);
+		return col * (1 - light) + light;
 	}
 
 	return col;
 }
 
-// float linearize_depth(float depth) {
-// 	float n = global.camera.x;
-// 	float f = global.camera.y;
-// 	float z = depth;
-// 	return (2.0 * n) / (f + n - z * (f - n));	
-// }
+float linearize_depth(float depth) {
+	return global.camera.z / depth;
+}
 
 layout (input_attachment_index = 0, set = 2, binding = 1) uniform subpassInput u_input_color;
-// layout (input_attachment_index = 1, binding = 2) uniform subpassInput u_input_depth;
+layout (input_attachment_index = 1, set = 2, binding = 2) uniform subpassInput u_input_depth;
 
 void main() {
-	vec3 color = subpassLoad(u_input_color).rgb;
-	// float depth = subpassLoad(u_input_depth).a;
-	// out_col = compute_color(color, linearize_depth(depth));
-	out_col = vec4(color.rgb, 1.0);
+	vec4 color = subpassLoad(u_input_color).rgba;
+	float depth = subpassLoad(u_input_depth).r;
+	float linear_depth = linearize_depth(depth);
+	out_col = compute_color(color, linear_depth);
 }
