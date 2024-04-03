@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 struct pshine_log_sink {
 	FILE *fout;
@@ -161,6 +162,30 @@ static inline void pshine_dyna_kill_(struct pshine_dyna_ *d, size_t item_size, s
 		= (void*)((uint8_t*)d->ptr + item_size * idx);
 	item->next = d->next_free;
 	d->next_free = idx;
+}
+
+static inline char *pshine_format_string(const char *fmt, ...) {
+	va_list va;
+	va_start(va, fmt);
+	size_t sz = vsnprintf(NULL, 0, fmt, va);
+	va_end(va);
+	char *a = malloc(sz + 1);
+	va_start(va, fmt);
+	vsnprintf(a, sz + 1, fmt, va);
+	va_end(va);
+	a[sz] = '\0';
+	return a;
+}
+
+static inline char *pshine_vformat_string(const char *fmt, va_list va) {
+	va_list va2;
+	va_copy(va2, va);
+	size_t sz = vsnprintf(NULL, 0, fmt, va);
+	char *a = malloc(sz + 1);
+	vsnprintf(a, sz + 1, fmt, va2);
+	va_end(va2);
+	a[sz] = '\0';
+	return a;
 }
 
 #endif // PSHINE_UTIL_H_

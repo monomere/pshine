@@ -152,7 +152,7 @@ static void init_planet(struct pshine_planet *planet) {
 	planet->as_body.type = PSHINE_CELESTIAL_BODY_PLANET;
 	planet->as_body.radius = 100.0f;
 	planet->as_body.parent_ref = NULL;
-	planet->as_body.position = (struct pshine_position3d){ 0.0f, 0.0f, 0.0f };
+	planet->as_body.position = (pshine_position3d){ { 0.0f, 0.0f, 0.0f } };
 }
 
 static void deinit_planet(struct pshine_planet *planet) {
@@ -164,6 +164,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->celestial_bodies = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
 	game->celestial_bodies[0] = calloc(1, sizeof(struct pshine_planet));
 	init_planet((void*)game->celestial_bodies[0]);
+	game->camera_position.xyz.z = -400.0f;
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
@@ -190,7 +191,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 	else if (pshine_is_key_down(game->renderer, PSHINE_KEY_S)) delta_pos.z -= 1.0f;
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_SPACE)) delta_pos.y += 1.0f;
 	else if (pshine_is_key_down(game->renderer, PSHINE_KEY_LEFT_SHIFT)) delta_pos.y -= 1.0f;
-	const float speed = 10000.0f;
-	float3 cam_pos = float3vs(&game->camera_position.x);
-	*(float3*)(&game->camera_position.x) = float3add(cam_pos, float3mul(float3norm(delta_pos), speed * delta_time));
+	const float speed = 100.0f;
+	float3 cam_pos = float3vs(game->camera_position.values);
+	*(float3*)game->camera_position.values = float3add(cam_pos, float3mul(float3norm(delta_pos), speed * delta_time));
 }

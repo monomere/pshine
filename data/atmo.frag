@@ -6,7 +6,7 @@ layout (location = 0) in vec2 i_uv;
 
 layout (std140, binding = 0) uniform GLOBAL_UNIFORMS {
 	vec4 sun;
-	vec4 camera; // znear, zfar, plane
+	vec4 camera; // plane, znear, unused
 	vec4 camera_up;
 	vec4 camera_right;
 	vec4 camera_pos;
@@ -99,11 +99,11 @@ float compute_light(
 }
 
 vec4 compute_color(vec4 col, float depth) {
-	vec2 ray_uv = global.camera.zw * (i_uv * 2.0 - 1.0);
+	vec2 ray_uv = global.camera.xy * (i_uv * 2.0 - 1.0);
 
 	vec3 ray_target
 		= cross(global.camera_up.xyz, global.camera_right.xyz)
-			* global.camera.x
+			* global.camera.z
 		+ global.camera_right.xyz * ray_uv.x
 		+ global.camera_up.xyz * ray_uv.y;
 
@@ -142,18 +142,18 @@ vec4 compute_color(vec4 col, float depth) {
 	return col;
 }
 
-float linearize_depth(float depth) {
-	float n = global.camera.x;
-	float f = global.camera.y;
-	float z = depth;
-	return (2.0 * n) / (f + n - z * (f - n));	
-}
+// float linearize_depth(float depth) {
+// 	float n = global.camera.x;
+// 	float f = global.camera.y;
+// 	float z = depth;
+// 	return (2.0 * n) / (f + n - z * (f - n));	
+// }
 
 layout (input_attachment_index = 0, set = 2, binding = 1) uniform subpassInput u_input_color;
 // layout (input_attachment_index = 1, binding = 2) uniform subpassInput u_input_depth;
 
 void main() {
-	vec4 color = subpassLoad(u_input_color).rgba;
+	vec3 color = subpassLoad(u_input_color).rgb;
 	// float depth = subpassLoad(u_input_depth).a;
 	// out_col = compute_color(color, linearize_depth(depth));
 	out_col = vec4(color.rgb, 1.0);

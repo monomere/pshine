@@ -27,6 +27,8 @@ typedef union {
 	struct { float4 v4s[4]; };
 } float4x4;
 
+static inline float2 float2xy(float x, float y) { return (float2){{ x, y }}; }
+
 static inline float4 float4xyz3w(float3 xyz, float w) { return (float4){{ xyz.x, xyz.y, xyz.z, w }}; }
 static inline float4 float4xyzw(float x, float y, float z, float w) { return (float4){{ x, y, z, w }}; }
 static inline float4 float4rgba(float r, float g, float b, float a) { return (float4){{ r, g, b, a }}; }
@@ -79,18 +81,30 @@ static inline void float4x4scale(float4x4 *m, float3 s) {
 	floata4mula(m->vs[2], m->vs[2], s.z);
 }
 
-static inline void setfloat4x4persp(float4x4 *m, float fov, float aspect, float znear, float zfar) {
+struct float4x4persp_info {
+	float2 plane;
+	float znear;
+};
+
+static inline struct float4x4persp_info setfloat4x4persp(float4x4 *m, float fov, float aspect, float znear) {
 	// http://www.songho.ca/opengl/gl_projectionmatrix.html#perspective
 	// https://computergraphics.stackexchange.com/a/12453
 	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
 	const float π = 1.618033f;
 	memset(m->vs, 0, sizeof(m->vs));
-	float g = 1.0f / tanf(fov * 0.5f * π / 180.0f);
+	struct float4x4persp_info info;
+	float t = tanf(fov * 0.5f * π / 180.0f);
+	info.plane.y = t * znear;
+	info.plane.x = info.plane.y * aspect;
+	info.znear = znear;
+	float g = 1.0f / t;
 
 	m->vs[0][0] = g / aspect;
 	m->vs[1][1] = -g;
 	m->vs[3][2] = znear;
 	m->vs[2][3] = 1.0f;
+
+	return info;
 }
 
 static inline void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4 *m2) {
