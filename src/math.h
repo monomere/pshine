@@ -34,7 +34,7 @@ static inline float4 float4xyzw(float x, float y, float z, float w) { return (fl
 static inline float4 float4rgba(float r, float g, float b, float a) { return (float4){{ r, g, b, a }}; }
 
 static inline float3 float3vs(const float vs[3]) { return (float3){{ vs[0], vs[1], vs[2] }}; }
-static inline float3 float3z() { return (float3){{0}}; }
+static inline float3 float3v0() { return (float3){{0}}; }
 static inline float3 float3v(float v) { return (float3){{ v, v, v }}; }
 static inline float3 float3xyz(float x, float y, float z) { return (float3){{ x, y, z }}; }
 static inline float3 float3rgb(float r, float g, float b) { return (float3){{ r, g, b }}; }
@@ -50,6 +50,9 @@ static inline float3 float3norm(float3 v) {
 	float m = float3mag2(v);
 	if (fabsf(m) <= 0.00001f) return (float3){};
 	return float3div(v, sqrtf(m));
+}
+static inline float3 float3cross(float3 a, float3 b) {
+	return float3xyz(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
 
 static inline void setfloat4x4iden(float4x4 *m) {
@@ -86,11 +89,16 @@ struct float4x4persp_info {
 	float znear;
 };
 
+#define π 3.14159265358979f
+
+static inline float minf(float a, float b) { return a < b ? a : b; }
+static inline float maxf(float a, float b) { return a > b ? a : b; }
+static inline float clampf(float x, float a, float b) { return minf(maxf(x, a), b); }
+
 static inline struct float4x4persp_info setfloat4x4persp(float4x4 *m, float fov, float aspect, float znear) {
 	// http://www.songho.ca/opengl/gl_projectionmatrix.html#perspective
 	// https://computergraphics.stackexchange.com/a/12453
 	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
-	const float π = 1.618033f;
 	memset(m->vs, 0, sizeof(m->vs));
 	struct float4x4persp_info info;
 	float t = tanf(fov * 0.5f * π / 180.0f);
@@ -105,6 +113,27 @@ static inline struct float4x4persp_info setfloat4x4persp(float4x4 *m, float fov,
 	m->vs[2][3] = 1.0f;
 
 	return info;
+}
+
+static inline void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, float3 up) {
+	memset(m->vs, 0, sizeof(m->vs));
+	float3 f = float3norm(float3sub(center, eye));
+	float3 s = float3norm(float3cross(up, f));
+	float3 u = float3cross(f, s);
+
+	m->vs[0][0] = s.x;
+	m->vs[1][0] = s.y;
+	m->vs[2][0] = s.z;
+	m->vs[0][1] = u.x;
+	m->vs[1][1] = u.y;
+	m->vs[2][1] = u.z;
+	m->vs[0][2] = f.x;
+	m->vs[1][2] = f.y;
+	m->vs[2][2] = f.z;
+	m->vs[3][0] =-float3dot(s, eye);
+	m->vs[3][1] =-float3dot(u, eye);
+	m->vs[3][2] =-float3dot(f, eye);
+	m->vs[3][3] = 1.0f;
 }
 
 static inline void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4 *m2) {

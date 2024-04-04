@@ -417,7 +417,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	}
 
 	for (uint32_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies[i];
+		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			p->graphics_data = calloc(1, sizeof(struct pshine_planet_graphics_data));
@@ -1512,7 +1512,7 @@ void deinit_frame(struct vulkan_renderer *r, struct per_frame_data *f) {
 static void init_frames(struct vulkan_renderer *r) {
 	size_t planet_count = 0;
 	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies[i];
+		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 		planet_count += b->type == PSHINE_CELESTIAL_BODY_PLANET;
 	}
 	for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
@@ -1533,7 +1533,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	vkDeviceWaitIdle(r->device);
 
 	for (uint32_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies[i];
+		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			deallocate_buffer(r, p->graphics_data->uniform_buffer);
@@ -1583,19 +1583,29 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	float aspect_ratio = r->swapchain_extent.width /(float) r->swapchain_extent.height;
 	float4x4 view_mat = {};
 	setfloat4x4iden(&view_mat);
-	float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
+	setfloat4x4lookat(
+		&view_mat,
+		float3vs(r->game->camera_position.values),
+		float3add(float3vs(r->game->camera_position.values), float3vs(r->game->camera_forward.values)),
+		float3xyz(0.0f, 1.0f, 0.0f)
+	);
+	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
 	float4x4 proj_mat = {};
 	struct float4x4persp_info persp_info = setfloat4x4persp(&proj_mat, 90.0f, aspect_ratio, 0.01f);
 	float4x4 view_proj_mat = {};
 	float4x4mul(&view_proj_mat, &proj_mat, &view_mat);
 
 	{
+		float3 cam_y = float3xyz(0.0f, 1.0f, 0.0f);
+		float3 cam_z = float3norm(float3vs(r->game->camera_forward.values));
+		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
+		cam_y = float3norm(float3cross(cam_z, cam_x));
 		struct global_uniform_data new_data = {
-			.sun = float4xyz3w(float3norm(float3xyz(-2.0f, -1.0f, -1.0f)), 1.0f),
+			.sun = float4xyz3w(float3norm(float3xyz(-2.0f, 2.0f, -0.5f)), 1.0f),
 			.camera = float4xyzw(persp_info.plane.x, persp_info.plane.y, persp_info.znear, 0.0f),
 			.camera_pos = float4xyz3w(float3vs(r->game->camera_position.values), 0.0f),
-			.camera_right = float4xyzw(1.0f, 0.0f, 0.0f, 0.0f),
-			.camera_up = float4xyzw(0.0f, 1.0f, 0.0f, 0.0f),
+			.camera_right = float4xyz3w(cam_x, 0.0f),
+			.camera_up = float4xyz3w(cam_y, 0.0f),
 		};
 		char *data;
 		vmaMapMemory(r->allocator, f->global_uniform_buffer.allocation, (void**)&data);
@@ -1605,12 +1615,13 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	}
 
 	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies[i];
+		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			struct static_mesh_uniform_data new_data = {};
 			float4x4 model_mat = {};
 			setfloat4x4iden(&model_mat);
+			float4x4trans(&model_mat, float3vs(p->as_body.position.values));
 			float4x4scale(&model_mat, float3v(p->as_body.radius));
 			float4x4mul(&new_data.mvp, &view_proj_mat, &model_mat);
 
@@ -1623,7 +1634,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	}
 
 	{
-		struct pshine_celestial_body *b = r->game->celestial_bodies[0];
+		struct pshine_celestial_body *b = r->game->celestial_bodies_own[0];
 		struct atmo_uniform_data new_data = {
 			.density_falloff = 1.19f,
 			.optical_depth_samples = 5,
@@ -1675,7 +1686,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	);
 
 	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies[i];
+		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			vkCmdBindDescriptorSets(

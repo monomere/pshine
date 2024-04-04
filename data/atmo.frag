@@ -24,19 +24,19 @@ vec2 intersect_ray_sphere(
 	vec3 sphere_center,
 	float sphere_radius,
 	vec3 ray_origin,
-	vec3 ray_direction
+	vec3 ray_dir
 ) {
 	vec3 local_ray_origin = ray_origin - sphere_center;
-	float b = 2 * dot(local_ray_origin, ray_direction);
+	float b = dot(local_ray_origin, ray_dir);
 	float c
 		= dot(local_ray_origin, local_ray_origin)
 		- sphere_radius * sphere_radius;
-	float d = b * b - 4.0 * c;
+	float d = b * b - c;
 
 	if (d > 0.0) {
 		float s = sqrt(d);
-		float near = max(0.0, (-b - s) / 2.0);
-		float far = (-b + s) / 2.0;
+		float near = max(0.0, (-b - s));
+		float far = (-b + s);
 		if (far >= 0.0) return vec2(near, far - near);
 	}
 
@@ -44,14 +44,14 @@ vec2 intersect_ray_sphere(
 }
 
 float compute_local_density(vec3 pos) {
-	float height = length(atmo.planet.xyz - pos) - atmo.planet.w;
+	float height = length(pos - atmo.planet.xyz) - atmo.planet.w;
 	float height01 = height / (atmo.radius - atmo.planet.w);
 	return exp(-height01 * atmo.density_falloff) * (1 - height01);
 }
 
 float compute_optical_depth(
 	vec3 ray_origin,
-	vec3 ray_direction,
+	vec3 ray_dir,
 	float ray_length
 ) {
 	vec3 current = ray_origin;
@@ -60,14 +60,14 @@ float compute_optical_depth(
 	for (int i = 0; i < atmo.optical_depth_samples; ++i) {
 		float local_density = compute_local_density(current);
 		total += local_density * ray_step_length;
-		current += ray_direction * ray_step_length;
+		current += ray_dir * ray_step_length;
 	}
 	return total;
 }
 
 float compute_light(
 	vec3 ray_origin,
-	vec3 ray_direction,
+	vec3 ray_dir,
 	float ray_length
 ) {
 	vec3 current = ray_origin;
@@ -78,22 +78,22 @@ float compute_light(
 			atmo.planet.xyz,
 			atmo.radius,
 			current,
-			normalize(-global.sun.xyz)
+			normalize(global.sun.xyz)
 		).y;
 		float sun_ray_optical_depth = compute_optical_depth(
 			current,
-			normalize(-global.sun.xyz),
+			normalize(global.sun.xyz),
 			sun_ray_len
 		);
 		float view_ray_optical_depth = compute_optical_depth(
 			current,
-			-ray_direction,
+			-normalize(ray_dir),
 			ray_step_length * i
 		);
 		float transmittance = exp(-(sun_ray_optical_depth + view_ray_optical_depth));
 		float local_density = compute_local_density(current);
 		total += local_density * transmittance * ray_step_length;
-		current += ray_direction * ray_step_length;
+		current += ray_dir * ray_step_length;
 	}
 	return total;
 }
@@ -109,23 +109,26 @@ vec4 compute_color(vec4 col, float depth) {
 		+ global.camera_up.xyz * ray_uv.y;
 
 	vec3 ray_origin = global.camera_pos.xyz;
-	vec3 ray_direction = normalize(ray_target);
+	vec3 ray_dir = normalize(ray_target);
 
 	float dst_to_surface = intersect_ray_sphere(
 		atmo.planet.xyz,
 		atmo.planet.w,
 		ray_origin,
-		ray_direction
+		ray_dir
 	).x;
 
 	vec2 hit = intersect_ray_sphere(
 		atmo.planet.xyz,
 		atmo.radius,
 		ray_origin,
-		ray_direction
+		ray_dir
 	);
 
 	float dst_to_atmo = hit.x;
+
+	if (dst_to_atmo > depth) return col;
+
 	float dst_thru_atmo = min(
 		hit.y,
 		dst_to_surface - dst_to_atmo
@@ -136,8 +139,12 @@ vec4 compute_color(vec4 col, float depth) {
 		// 	dst_thru_atmo / (2.0 * atmo.radius)
 		// ), 1.0);
 		const float epsilon = 0.0001;
-		vec3 ray_origin_atmo = ray_origin + ray_direction * (dst_to_atmo + epsilon);
-		float light = compute_light(ray_origin_atmo, ray_direction, dst_thru_atmo - epsilon * 2.0);
+		vec3 ray_origin_atmo = ray_origin + ray_dir * (dst_to_atmo + epsilon);
+		float light = compute_light(
+			ray_origin_atmo,
+			ray_dir,
+			dst_thru_atmo - epsilon * 2.0
+		);
 		return col * (1 - light) + light;
 	}
 

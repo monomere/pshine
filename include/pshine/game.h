@@ -18,10 +18,15 @@ enum pshine_celestial_body_type {
 	PSHINE_CELESTIAL_BODY_PLANET,
 };
 
-typedef union pshine_position3d {
+typedef union pshine_point3d {
 	struct { float x, y, z; } xyz;
 	float values[3];
-} pshine_position3d;
+} pshine_point3d;
+
+typedef union pshine_vector3d {
+	struct { float x, y, z; } xyz;
+	float values[3];
+} pshine_vector3d;
 
 struct pshine_celestial_body {
 	enum pshine_celestial_body_type type;
@@ -29,7 +34,7 @@ struct pshine_celestial_body {
 	struct pshine_orbit_info orbit;
 	float radius;
 	bool is_static;
-	pshine_position3d position;
+	pshine_point3d position;
 };
 
 struct pshine_atmosphere_info {
@@ -84,9 +89,11 @@ bool pshine_is_key_down(struct pshine_renderer *renderer, enum pshine_key key);
 
 struct pshine_game {
 	size_t celestial_body_count;
-	struct pshine_celestial_body **celestial_bodies;
+	struct pshine_celestial_body **celestial_bodies_own;
 	struct pshine_renderer *renderer;
-	pshine_position3d camera_position;
+	pshine_point3d camera_position;
+	pshine_vector3d camera_forward;
+	struct pshine_game_data *data_own;
 };
 
 void pshine_init_game(struct pshine_game *game);
