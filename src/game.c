@@ -154,7 +154,7 @@ static void init_planet(struct pshine_planet *planet, float radius, float3 cente
 	planet->as_body.parent_ref = NULL;
 	*(float3*)planet->as_body.position.values = center;
 	planet->atmosphere.density_falloff = 4.0f;
-	planet->atmosphere.height = 2.0f;
+	planet->atmosphere.height = radius * 0.5f;
 	planet->atmosphere.scattering_strength = 20.0f;
 	planet->atmosphere.wavelengths[0] = 700;
 	planet->atmosphere.wavelengths[1] = 530;
@@ -177,7 +177,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->celestial_body_count = 2;
 	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
 	game->celestial_bodies_own[0] = calloc(1, sizeof(struct pshine_planet));
-	init_planet((void*)game->celestial_bodies_own[0], 10.0f, float3v0());
+	init_planet((void*)game->celestial_bodies_own[0], 1.0f, float3v0());
 	game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
 	init_planet((void*)game->celestial_bodies_own[1], 5.0f, float3xyz(0.0f, -30.0f, 0.0f));
 	game->camera_position.xyz.z = -40.0f;
@@ -276,6 +276,15 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F) && !game->data_own->last_key_states[PSHINE_KEY_F]) {
 		game->data_own->movement_mode = !game->data_own->movement_mode;
+	}
+
+	{
+		struct pshine_planet *p = (void*)game->celestial_bodies_own[0];
+
+		if (pshine_is_key_down(game->renderer, PSHINE_KEY_UP))
+			p->atmosphere.height += 0.2 * delta_time;
+		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_DOWN))
+			p->atmosphere.height -= 0.2 * delta_time;
 	}
 
 	if (game->data_own->movement_mode) {

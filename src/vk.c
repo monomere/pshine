@@ -1648,7 +1648,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		struct atmo_uniform_data new_data = {
 			.density_falloff = p->atmosphere.density_falloff,
 			.optical_depth_samples = 5,
-			.scatter_point_samples = 5,
+			.scatter_point_samples = 30,
 			.planet = float4xyz3w(float3vs(p->as_body.position.values), p->as_body.radius),
 			.radius = p->as_body.radius + p->atmosphere.height,
 			.blend_factor = r->game->atmo_blend_factor,
