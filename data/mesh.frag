@@ -5,7 +5,10 @@ layout (location = 0) out vec4 o_color;
 layout (location = 0) in vec3 i_normal;
 
 layout (set = 0, binding = 0) uniform GLOBAL_UNIFORMS {
+	mat4 view;
+	mat4 proj;
 	vec4 sun;
+	vec4 camera;
 } global;
 
 layout (set = 1, binding = 0) uniform MATERIAL_UNIFORMS {

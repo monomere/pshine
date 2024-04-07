@@ -38,7 +38,10 @@ struct pshine_celestial_body {
 };
 
 struct pshine_atmosphere_info {
+	float wavelengths[3];
 	float density_falloff;
+	float height;
+	float scattering_strength;
 };
 
 struct pshine_planet_graphics_data;
@@ -84,8 +87,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 void pshine_deinit_renderer(struct pshine_renderer *renderer);
 void pshine_destroy_renderer(struct pshine_renderer *renderer);
 
-enum pshine_key;
-bool pshine_is_key_down(struct pshine_renderer *renderer, enum pshine_key key);
+const uint8_t *pshine_get_key_states(struct pshine_renderer *renderer);
 
 struct pshine_game {
 	size_t celestial_body_count;
@@ -94,6 +96,7 @@ struct pshine_game {
 	pshine_point3d camera_position;
 	pshine_vector3d camera_forward;
 	struct pshine_game_data *data_own;
+	float atmo_blend_factor;
 };
 
 void pshine_init_game(struct pshine_game *game);
@@ -222,7 +225,11 @@ enum pshine_key {
 	PSHINE_KEY_RIGHT_ALT = 346,
 	PSHINE_KEY_RIGHT_SUPER = 347,
 	PSHINE_KEY_MENU = 348,
-	PSHINE_KEY_LAST = PSHINE_KEY_MENU,
+	PSHINE_KEY_COUNT_ = PSHINE_KEY_MENU + 1,
 };
+
+static inline bool pshine_is_key_down(struct pshine_renderer *renderer, enum pshine_key key) {
+	return pshine_get_key_states(renderer)[key];
+}
 
 #endif // PSHINE_GAME_H_

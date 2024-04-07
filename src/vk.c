@@ -21,11 +21,10 @@ enum queue_family {
 #define FRAMES_IN_FLIGHT 2
 
 struct global_uniform_data {
+	float4x4 view;
+	float4x4 proj;
 	float4 sun;
-	float4 camera; // plane, znear, unused
-	float4 camera_up;
-	float4 camera_right;
-	float4 camera_pos;
+	float4 camera;
 };
 
 struct atmo_uniform_data {
@@ -34,6 +33,9 @@ struct atmo_uniform_data {
 	float density_falloff;
 	unsigned int optical_depth_samples;
 	unsigned int scatter_point_samples;
+	float blend_factor;
+	float _pad[3];
+	float3 wavelengths;
 };
 
 struct material_uniform_data {
@@ -147,6 +149,8 @@ struct vulkan_renderer {
 	VmaAllocator allocator;
 	struct vulkan_mesh *sphere_mesh;
 	// PSHINE_DYNA_(struct mesh) meshes;
+
+	uint8_t *key_states;
 };
 
 VkResult check_vk_impl_(struct pshine_debug_file_loc where, VkResult result, const char *expr) {
@@ -169,10 +173,6 @@ struct pshine_renderer *pshine_create_renderer() {
 void pshine_destroy_renderer(struct pshine_renderer *renderer) {
 	struct vulkan_renderer *r = (void*)renderer;
 	free(r);
-}
-
-static void error_cb_glfw_(int error, const char *msg) {
-	PSHINE_ERROR("glfw error %d: %s", error, msg);
 }
 
 static void init_glfw(struct vulkan_renderer *r); static void deinit_glfw(struct vulkan_renderer *r);
@@ -385,6 +385,8 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	r->game = game;
 	r->as_base.name = "Vulkan Renderer";
 
+	r->key_states = calloc(PSHINE_KEY_COUNT_, sizeof(uint8_t));
+
 	init_glfw(r);
 	init_vulkan(r);
 	init_swapchain(r);
@@ -458,6 +460,15 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 
 // Vulkan and GLFW
 
+static void error_cb_glfw_(int error, const char *msg) {
+	PSHINE_ERROR("glfw error %d: %s", error, msg);
+}
+
+static void key_cb_glfw_(GLFWwindow *window, int key, int scancode, int action, int mods) {
+	struct vulkan_renderer *r = glfwGetWindowUserPointer(window);
+	r->key_states[key] = action;
+}
+
 static void init_glfw(struct vulkan_renderer *r) {
 	glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
 	glfwSetErrorCallback(&error_cb_glfw_);
@@ -465,7 +476,9 @@ static void init_glfw(struct vulkan_renderer *r) {
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	r->window = glfwCreateWindow(1920 / 1.5f, 1080 / 1.5f, "pshine2", NULL, NULL);
+	glfwSetWindowUserPointer(r->window, r);
 	if (r->window == NULL) PSHINE_PANIC("could not create window");
+	glfwSetKeyCallback(r->window, &key_cb_glfw_);
 }
 
 static void deinit_glfw(struct vulkan_renderer *r) {
@@ -664,12 +677,13 @@ static VkFormat find_optimal_format(
 		&& (properties.linearTilingFeatures & required_feature_flags) == required_feature_flags) {
 			found_format = candidate_format;
 			found = true;
+			return found_format;
 		} else if (tiling == VK_IMAGE_TILING_OPTIMAL
 		&& (properties.optimalTilingFeatures & required_feature_flags) == required_feature_flags) {
 			found_format = candidate_format;
 			found = true;
+			return found_format;
 		}
-
 	}
 	PSHINE_CHECK(found, "did not find good depth format");
 	return found_format;
@@ -680,7 +694,7 @@ static void init_swapchain(struct vulkan_renderer *r) {
 	CHECKVK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(r->physical_device, r->surface, &surface_capabilities));
 	r->swapchain_extent = get_swapchain_extent(r, &surface_capabilities);
 	r->surface_format = find_surface_format(r);
-	r->depth_format = find_optimal_format(r, 2, (VkFormat[]){
+	r->depth_format = find_optimal_format(r, 1, (VkFormat[]){
 		VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT
 	}, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_TILING_OPTIMAL);
 	PSHINE_INFO("swapchain extent: %ux%u", r->swapchain_extent.width, r->swapchain_extent.height);
@@ -1554,6 +1568,8 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	deinit_swapchain(r);
 	deinit_vulkan(r);
 	deinit_glfw(r);
+
+	free(r->key_states);
 }
 
 static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t image_index) {
@@ -1561,23 +1577,12 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	{
 		struct material_uniform_data new_data = {
-			.color = float4rgba(0.6f, 0.4f, 0.8f, 1.0f)
+			.color = float4rgba(0.1f, 0.3f, 0.8f, 1.0f)
 		};
 		struct material_uniform_data *data;
 		vmaMapMemory(r->allocator, f->material_uniform_buffer.allocation, (void**)&data);
 		memcpy(data, &new_data, sizeof(new_data));
 		vmaUnmapMemory(r->allocator, f->material_uniform_buffer.allocation);
-	}
-	{
-		struct atmo_uniform_data new_data = {
-			.planet = float4rgba(0.0f, 0.0f, 0.0f, 100.0f),
-			.density_falloff = 0.5f
-		};
-		char *data;
-		vmaMapMemory(r->allocator, f->atmo_uniform_buffer.allocation, (void**)&data);
-		data += get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * current_frame;
-		memcpy(data, &new_data, sizeof(new_data));
-		vmaUnmapMemory(r->allocator, f->atmo_uniform_buffer.allocation);
 	}
 
 	float aspect_ratio = r->swapchain_extent.width /(float) r->swapchain_extent.height;
@@ -1591,7 +1596,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	);
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
 	float4x4 proj_mat = {};
-	struct float4x4persp_info persp_info = setfloat4x4persp(&proj_mat, 90.0f, aspect_ratio, 0.01f);
+	struct float4x4persp_info persp_info = setfloat4x4persp(&proj_mat, 60.0f, aspect_ratio, 0.01f);
 	float4x4 view_proj_mat = {};
 	float4x4mul(&view_proj_mat, &proj_mat, &view_mat);
 
@@ -1601,11 +1606,10 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
 		cam_y = float3norm(float3cross(cam_z, cam_x));
 		struct global_uniform_data new_data = {
-			.sun = float4xyz3w(float3norm(float3xyz(-2.0f, 2.0f, -0.5f)), 1.0f),
-			.camera = float4xyzw(persp_info.plane.x, persp_info.plane.y, persp_info.znear, 0.0f),
-			.camera_pos = float4xyz3w(float3vs(r->game->camera_position.values), 0.0f),
-			.camera_right = float4xyz3w(cam_x, 0.0f),
-			.camera_up = float4xyz3w(cam_y, 0.0f),
+			.proj = proj_mat,
+			.view = view_mat,
+			.sun = float4xyz3w(float3norm(float3xyz(-1.0f, 0.0f, 0.0f)), 1.0f),
+			.camera = float4xyz3w(float3vs(r->game->camera_position.values), persp_info.znear),
 		};
 		char *data;
 		vmaMapMemory(r->allocator, f->global_uniform_buffer.allocation, (void**)&data);
@@ -1634,13 +1638,21 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	}
 
 	{
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[0];
+		struct pshine_planet *p = (void*)r->game->celestial_bodies_own[0];
+		
+		float3 wavelengths = float3rgb(
+			powf(400.0f / p->atmosphere.wavelengths[0], 4) * p->atmosphere.scattering_strength,
+			powf(400.0f / p->atmosphere.wavelengths[1], 4) * p->atmosphere.scattering_strength,
+			powf(400.0f / p->atmosphere.wavelengths[2], 4) * p->atmosphere.scattering_strength
+		);
 		struct atmo_uniform_data new_data = {
-			.density_falloff = 1.19f,
+			.density_falloff = p->atmosphere.density_falloff,
 			.optical_depth_samples = 5,
 			.scatter_point_samples = 5,
-			.planet = float4xyz3w(float3vs(b->position.values), b->radius),
-			.radius = b->radius + 20.0f
+			.planet = float4xyz3w(float3vs(p->as_body.position.values), p->as_body.radius),
+			.radius = p->as_body.radius + p->atmosphere.height,
+			.blend_factor = r->game->atmo_blend_factor,
+			.wavelengths = wavelengths
 		};
 		char *data_raw;
 		vmaMapMemory(r->allocator, f->atmo_uniform_buffer.allocation, (void**)&data_raw);
@@ -1776,7 +1788,7 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 	}
 }
 
-bool pshine_is_key_down(struct pshine_renderer *renderer, enum pshine_key key) {
+const uint8_t *pshine_get_key_states(struct pshine_renderer *renderer) {
 	struct vulkan_renderer *r = (void*)renderer;
-	return glfwGetKey(r->window, key);
+	return r->key_states;
 }

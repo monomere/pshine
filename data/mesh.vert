@@ -8,6 +8,10 @@ layout (location = 0) out vec3 o_normal;
 
 layout (set = 0, binding = 0) uniform GLOBAL_UNIFORMS {
 	vec4 unused;
+	mat4 view;
+	mat4 proj;
+	vec4 sun;
+	vec4 camera;
 } global;
 
 layout (set = 2, binding = 0) uniform OBJECT_UNIFORMS {

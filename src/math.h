@@ -1,5 +1,6 @@
 #ifndef PSHINE_IMPL_MATH_H_
 #define PSHINE_IMPL_MATH_H_
+#include "pshine/util.h"
 #include <stddef.h>
 #include <string.h>
 #include <math.h>
@@ -79,9 +80,18 @@ static inline void float4x4trans(float4x4 *m, float3 d) {
 }
 
 static inline void float4x4scale(float4x4 *m, float3 s) {
-	floata4mula(m->vs[0], m->vs[0], s.x);
-	floata4mula(m->vs[1], m->vs[1], s.y);
-	floata4mula(m->vs[2], m->vs[2], s.z);
+	m->vs[0][0] *= s.x;
+	m->vs[0][1] *= s.y;
+	m->vs[0][2] *= s.z;
+	m->vs[1][0] *= s.x;
+	m->vs[1][1] *= s.y;
+	m->vs[1][2] *= s.z;
+	m->vs[2][0] *= s.x;
+	m->vs[2][1] *= s.y;
+	m->vs[2][2] *= s.z;
+	m->vs[3][0] *= s.x;
+	m->vs[3][1] *= s.y;
+	m->vs[3][2] *= s.z;
 }
 
 struct float4x4persp_info {
@@ -95,7 +105,30 @@ static inline float minf(float a, float b) { return a < b ? a : b; }
 static inline float maxf(float a, float b) { return a > b ? a : b; }
 static inline float clampf(float x, float a, float b) { return minf(maxf(x, a), b); }
 
-static inline struct float4x4persp_info setfloat4x4persp(float4x4 *m, float fov, float aspect, float znear) {
+static inline struct float4x4persp_info setfloat4x4persp_rhoz(
+	float4x4 *m, float fov, float aspect, float znear, float zfar
+) {
+	// https://gist.github.com/pezcode/1609b61a1eedd207ec8c5acf6f94f53a
+	memset(m->vs, 0, sizeof(m->vs));
+	struct float4x4persp_info info;
+	float t = tanf(fov * 0.5f * π / 180.0f);
+	info.plane.y = t * znear;
+	info.plane.x = info.plane.y * aspect;
+	info.znear = znear;
+	float k = znear / (znear - zfar);
+	float g = 1.0f / t;
+	m->vs[0][0] = g / aspect;
+	m->vs[1][1] = -g;
+	m->vs[2][2] = -k;
+	m->vs[2][3] = 1.0f;
+	m->vs[3][2] = -znear * k;
+
+	return info;
+}
+
+static inline struct float4x4persp_info setfloat4x4persp_rhozi(
+	float4x4 *m, float fov, float aspect, float znear
+) {
 	// http://www.songho.ca/opengl/gl_projectionmatrix.html#perspective
 	// https://computergraphics.stackexchange.com/a/12453
 	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
@@ -115,6 +148,11 @@ static inline struct float4x4persp_info setfloat4x4persp(float4x4 *m, float fov,
 	return info;
 }
 
+static inline struct float4x4persp_info setfloat4x4persp(float4x4 *m, float fov, float aspect, float znear) {
+	// return setfloat4x4persp_rhoz(m, fov, aspect, znear, 1000.0f);
+	return setfloat4x4persp_rhozi(m, fov, aspect, znear);
+}
+
 static inline void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, float3 up) {
 	memset(m->vs, 0, sizeof(m->vs));
 	float3 f = float3norm(float3sub(center, eye));
@@ -130,9 +168,9 @@ static inline void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, flo
 	m->vs[0][2] = f.x;
 	m->vs[1][2] = f.y;
 	m->vs[2][2] = f.z;
-	m->vs[3][0] =-float3dot(s, eye);
-	m->vs[3][1] =-float3dot(u, eye);
-	m->vs[3][2] =-float3dot(f, eye);
+	m->vs[3][0] = -float3dot(s, eye);
+	m->vs[3][1] = -float3dot(u, eye);
+	m->vs[3][2] = -float3dot(f, eye);
 	m->vs[3][3] = 1.0f;
 }
 
