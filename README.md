@@ -30,8 +30,12 @@ wget -P include https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/Vulka
 
 ### Patching owl
 
+<<<<<<< HEAD
 TBD. The shader language compiler (giraffe) uses [owl](https://github.com/ianh/owl), but it doesn't have a gitignore and
 doesn't prefix some of the symbols in the generated header.
+=======
+TBD. The shader language compiler (giraffe) uses [owl](https://github.com/ianh/owl), but it lacks some stuff.
+>>>>>>> 53ae36362101bf69181056175a58b60f9c2075bf
 
 ## Building
 
