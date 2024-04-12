@@ -28,6 +28,10 @@ wget -P src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
 wget -P include https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
 ```
 
+### Patching owl
+
+TBD. The shader language compiler (giraffe) uses [owl](https://github.com/ianh/owl), but it lacks some stuff.
+
 ## Building
 
 > requirements: ninja, gcc-compatible c/c++ compiler, glfw

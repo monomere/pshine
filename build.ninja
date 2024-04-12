@@ -41,5 +41,5 @@ rule owl
 import-modname = pshine
 subninja ninja/import.ninja
 
-import-modname = giraffe
-subninja ninja/import.ninja
+# import-modname = giraffe
+# subninja ninja/import.ninja
