@@ -1,0 +1,5 @@
+mod = ${import-modname}
+builddir = build/${import-modname}
+
+include $mod/config.ninja
+subninja $mod/build.ninja

@@ -1,0 +1,4 @@
+[submodule "vendor/owl"]
+	path = vendor/owl
+	url = https://github.com/ianh/owl.git
+	ignore = untracked

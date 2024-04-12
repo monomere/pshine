@@ -1,0 +1,33 @@
+#ifndef COMMON_GLSLI_
+#define COMMON_GLSLI_
+
+const float MAX_FLOAT = 3.402823466e+38;
+const float PI = 3.14159265358979;
+
+#define BUFFER(S, name) _Uniform_##S { S name; }
+
+struct GlobalUniforms {
+	vec4 sun;
+	vec4 camera;        // xyz, w=near_plane.z
+	vec4 camera_right;  // xyz, w=near_plane.x
+	vec4 camera_up;     // xyz, w=near_plane.y
+};
+
+struct AtmosphereUniforms {
+	vec4 planet;     // xyz, w=radius
+	vec4 coefs_ray;  // xyz=k_ray, w=falloff_ray
+	vec4 coefs_mie;  // x=k_mie, y=coef_mie_ext, z=g, w=falloff_mie
+	float radius;
+	uint optical_depth_samples;
+	uint scatter_point_samples;
+};
+
+struct StaticMeshUniforms {
+	mat4 mvp;
+};
+
+struct MaterialUniforms {
+	vec4 color;
+};
+
+#endif // COMMON_GLSLI_

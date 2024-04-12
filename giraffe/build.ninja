@@ -1,0 +1,15 @@
+
+build $mod/src/giraffe/parser.h: owl $mod/src/giraffe/grammar.owl
+build $builddir/giraffe/parser.c.o: cc $mod/src/giraffe/parser.c | $mod/src/giraffe/parser.h
+build $builddir/giraffe/lexer.c.o: cc $mod/src/giraffe/lexer.c
+build $builddir/giraffe/source.c.o: cc $mod/src/giraffe/source.c
+build $builddir/giraffe/main.c.o: cc $mod/src/giraffe/main.c
+build $builddir/pshine/util.c.o: cc pshine/src/pshine/util.c
+build $builddir/pshine/$platform.c.o: cc pshine/src/pshine/$platform.c
+build $builddir/main: ld $
+  $builddir/giraffe/parser.c.o $
+  $builddir/giraffe/lexer.c.o $
+  $builddir/giraffe/main.c.o $
+  $builddir/giraffe/source.c.o $
+  $builddir/pshine/util.c.o $
+  $builddir/pshine/$platform.c.o

@@ -1,6 +1,7 @@
 # Ninja and clangd stuff.
 .ninja_log
 .cache
+compile_commands.json
 
 # GL3W script.
 gl3w_gen.py
@@ -9,7 +10,7 @@ gl3w_gen.py
 build
 
 # 3rd-party files, GL3W, etc.
-src/vendor
+**/vendor
 
 # Vulkan-related 3rd-party headers.
 include/vk_mem_alloc.h

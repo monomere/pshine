@@ -1,0 +1,34 @@
+
+build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c
+build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c
+build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c
+build $builddir/pshine/$platform.c.o : cc $mod/src/pshine/$platform.c
+build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c
+
+build $builddir/vendor/vk_mem_alloc.cc.o : cxx $mod/src/vendor/vk_mem_alloc.cc
+build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
+
+build $builddir/data/tri.vert.spv  : glslc data/tri.vert
+build $builddir/data/tri.frag.spv  : glslc data/tri.frag
+build $builddir/data/mesh.vert.spv : glslc data/mesh.vert
+build $builddir/data/mesh.frag.spv : glslc data/mesh.frag
+build $builddir/data/atmo.vert.spv : glslc data/atmo.vert
+build $builddir/data/atmo.frag.spv : glslc data/atmo.frag
+build $builddir/data/atmo_lut.comp.spv : glslc data/atmo_lut.comp
+
+build $builddir/main: ld $
+  $builddir/pshine/vk.c.o $
+  $builddir/pshine/game.c.o $
+  $builddir/pshine/main.c.o $
+  $builddir/pshine/$platform.c.o $
+  $builddir/pshine/util.c.o $
+  $builddir/vendor/vk_mem_alloc.cc.o $
+  $builddir/vendor/volk.c.o $
+  | $
+  $builddir/data/tri.vert.spv $
+  $builddir/data/tri.frag.spv $
+  $builddir/data/mesh.vert.spv $
+  $builddir/data/mesh.frag.spv $
+  $builddir/data/atmo.vert.spv $
+  $builddir/data/atmo.frag.spv $
+  $builddir/data/atmo_lut.comp.spv

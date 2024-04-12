@@ -216,7 +216,7 @@ static const enum pshine_key
 	K_ZOOM_IN = PSHINE_KEY_Z,
 	K_ZOOM_OUT = PSHINE_KEY_X;
 
-static const float MOVE_SPEED = 10.0f;
+static const float MOVE_SPEED = 1.0f;
 static const float ROTATE_SPEED = 1.0f;
 
 [[maybe_unused]]

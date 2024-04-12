@@ -1,0 +1,9 @@
+---
+BasedOnStyle: Google
+TabWidth: 2
+IndentWidth: 2
+ContinuationIndentWidth: 2
+BreakBeforeBraces: Attach
+ColumnLimit: 100
+AlignAfterOpenBracket: BlockIndent
+UseTab: ForContinuationAndIndentation

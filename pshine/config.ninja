@@ -1,0 +1,13 @@
+
+cxxwarns = -Wall -Wno-unused-variable -Wno-unused-function -Wno-nullability-completeness
+cwarns = -Wall
+
+opt = 1
+cflags = -std=c2x -I$mod/include/vendor -I$mod/include $cwarns
+cxxflags = $cxxstdlib -std=c++2b -I$mod/include/vendor -I$mod/include $cxxwarns
+
+debug = -g
+debugc =
+debugcxx =
+
+libs = -lglfw -lm

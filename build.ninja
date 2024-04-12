@@ -1,21 +1,23 @@
-include build.llvm.ninja
+include ninja/build.llvm.ninja
+platform = unix
 
 ld = $cxx $cxxstdlib $cxxld
 
 opt = 1
-cflags = -std=c2x -Iinclude
-cxxflags = $cxxstdlib -std=c++2b -Iinclude -Wno-nullability-completeness
+cflags = -std=c2x
+cxxflags = $cxxstdlib -std=c++2b -Wno-nullability-completeness
 
 glslc = glslc
 glslflags =
 
-debug = -g
+debug =
 debugc =
-# -fsanitize=address,undefined
 debugcxx =
 
-libs = -lglfw -lm
-platform = unix
+libs =
+
+owlprefix = owl
+owl = vendor/owl/owl
 
 rule cc
   command = $cc -c $in -o $out $cflags -O$opt $debug $debugc -MD -MF $out.d
@@ -32,28 +34,12 @@ rule glslc
 rule ld
   command = $ld $in -o $out $libs $debugc
 
-build build/vk.c.o: cc src/vk.c
-build build/game.c.o: cc src/game.c
-build build/main.c.o: cc src/main.c
-build build/data/tri.vert.spv: glslc data/tri.vert
-build build/data/tri.frag.spv: glslc data/tri.frag
-build build/data/mesh.vert.spv: glslc data/mesh.vert
-build build/data/mesh.frag.spv: glslc data/mesh.frag
-build build/data/atmo.vert.spv: glslc data/atmo.vert
-build build/data/atmo.frag.spv: glslc data/atmo.frag
-build build/vk_mem_alloc.cc.o: cxx src/vk_mem_alloc.cc
-build build/vendor/volk.c.o: cc src/vendor/volk.c
-build build/$platform.c.o: cc src/$platform.c
-build build/util.c.o: cc src/util.c
-build build/main: ld $
-  build/vk.c.o $
-  build/main.c.o $
-  build/game.c.o $
-  build/util.c.o $
-  build/$platform.c.o $
-  build/vendor/volk.c.o $
-  build/vk_mem_alloc.cc.o $
-  | $
-  build/data/tri.vert.spv build/data/tri.frag.spv $
-  build/data/mesh.vert.spv build/data/mesh.frag.spv $
-  build/data/atmo.vert.spv build/data/atmo.frag.spv
+rule owl
+  command = $owl -c $in -p $owlprefix -o $out
+
+
+import-modname = pshine
+subninja ninja/import.ninja
+
+import-modname = giraffe
+subninja ninja/import.ninja

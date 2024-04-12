@@ -1,0 +1,9 @@
+
+opt = 1
+cflags = -std=c2x -I$mod/include/vendor -I$mod/include -Ipshine/include -Wall
+
+debug = -g
+debugc =
+debugcxx =
+
+libs = -lglfw -lm
