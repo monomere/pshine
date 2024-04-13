@@ -112,4 +112,14 @@ Key|Action
 <kbd>W</kbd>/<kbd>S</kbd> | Move forward/backward
 <kbd>Shift</kbd>/<kbd>Space</kbd> | Move down/up
 
+## TODO
 
+- [ ] Use double precision for position data and etc.
+- [ ] Use near-origin coordinates for the "player".
+- [ ] Velocty reference-frame.
+- [ ] Fake perspective for celestial bodies.
+
+### Useful stuff
+
+- [Unite 2013 - Building a new universe in Kerbal Space Program](https://www.youtube.com/watch?v=mXTxQko-JH0)
+  how ksp does stuff!
