@@ -8,6 +8,17 @@ build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c
 build $builddir/vendor/vk_mem_alloc.cc.o : cxx $mod/src/vendor/vk_mem_alloc.cc
 build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
 
+build $builddir/vendor/cimgui/backends/cimgui_impl_glfw.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_glfw.cpp
+build $builddir/vendor/cimgui/backends/cimgui_impl_vulkan.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_vulkan.cpp
+build $builddir/vendor/imgui/backends/imgui_impl_glfw.cpp.o : cxx vendor/imgui/backends/imgui_impl_glfw.cpp
+build $builddir/vendor/imgui/backends/imgui_impl_vulkan.cpp.o : cxx vendor/imgui/backends/imgui_impl_vulkan.cpp
+build $builddir/vendor/cimgui/cimgui.cpp.o       : cxx $mod/src/vendor/cimgui/cimgui.cpp
+build $builddir/vendor/imgui/imgui.cpp.o         : cxx vendor/imgui/imgui.cpp
+build $builddir/vendor/imgui/imgui_demo.cpp.o    : cxx vendor/imgui/imgui_demo.cpp
+build $builddir/vendor/imgui/imgui_draw.cpp.o    : cxx vendor/imgui/imgui_draw.cpp
+build $builddir/vendor/imgui/imgui_tables.cpp.o  : cxx vendor/imgui/imgui_tables.cpp
+build $builddir/vendor/imgui/imgui_widgets.cpp.o : cxx vendor/imgui/imgui_widgets.cpp
+
 build $builddir/data/tri.vert.spv  : glslc data/tri.vert
 build $builddir/data/tri.frag.spv  : glslc data/tri.frag
 build $builddir/data/mesh.vert.spv : glslc data/mesh.vert
@@ -24,6 +35,16 @@ build $builddir/main: ld $
   $builddir/pshine/util.c.o $
   $builddir/vendor/vk_mem_alloc.cc.o $
   $builddir/vendor/volk.c.o $
+  $builddir/vendor/cimgui/cimgui.cpp.o $
+  $builddir/vendor/imgui/imgui.cpp.o $
+  $builddir/vendor/imgui/imgui_demo.cpp.o $
+  $builddir/vendor/imgui/imgui_draw.cpp.o $
+  $builddir/vendor/imgui/imgui_tables.cpp.o $
+  $builddir/vendor/imgui/imgui_widgets.cpp.o $
+  $builddir/vendor/cimgui/backends/cimgui_impl_glfw.cpp.o $
+  $builddir/vendor/cimgui/backends/cimgui_impl_vulkan.cpp.o $
+  $builddir/vendor/imgui/backends/imgui_impl_glfw.cpp.o $
+  $builddir/vendor/imgui/backends/imgui_impl_vulkan.cpp.o $
   | $
   $builddir/data/tri.vert.spv $
   $builddir/data/tri.frag.spv $

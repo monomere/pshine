@@ -2,6 +2,7 @@
 #include <string.h>
 #include "math.h"
 #include <pshine/util.h>
+#include <cimgui/cimgui.h>
 
 typedef struct pshine_static_mesh_vertex planet_vertex;
 
@@ -145,7 +146,7 @@ void generate_sphere_mesh(size_t n, struct pshine_mesh_data *m) {
 }
 
 void pshine_generate_planet_mesh(const struct pshine_planet *planet, struct pshine_mesh_data *out_mesh) {
-	generate_sphere_mesh(20, out_mesh);
+	generate_sphere_mesh(48, out_mesh);
 }
 
 static void init_planet(struct pshine_planet *planet, float radius, float3 center) {
@@ -153,22 +154,34 @@ static void init_planet(struct pshine_planet *planet, float radius, float3 cente
 	planet->as_body.radius = radius;
 	planet->as_body.parent_ref = NULL;
 	*(float3*)planet->as_body.position.values = center;
-	planet->atmosphere.density_falloff = 4.0f;
-	planet->atmosphere.height = radius * 0.5f;
-	planet->atmosphere.scattering_strength = 20.0f;
-	planet->atmosphere.wavelengths[0] = 700;
-	planet->atmosphere.wavelengths[1] = 530;
-	planet->atmosphere.wavelengths[2] = 440;
+	planet->has_atmosphere = true;
+	// similar to Earth, where the radius of earth
+	// is 6371km and the atmosphere height is 100km
+	planet->atmosphere.height = 0.0157f * planet->as_body.radius;
+	planet->atmosphere.rayleigh_coefs[0] = 3.8f;
+	planet->atmosphere.rayleigh_coefs[1] = 13.5f;
+	planet->atmosphere.rayleigh_coefs[2] = 33.1f;
+	planet->atmosphere.rayleigh_falloff = 20.0f;
+	planet->atmosphere.mie_coef = 21.0f;
+	planet->atmosphere.mie_ext_coef = 1.1f;
+	planet->atmosphere.mie_g_coef = -0.87f;
+	planet->atmosphere.mie_falloff = 50.0f;
 }
 
 static void deinit_planet(struct pshine_planet *planet) {
 	(void)planet;
 }
 
+struct ship {
+	float3 pos;
+	
+};
+
 struct pshine_game_data {
 	float camera_yaw, camera_pitch;
 	float camera_dist;
 	int movement_mode;
+	float move_speed;
 	uint8_t last_key_states[PSHINE_KEY_COUNT_];
 };
 
@@ -177,16 +190,17 @@ void pshine_init_game(struct pshine_game *game) {
 	game->celestial_body_count = 2;
 	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
 	game->celestial_bodies_own[0] = calloc(1, sizeof(struct pshine_planet));
-	init_planet((void*)game->celestial_bodies_own[0], 1.0f, float3v0());
+	init_planet((void*)game->celestial_bodies_own[0], 6371.0f, float3v0());
 	game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
-	init_planet((void*)game->celestial_bodies_own[1], 5.0f, float3xyz(0.0f, -30.0f, 0.0f));
-	game->camera_position.xyz.z = -40.0f;
-	game->data_own->camera_dist = 20.0f;
+	init_planet((void*)game->celestial_bodies_own[1], 5.0f, float3xyz(0.0f, -10000.0f, 0.0f));
+	game->camera_position.xyz.z = -6371.0f;
+	game->data_own->camera_dist = 6371.0f;
 	game->data_own->camera_yaw = 0.0f;
 	game->data_own->camera_pitch = 0.0f;
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0f;
 	game->data_own->movement_mode = 1;
+	game->data_own->move_speed = 500.0f;
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
@@ -216,7 +230,6 @@ static const enum pshine_key
 	K_ZOOM_IN = PSHINE_KEY_Z,
 	K_ZOOM_OUT = PSHINE_KEY_X;
 
-static const float MOVE_SPEED = 1.0f;
 static const float ROTATE_SPEED = 1.0f;
 
 [[maybe_unused]]
@@ -230,7 +243,7 @@ static void update_camera_fly(struct pshine_game *game, float delta_time) {
 	else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0f;
 
 	float3 cam_pos = float3vs(game->camera_position.values);
-	cam_pos = float3add(cam_pos, float3mul(float3norm(delta), MOVE_SPEED * delta_time));
+	cam_pos = float3add(cam_pos, float3mul(float3norm(delta), game->data_own->move_speed * delta_time));
 
 	// float3 cam_forward = float3norm(float3sub(float3vs(game->celestial_bodies_own[0]->position.values), cam_pos));
 	float3 cam_forward = float3xyz(0.0f, 0.0f, 1.0f);
@@ -248,9 +261,9 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 	else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.y -= 1.0f;
 
 	if (pshine_is_key_down(game->renderer, K_ZOOM_IN))
-		game->data_own->camera_dist += MOVE_SPEED * delta_time;
+		game->data_own->camera_dist += game->data_own->move_speed * delta_time;
 	else if (pshine_is_key_down(game->renderer, K_ZOOM_OUT))
-		game->data_own->camera_dist -= MOVE_SPEED * delta_time;
+		game->data_own->camera_dist -= game->data_own->move_speed * delta_time;
 
 	game->data_own->camera_pitch += delta.y * ROTATE_SPEED * delta_time;
 	game->data_own->camera_yaw += delta.x * ROTATE_SPEED * delta_time;
@@ -295,6 +308,11 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 	
 	memcpy(game->data_own->last_key_states, pshine_get_key_states(game->renderer), sizeof(uint8_t) * PSHINE_KEY_COUNT_);
 
+	if (ImGui_Begin("Camera", NULL, 0)) {
+		ImGui_InputFloat3Ex("position, km", game->camera_position.values, "%.2f", ImGuiInputTextFlags_ReadOnly);
+		ImGui_InputFloat("move speed, km/s", &game->data_own->move_speed);
+	}
+	ImGui_End();
 
 	// PSHINE_DEBUG("cam pitch: %.2f yaw: %.2f", game->data_own->camera_pitch, game->data_own->camera_yaw);
 }

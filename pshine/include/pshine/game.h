@@ -38,10 +38,13 @@ struct pshine_celestial_body {
 };
 
 struct pshine_atmosphere_info {
-	float wavelengths[3];
-	float density_falloff;
 	float height;
-	float scattering_strength;
+	float rayleigh_coefs[3];
+	float rayleigh_falloff;
+	float mie_coef;
+	float mie_ext_coef;
+	float mie_g_coef;
+	float mie_falloff;
 };
 
 struct pshine_planet_graphics_data;

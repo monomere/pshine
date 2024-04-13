@@ -23,6 +23,12 @@ typedef union {
 	float vs[4];
 } float4;
 
+// represents a unit quaternion of the form `a + bi + cj + dk`
+typedef union {
+	struct { float a, b, c, d; };
+	float vs[4];
+} versor4;
+
 typedef union {
 	struct { float vs[4][4]; };
 	struct { float4 v4s[4]; };
@@ -55,6 +61,9 @@ static inline float3 float3norm(float3 v) {
 static inline float3 float3cross(float3 a, float3 b) {
 	return float3xyz(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
+
+static inline versor4 quat4abcd(float a, float b, float c, float d) { return (versor4){{ a, b, c, d }}; }
+static inline versor4 quat4mul(float a, float b, float c, float d) { return (versor4){{ a, b, c, d }}; }
 
 static inline void setfloat4x4iden(float4x4 *m) {
 	memset(m->vs, 0, sizeof(m->vs));

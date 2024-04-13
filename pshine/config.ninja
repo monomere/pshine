@@ -3,8 +3,10 @@ cxxwarns = -Wall -Wno-unused-variable -Wno-unused-function -Wno-nullability-comp
 cwarns = -Wall
 
 opt = 1
-cflags = -std=c2x -I$mod/include/vendor -I$mod/include $cwarns
-cxxflags = $cxxstdlib -std=c++2b -I$mod/include/vendor -I$mod/include $cxxwarns
+# TODO: fix generated header not to have #include "cimgui.h"
+incs = -I$mod/include/vendor -I$mod/src/vendor/cimgui -I$mod/src/vendor -I$mod/include -Ivendor -Ivendor/imgui
+cflags = -std=c2x $incs $cwarns
+cxxflags = $cxxstdlib -std=c++2b $incs $cxxwarns -DIMGUI_IMPL_VULKAN_NO_PROTOTYPES
 
 debug = -g
 debugc =

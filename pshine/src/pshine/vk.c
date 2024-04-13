@@ -8,6 +8,10 @@
 #include <GLFW/glfw3.h>
 #include <vk_mem_alloc.h>
 
+#include <cimgui/cimgui.h>
+#include <cimgui/backends/cimgui_impl_glfw.h>
+#include <cimgui/backends/cimgui_impl_vulkan.h>
+
 #include "vk_util.h"
 #include "math.h"
 
@@ -31,7 +35,7 @@ struct global_uniform_data {
 struct atmo_uniform_data {
 	float4 planet; // xyz, w=radius
 	float4 coefs_ray; // xyz=k_ray, w=falloff_ray
-	float4 coefs_mie; // x=k_mie, y=coef_mie_ext, z=g, w=falloff_mie
+	float4 coefs_mie; // x=k_mie, y=k_mie_ext, z=g, w=falloff_mie
 	float radius;
 	unsigned int optical_depth_samples;
 	unsigned int scatter_point_samples;
@@ -141,6 +145,7 @@ struct vulkan_renderer {
 
 	struct {
 		VkDescriptorPool pool;
+		VkDescriptorPool pool_imgui;
 		VkDescriptorSetLayout global_layout;
 		VkDescriptorSetLayout material_layout;
 		VkDescriptorSetLayout static_mesh_layout;
@@ -201,6 +206,7 @@ static void init_sync(struct vulkan_renderer *r); static void deinit_sync(struct
 static void init_ubufs(struct vulkan_renderer *r); static void deinit_ubufs(struct vulkan_renderer *r);
 static void init_descriptors(struct vulkan_renderer *r); static void deinit_descriptors(struct vulkan_renderer *r);
 static void init_frames(struct vulkan_renderer *r); static void deinit_frames(struct vulkan_renderer *r);
+static void init_imgui(struct vulkan_renderer *r); static void deinit_imgui(struct vulkan_renderer *r);
 
 static struct vulkan_image generate_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *planet);
 
@@ -419,6 +425,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	init_sync(r);
 	init_ubufs(r);
 	init_frames(r);
+	init_imgui(r);
 
 	{
 		struct pshine_mesh_data mesh_data = {
@@ -1079,7 +1086,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 			},
 		}
-	}, NULL, &r->render_passes.main_pass));
+	}, NULL, &r->render_passes.main_pass)); // TODO: 3rd subpass for imgui?
 	vkDebugMarkerSetObjectNameEXT(r->device, &(VkDebugMarkerObjectNameInfoEXT){
 		.sType = VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT,
 		.pObjectName = "main render pass",
@@ -1517,7 +1524,7 @@ static void init_descriptors(struct vulkan_renderer *r) {
 	vkCreateDescriptorPool(r->device, &(VkDescriptorPoolCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		.maxSets = 1024,
-		.poolSizeCount = 2,
+		.poolSizeCount = 5,
 		.pPoolSizes = (VkDescriptorPoolSize[]){
 			(VkDescriptorPoolSize){ .descriptorCount = 128, .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },
 			(VkDescriptorPoolSize){ .descriptorCount = 128, .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC },
@@ -1527,6 +1534,16 @@ static void init_descriptors(struct vulkan_renderer *r) {
 		}
 	}, NULL, &r->descriptors.pool);
 	NAME_VK_OBJECT(r, r->descriptors.pool, VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_POOL_EXT, "descriptor pool 1");
+	vkCreateDescriptorPool(r->device, &(VkDescriptorPoolCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+		.maxSets = 1024,
+		.poolSizeCount = 1,
+		.pPoolSizes = (VkDescriptorPoolSize[]){
+			(VkDescriptorPoolSize){ .descriptorCount = 256, .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER },
+		}
+	}, NULL, &r->descriptors.pool_imgui);
+	NAME_VK_OBJECT(r, r->descriptors.pool_imgui, VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_POOL_EXT, "descriptor pool 2 (imgui)");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -1613,6 +1630,7 @@ static void init_descriptors(struct vulkan_renderer *r) {
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
 	vkDestroyDescriptorPool(r->device, r->descriptors.pool, NULL);
+	vkDestroyDescriptorPool(r->device, r->descriptors.pool_imgui, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.global_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.material_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.static_mesh_layout, NULL);
@@ -1621,7 +1639,7 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 }
 
 
-// Per-frame data
+// Game data
 
 static void init_data(struct vulkan_renderer *r) {
 	r->data.global_uniform_buffer = allocate_buffer(
@@ -1803,6 +1821,51 @@ static void deinit_frames(struct vulkan_renderer *r) {
 	deallocate_buffer(r, r->data.atmo_uniform_buffer);
 }
 
+// ImGui
+
+static void check_vk_result_imgui(VkResult res) { CHECKVK(res); }
+static PFN_vkVoidFunction vulkan_loader_func_imgui(const char *name, void *user) {
+	struct vulkan_renderer *r = user;
+	PFN_vkVoidFunction instanceAddr = vkGetInstanceProcAddr(r->instance, name);
+	PFN_vkVoidFunction deviceAddr = vkGetDeviceProcAddr(r->device, name);
+	return deviceAddr ? deviceAddr : instanceAddr;
+}
+
+static void init_imgui(struct vulkan_renderer *r) {
+	ImGuiContext *ctx = ImGui_CreateContext(NULL);
+	ImGui_SetCurrentContext(ctx);
+	ImGuiIO *io = ImGui_GetIO();
+	io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	io->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+
+	ImGui_StyleColorsDark(NULL);
+
+	cImGui_ImplVulkan_LoadFunctionsEx(&vulkan_loader_func_imgui, r);
+	cImGui_ImplGlfw_InitForVulkan(r->window, true);
+	cImGui_ImplVulkan_Init(&(ImGui_ImplVulkan_InitInfo){
+		.Instance = r->instance,
+		.PhysicalDevice = r->physical_device,
+		.Device = r->device,
+		.QueueFamily = r->queue_families[QUEUE_GRAPHICS],
+		.Queue = r->queues[QUEUE_GRAPHICS],
+		.PipelineCache = VK_NULL_HANDLE,
+		.DescriptorPool = r->descriptors.pool_imgui,
+		.Subpass = 1,
+		.MinImageCount = FRAMES_IN_FLIGHT,
+		.ImageCount = FRAMES_IN_FLIGHT,
+		.MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+		.Allocator = NULL,
+		.CheckVkResultFn = &check_vk_result_imgui,
+		.RenderPass = r->render_passes.main_pass
+	});
+}
+
+static void deinit_imgui(struct vulkan_renderer *r) {
+	cImGui_ImplVulkan_Shutdown();
+	cImGui_ImplGlfw_Shutdown();
+	ImGui_DestroyContext(ImGui_GetCurrentContext());
+}
+
 
 void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	struct vulkan_renderer *r = (void*)renderer;
@@ -1823,6 +1886,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 
 	destroy_mesh(r, r->sphere_mesh);
 
+	deinit_imgui(r);
 	deinit_frames(r);
 	deinit_ubufs(r);
 	deinit_sync(r);
@@ -1914,8 +1978,16 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		struct atmo_uniform_data new_data = {
 			.planet = float4xyz3w(float3vs(p->as_body.position.values), p->as_body.radius),
 			.radius = p->as_body.radius + p->atmosphere.height,
-			.coefs_ray = float4xyzw(3.8f, 13.5f, 33.1f, 20.0f),
-			.coefs_mie = float4xyzw(21.0f, 1.1f, -0.87f, 50.0f),
+			.coefs_ray = float4xyz3w(
+				float3vs(p->atmosphere.rayleigh_coefs),
+				p->atmosphere.rayleigh_falloff
+			),
+			.coefs_mie = float4xyzw(
+				p->atmosphere.mie_coef,
+				p->atmosphere.mie_ext_coef,
+				p->atmosphere.mie_g_coef,
+				p->atmosphere.mie_falloff
+			),
 			.optical_depth_samples = 5,
 			.scatter_point_samples = 30,
 		};
@@ -1998,6 +2070,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	);
 	vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
 
+	cImGui_ImplVulkan_RenderDrawData(ImGui_GetDrawData(), f->command_buffer);
+
 	vkCmdEndRenderPass(f->command_buffer);
 	CHECKVK(vkEndCommandBuffer(f->command_buffer));
 }
@@ -2046,7 +2120,12 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 		float current_time = glfwGetTime();
 		float delta_time = current_time - last_time;
 		glfwPollEvents();
+		cImGui_ImplVulkan_NewFrame();
+		cImGui_ImplGlfw_NewFrame();
+		ImGui_NewFrame();
+		ImGui_ShowDemoWindow(NULL);
 		pshine_update_game(game, delta_time);
+		ImGui_Render();
 		render(r, current_frame);
 		last_time = current_time;
 		current_frame = (current_frame + 1) % FRAMES_IN_FLIGHT;

@@ -11,6 +11,7 @@ build
 
 # 3rd-party files, GL3W, etc.
 **/vendor
+!./vendor
 
 # Vulkan-related 3rd-party headers.
 include/vk_mem_alloc.h

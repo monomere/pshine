@@ -87,8 +87,8 @@ vec3 compute_light(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
 		n_mie0 += params.y * step_len;
 
 		vec3 trans = exp(
-			-(n_ray0 + params.z) * atmo.coefs_ray.xyz -
-			(n_mie0 + params.w) * atmo.coefs_mie.x * atmo.coefs_mie.y
+			-(n_ray0 + params.z) * atmo.coefs_ray.xyz
+			-(n_mie0 + params.w) * atmo.coefs_mie.x //  * atmo.coefs_mie.y
 		);
 
 		sum_ray += params.x * step_len * trans;
@@ -96,8 +96,10 @@ vec3 compute_light(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
 	}
 
 	float c = dot(ray_dir, -global.sun.xyz);
-	vec3 scatter = sum_ray * atmo.coefs_ray.xyz * phase_ray(c * c) +
-								 sum_mie * atmo.coefs_mie.x * phase_mie(atmo.coefs_mie.z, c, c * c);
+	vec3 scatter
+		= sum_ray * atmo.coefs_ray.xyz * phase_ray(c * c)
+		+ sum_mie * atmo.coefs_mie.x * phase_mie(atmo.coefs_mie.z, c, c * c)
+		;
 
 	return col * (1.0 - scatter) + scatter * 10.0;
 }
@@ -148,5 +150,5 @@ void main() {
 	vec4 color = subpassLoad(u_input_color).rgba;
 	float depth = subpassLoad(u_input_depth).r;
 	float linear_depth = linearize_depth(depth);
-	o_col = compute_color(i_uv, color, linear_depth);
+	o_col = color; // compute_color(i_uv, color, linear_depth);
 }
