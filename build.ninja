@@ -18,6 +18,7 @@ libs =
 
 owlprefix = owl
 owl = vendor/owl/owl
+python = python
 
 rule cc
   command = $cc -c $in -o $out $cflags -O$opt $debug $debugc -MD -MF $out.d
@@ -37,6 +38,8 @@ rule ld
 rule owl
   command = $owl -c $in -p $owlprefix -o $out
 
+rule python
+  command = $python $in $out
 
 import-modname = pshine
 subninja ninja/import.ninja

@@ -1,9 +1,11 @@
 
-build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c
-build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c
-build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c
-build $builddir/pshine/$platform.c.o : cc $mod/src/pshine/$platform.c
-build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c
+build $mod/src/pshine/math.h: python generate_math.py
+
+build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        | $mod/src/pshine/math.h
+build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      | $mod/src/pshine/math.h
+build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      | $mod/src/pshine/math.h
+build $builddir/pshine/$platform.c.o : cc $mod/src/pshine/$platform.c | $mod/src/pshine/math.h
+build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      | $mod/src/pshine/math.h
 
 build $builddir/vendor/vk_mem_alloc.cc.o : cxx $mod/src/vendor/vk_mem_alloc.cc
 build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
