@@ -9,11 +9,11 @@ else
 fi
 
 printf $BOLD'Downloading Volk\n'$NORMAL
-wget -P include https://raw.githubusercontent.com/zeux/volk/master/volk.h
-wget -P src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
+wget -P pshine/include/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.h
+wget -P pshine/src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
 
 printf $BOLD'Downloading VMA\n'$NORMAL
-wget -P include https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
+wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
 
 printf $BOLD'Generating ImGui Bindings\n'$NORMAL
 

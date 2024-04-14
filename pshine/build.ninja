@@ -7,7 +7,7 @@ build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      | $mod/src
 build $builddir/pshine/$platform.c.o : cc $mod/src/pshine/$platform.c | $mod/src/pshine/math.h
 build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      | $mod/src/pshine/math.h
 
-build $builddir/vendor/vk_mem_alloc.cc.o : cxx $mod/src/vendor/vk_mem_alloc.cc
+build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/vk_mem_alloc.cc
 build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
 
 build $builddir/vendor/cimgui/backends/cimgui_impl_glfw.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_glfw.cpp
@@ -35,7 +35,7 @@ build $builddir/main: ld $
   $builddir/pshine/main.c.o $
   $builddir/pshine/$platform.c.o $
   $builddir/pshine/util.c.o $
-  $builddir/vendor/vk_mem_alloc.cc.o $
+  $builddir/pshine/vk_mem_alloc.cc.o $
   $builddir/vendor/volk.c.o $
   $builddir/vendor/cimgui/cimgui.cpp.o $
   $builddir/vendor/imgui/imgui.cpp.o $

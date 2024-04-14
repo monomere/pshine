@@ -14,13 +14,23 @@ TODO:
 > requirements: git, wget, python, internet connection
 
 ```bash
-git clone https://github.com/monomere/pshine
+git clone https://github.com/monomere/pshine --recurse-submodules --shallow-submodules
 cd pshine
 ```
+
+> Note: when cloning, you might get an error that looks something like
+>
+> `fatal: Fetched in submodule path 'vendor/owl', but it did not contain <...>. Direct fetching of that commit failed.`
+>
+> You can ignore it, it will be fixed later and doesn't impact anything right now.
 
 ### Script
 
 You can do the steps below manually, but there's a bash script that does them for you.
+Make sure to check the contents of the script before running it.
+
+> **NB:** if the script is different from the README, trust the script because I might've
+> forgotten to update the README.
 
 ```bash
 ./setup.sh
@@ -33,9 +43,9 @@ The graphics backend uses [volk](https://github.com/zeux/volk) and
 so after cloning (only once):
 
 ```bash
-wget -P include https://raw.githubusercontent.com/zeux/volk/master/volk.h
-wget -P src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
-wget -P include https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
+wget -P pshine/include/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.h
+wget -P pshine/src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
+wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
 ```
 
 ### Patching owl
