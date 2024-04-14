@@ -7,7 +7,7 @@ static const double τ = {math.tau};
 """.strip()
 
 TEMPLATES: list[tuple[set[str], str, str]] = [
-	({"vx"}, "{name} type", R"""
+	({"v"}, "{name} type", R"""
 typedef union {
 	struct { `B `[xyzw,$Dim,0,$At,$CutEnd,$SeqC]; };
 	struct { `B `[rgba,$Dim,0,$At,$CutEnd,$SeqC]; };
@@ -20,10 +20,13 @@ static inline `T `$vs(const `B vs[`[$Dim,0,$At,$Str]]) { return `[vs{0},$Dim,,$D
 static inline `T `$v(`B v) { return `[v,$Dim,,$Dims,$ctor]; }
 static inline `T `$v0() { return `$v(0); }
 """.strip()),
+	({"castv"}, "{nameb} to {namea}", R"""
+static inline `Ta `Ta_`Tb(`Tb v) { return `[(`Ba)v{0},$ElWise,$ctor]; }
+""".strip()),
 	({"v4"}, "{name} type", R"""
 static inline `T `T.xyz3w(`B3 xyz, `B w) { return `[xyz,xyz.{0},$Map,w,$SList,$Add,$ctor]; }
 """.strip()),
-	({"vx"}, "{name} operations", R"""
+	({"v"}, "{name} operations", R"""
 static inline `T `$neg(`T v) { return `[-v{0},$ElWise,$ctor]; }
 static inline `T `$add(`T a, `T b) { return `[a{0} + b{0},$ElWise,$ctor]; }
 static inline `T `$sub(`T a, `T b) { return `[a{0} - b{0},$ElWise,$ctor]; }
@@ -43,13 +46,13 @@ static inline `T `$cross(`T a, `T b) {
 	return `T.xyz(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
 """.strip()),
-	({"s", "vx"}, "{name} lerp, min, max, clamp", R"""
+	({"s", "v"}, "{name} lerp, min, max, clamp", R"""
 static inline `T `$min(`T a, `T b) { return `[a{0} < b{0} ? a{0} : b{0},$ElWise,$ctor]; }
 static inline `T `$max(`T a, `T b) { return `[a{0} > b{0} ? a{0} : b{0},$ElWise,$ctor]; }
 static inline `T `$clamp(`T x, `T a, `T b) { return `[x,a,$max,b,$min]; }
 static inline `T `$lerp(`T a, `T b, `B t) { return `[a,1 - t,$muls,b,t,$muls,$add]; }
 """.strip()),
-	({"mxxx"}, "{name} matrix", R"""
+	({"m"}, "{name} matrix", R"""
 typedef union {
 	struct { `B vs[`[$Dim,0,$At,$Str]][`[$Dim,1,$At,$Str]]; };
 	struct { `B`[$Dim,0,$At,$Str] v`[$Dim,0,$At,$Str]s[`[$Dim,1,$At,$Str]]; };
@@ -196,11 +199,9 @@ class Ty:
 
 PATTERN = re.compile(r"\`(\$?[a-zA-Z]+\.?|\[(|\\.|[^\]])*\])")
 
-def instantiate(ty: Ty, source: str):
+def instantiate(ty: Ty, source: str, vars: dict[str, str]):
 	def get_var(name: str) -> str:
-		if name == "T": return ty.name
-		if name == "B": return ty.base_ty
-		if name == "eps": return ty.epsilon
+		if name in vars: return vars[name]
 		raise NameError(f"unknown var: {name}")
 
 	def fn_binop(op: str):
@@ -239,6 +240,7 @@ def instantiate(ty: Ty, source: str):
 		"SeqP": (1, lambda s: " + ".join(s)),
 		"SeqJ": (1, lambda s: "".join(s)),
 		"SList": (1, lambda s: [s]),
+		"EList": (1, lambda s: []),
 		"Int": (1, lambda s: int(s)),
 		"Str": (1, lambda x: str(x)),
 		"Dim": (0, lambda: ty.dim),
@@ -274,7 +276,7 @@ def instantiate(ty: Ty, source: str):
 						raise Exception(f"stack underflow for {name}, expected {narg} but only {len(stack)} available.")
 					stack.append(fn(*reversed([stack.pop() for _ in range(narg)])))
 				else:
-					stack.append(instantiate(ty, v))
+					stack.append(instantiate(ty, v, vars))
 			r = stack.pop()
 			assert isinstance(r, str)
 			return r
@@ -320,7 +322,24 @@ class Generator:
 		for ttags, comment, source in self.templates:
 			if not ttags.isdisjoint(tags):
 				print(f"\n// {comment.format(name=ty.name, base=ty.base_ty)}", file=self.fout)
-				print(instantiate(ty, source), file=self.fout)
+				print(instantiate(ty, source, {
+					"T": ty.name,
+					"B": ty.base_ty,
+					"eps": ty.epsilon
+				}), file=self.fout)
+
+	def _generate_for2(self, tags: set[str], tya: Ty, tyb: Ty):
+		for ttags, comment, source in self.templates:
+			if not ttags.isdisjoint(tags):
+				print(f"\n// {comment.format(namea=tya.name, basea=tya.base_ty, nameb=tyb.name, baseb=tyb.base_ty)}", file=self.fout)
+				print(instantiate(tya, source, {
+					"Ta": tya.name,
+					"Ba": tya.base_ty,
+					"epsa": tya.epsilon,
+					"Tb": tyb.name,
+					"Bb": tyb.base_ty,
+					"epsb": tyb.epsilon
+				}), file=self.fout)
 
 	def _generate_scalar(self, ty: Ty):
 		self._generate_for({"s"}, ty)
@@ -330,13 +349,21 @@ class Generator:
 		op_map = { "muls": "mul", "mul": "?" }
 		for dim in self.BASE_DIMS:
 			ty = Ty((dim,), base_ty.base_ty, False, op_map, {}, cons, base_ty.epsilon)
-			self._generate_for({"vx", f"v{dim}"}, ty)
+			self._generate_for({"v", f"v{dim}"}, ty)
+	
+	def _generate_vector_casts(self, base_tya: Ty, base_tyb: Ty):
+		cons = "({name}){{{{ {} }}}}"
+		op_map = { "muls": "mul", "mul": "?" }
+		for dim in self.BASE_DIMS:
+			tya = Ty((dim,), base_tya.base_ty, False, op_map, {}, cons, base_tya.epsilon)
+			tyb = Ty((dim,), base_tyb.base_ty, False, op_map, {}, cons, base_tyb.epsilon)
+			self._generate_for2({"cast", "castv"}, tya, tyb)
 	
 	def _generate_matrix(self, base_ty: Ty):
 		cons = "({name}){{{{ {} }}}}"
 		for dim in itertools.product(self.BASE_DIMS, self.BASE_DIMS):
 			ty = Ty(dim, base_ty.base_ty, False, {}, {}, cons, base_ty.epsilon)
-			self._generate_for({"mxxx", f"m{dim[0]}x{dim[1]}"}, ty)
+			self._generate_for({"m", f"m{dim[0]}x{dim[1]}"}, ty)
 
 	def generate(self):
 		print("// DO NOT EDIT; THIS FILE WAS GENERATED BY generate_math.py", file=self.fout)
@@ -354,7 +381,12 @@ class Generator:
 			self._generate_scalar(ty)
 			self._generate_vector(ty)
 			self._generate_matrix(ty)
-		print("#endif // PSHINE_MATH_H_", file=self.fout)
+		for a, b in itertools.product(self.BASE_TYPES, self.BASE_TYPES):
+			if a == b: continue
+			tya = Ty((1,), a[0], True, {}, BASE_BUILTIN_OPS, "{}", a[1])
+			tyb = Ty((1,), b[0], True, {}, BASE_BUILTIN_OPS, "{}", b[1])
+			self._generate_vector_casts(tya, tyb)
+		print("\n#endif // PSHINE_MATH_H_", file=self.fout)
 
 if __name__ == "__main__":
 	with open(sys.argv[1], "w") as fout:

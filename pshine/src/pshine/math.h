@@ -580,4 +580,23 @@ static inline void double4x4mul(double4x4 *res, const double4x4 *m1, const doubl
 }
 
 
+
+// double2 to float2
+static inline float2 float2_double2(double2 v) { return (float2){{ (float)v.vs[0], (float)v.vs[1] }}; }
+
+// double3 to float3
+static inline float3 float3_double3(double3 v) { return (float3){{ (float)v.vs[0], (float)v.vs[1], (float)v.vs[2] }}; }
+
+// double4 to float4
+static inline float4 float4_double4(double4 v) { return (float4){{ (float)v.vs[0], (float)v.vs[1], (float)v.vs[2], (float)v.vs[3] }}; }
+
+// float2 to double2
+static inline double2 double2_float2(float2 v) { return (double2){{ (double)v.vs[0], (double)v.vs[1] }}; }
+
+// float3 to double3
+static inline double3 double3_float3(float3 v) { return (double3){{ (double)v.vs[0], (double)v.vs[1], (double)v.vs[2] }}; }
+
+// float4 to double4
+static inline double4 double4_float4(float4 v) { return (double4){{ (double)v.vs[0], (double)v.vs[1], (double)v.vs[2], (double)v.vs[3] }}; }
+
 #endif // PSHINE_MATH_H_

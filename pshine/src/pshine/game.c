@@ -173,15 +173,15 @@ static void deinit_planet(struct pshine_planet *planet) {
 }
 
 struct ship {
-	float3 pos;
-	
+	double3 pos;
+
 };
 
 struct pshine_game_data {
-	float camera_yaw, camera_pitch;
-	float camera_dist;
+	double camera_yaw, camera_pitch;
+	double camera_dist;
 	int movement_mode;
-	float move_speed;
+	double move_speed;
 	uint8_t last_key_states[PSHINE_KEY_COUNT_];
 };
 
@@ -230,35 +230,35 @@ static const enum pshine_key
 	K_ZOOM_IN = PSHINE_KEY_Z,
 	K_ZOOM_OUT = PSHINE_KEY_X;
 
-static const float ROTATE_SPEED = 1.0f;
+static const double ROTATE_SPEED = 1.0;
 
 [[maybe_unused]]
 static void update_camera_fly(struct pshine_game *game, float delta_time) {
-	float3 delta = {};
-	if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0f;
-	else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0f;
-	if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0f;
-	else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0f;
-	if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0f;
-	else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0f;
+	double3 delta = {};
+	if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
+	else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
+	if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
+	else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
+	if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
+	else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
 
-	float3 cam_pos = float3vs(game->camera_position.values);
-	cam_pos = float3add(cam_pos, float3mul(float3norm(delta), game->data_own->move_speed * delta_time));
+	double3 cam_pos = double3vs(game->camera_position.values);
+	cam_pos = double3add(cam_pos, double3mul(double3norm(delta), game->data_own->move_speed * delta_time));
 
 	// float3 cam_forward = float3norm(float3sub(float3vs(game->celestial_bodies_own[0]->position.values), cam_pos));
-	float3 cam_forward = float3xyz(0.0f, 0.0f, 1.0f);
+	double3 cam_forward = double3xyz(0.0, 0.0, 1.0);
 
-	*(float3*)game->camera_position.values = cam_pos;
-	*(float3*)game->camera_forward.values = cam_forward;
+	*(double3*)game->camera_position.values = cam_pos;
+	*(double3*)game->camera_forward.values = cam_forward;
 }
 
 [[maybe_unused]]
 static void update_camera_arc(struct pshine_game *game, float delta_time) {
-	float3 delta = {};
-	if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0f;
-	else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0f;
-	if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.y += 1.0f;
-	else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.y -= 1.0f;
+	double3 delta = {};
+	if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
+	else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
+	if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.y += 1.0;
+	else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.y -= 1.0;
 
 	if (pshine_is_key_down(game->renderer, K_ZOOM_IN))
 		game->data_own->camera_dist += game->data_own->move_speed * delta_time;
@@ -268,24 +268,24 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 	game->data_own->camera_pitch += delta.y * ROTATE_SPEED * delta_time;
 	game->data_own->camera_yaw += delta.x * ROTATE_SPEED * delta_time;
 
-	game->data_own->camera_pitch = clampf(game->data_own->camera_pitch, -π/2 + 0.1f, π/2 - 0.1f);
+	game->data_own->camera_pitch = clampd(game->data_own->camera_pitch, -π/2 + 0.1, π/2 - 0.1);
 
-	float3 cam_pos = float3mul(float3xyz(
-		cosf(game->data_own->camera_pitch) * sinf(game->data_own->camera_yaw),
-		sinf(game->data_own->camera_pitch),
-		-cosf(game->data_own->camera_pitch) * cosf(game->data_own->camera_yaw)
+	double3 cam_pos = double3mul(double3xyz(
+		cos(game->data_own->camera_pitch) * sin(game->data_own->camera_yaw),
+		sin(game->data_own->camera_pitch),
+		-cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
 	), game->data_own->camera_dist);
 
-	float3 cam_forward = float3norm(float3sub(float3vs(game->celestial_bodies_own[0]->position.values), cam_pos));
+	double3 cam_forward = double3norm(double3sub(double3vs(game->celestial_bodies_own[0]->position.values), cam_pos));
 
-	*(float3*)game->camera_position.values = cam_pos;
-	*(float3*)game->camera_forward.values = cam_forward;
+	*(double3*)game->camera_position.values = cam_pos;
+	*(double3*)game->camera_forward.values = cam_forward;
 }
 
 void pshine_update_game(struct pshine_game *game, float delta_time) {
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_C)) game->atmo_blend_factor += 0.5 * delta_time;
 	else if (pshine_is_key_down(game->renderer, PSHINE_KEY_V)) game->atmo_blend_factor -= 0.5 * delta_time;
-	game->atmo_blend_factor = clampf(game->atmo_blend_factor, 0.0f, 1.0f);
+	game->atmo_blend_factor = clampd(game->atmo_blend_factor, 0.0, 1.0);
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F) && !game->data_own->last_key_states[PSHINE_KEY_F]) {
 		game->data_own->movement_mode = !game->data_own->movement_mode;
@@ -309,8 +309,10 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 	memcpy(game->data_own->last_key_states, pshine_get_key_states(game->renderer), sizeof(uint8_t) * PSHINE_KEY_COUNT_);
 
 	if (ImGui_Begin("Camera", NULL, 0)) {
-		ImGui_InputFloat3Ex("position, km", game->camera_position.values, "%.2f", ImGuiInputTextFlags_ReadOnly);
-		ImGui_InputFloat("move speed, km/s", &game->data_own->move_speed);
+		float3 pos = float3_double3(double3vs(game->camera_position.values));
+		if (ImGui_InputFloat3Ex("position, km", pos.vs, "%.2f", ImGuiInputTextFlags_ReadOnly))
+			*(double3*)game->camera_position.values = double3_float3(pos);
+		ImGui_InputDouble("move speed, km/s", &game->data_own->move_speed);
 	}
 	ImGui_End();
 

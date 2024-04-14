@@ -114,7 +114,7 @@ Key|Action
 
 ## TODO
 
-- [ ] Use double precision for position data and etc.
+- [x] Use double precision for position data and etc.
 - [ ] Use near-origin coordinates for the "player".
 - [ ] Velocty reference-frame.
 - [ ] Fake perspective for celestial bodies.

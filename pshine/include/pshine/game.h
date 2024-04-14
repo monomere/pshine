@@ -19,20 +19,20 @@ enum pshine_celestial_body_type {
 };
 
 typedef union pshine_point3d {
-	struct { float x, y, z; } xyz;
-	float values[3];
+	struct { double x, y, z; } xyz;
+	double values[3];
 } pshine_point3d;
 
 typedef union pshine_vector3d {
-	struct { float x, y, z; } xyz;
-	float values[3];
+	struct { double x, y, z; } xyz;
+	double values[3];
 } pshine_vector3d;
 
 struct pshine_celestial_body {
 	enum pshine_celestial_body_type type;
 	struct pshine_celestial_body *parent_ref;
 	struct pshine_orbit_info orbit;
-	float radius;
+	double radius;
 	bool is_static;
 	pshine_point3d position;
 };

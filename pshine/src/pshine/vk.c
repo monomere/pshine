@@ -1920,8 +1920,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	setfloat4x4iden(&view_mat);
 	setfloat4x4lookat(
 		&view_mat,
-		float3vs(r->game->camera_position.values),
-		float3add(float3vs(r->game->camera_position.values), float3vs(r->game->camera_forward.values)),
+		float3_double3(double3vs(r->game->camera_position.values)),
+		float3_double3(double3add(double3vs(r->game->camera_position.values), double3vs(r->game->camera_forward.values))),
 		float3xyz(0.0f, 1.0f, 0.0f)
 	);
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
@@ -1932,11 +1932,11 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	{
 		float3 cam_y = float3xyz(0.0f, 1.0f, 0.0f);
-		float3 cam_z = float3norm(float3vs(r->game->camera_forward.values));
+		float3 cam_z = float3_double3(double3norm(double3vs(r->game->camera_forward.values)));
 		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
 		cam_y = float3norm(float3cross(cam_z, cam_x));
 		struct global_uniform_data new_data = {
-			.camera = float4xyz3w(float3vs(r->game->camera_position.values), persp_info.znear),
+			.camera = float4xyz3w(float3_double3(double3vs(r->game->camera_position.values)), persp_info.znear),
 			.camera_right = float4xyz3w(cam_x, persp_info.plane.x),
 			.camera_up = float4xyz3w(cam_y, persp_info.plane.y),
 			.sun = float4xyz3w(float3norm(float3xyz(-1.0f, 0.0f, 0.0f)), 1.0f),
@@ -1955,7 +1955,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			struct static_mesh_uniform_data new_data = {};
 			float4x4 model_mat = {};
 			setfloat4x4iden(&model_mat);
-			float4x4trans(&model_mat, float3vs(p->as_body.position.values));
+			float4x4trans(&model_mat, float3_double3(double3vs(p->as_body.position.values)));
 			float4x4scale(&model_mat, float3v(p->as_body.radius));
 			float4x4mul(&new_data.mvp, &view_proj_mat, &model_mat);
 
@@ -1976,7 +1976,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		// 	powf(400.0f / p->atmosphere.wavelengths[2], 4) * p->atmosphere.scattering_strength
 		// );
 		struct atmo_uniform_data new_data = {
-			.planet = float4xyz3w(float3vs(p->as_body.position.values), p->as_body.radius),
+			.planet = float4xyz3w(float3_double3(double3vs(p->as_body.position.values)), p->as_body.radius),
 			.radius = p->as_body.radius + p->atmosphere.height,
 			.coefs_ray = float4xyz3w(
 				float3vs(p->atmosphere.rayleigh_coefs),
