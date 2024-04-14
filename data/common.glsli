@@ -23,7 +23,9 @@ struct AtmosphereUniforms {
 };
 
 struct StaticMeshUniforms {
-	mat4 mvp;
+	mat4 proj;
+	mat4 view;
+	mat4 model;
 };
 
 struct MaterialUniforms {

@@ -138,9 +138,11 @@ Key|Action
 ## TODO
 
 - [x] Use double precision for position data and etc.
+- [x] Fake perspective for celestial bodies.
+- [ ] Fixed point math?
+- [ ] Bug: mesh scale is wrong
 - [ ] Use near-origin coordinates for the "player".
 - [ ] Velocty reference-frame.
-- [ ] Fake perspective for celestial bodies.
 
 ### Useful stuff
 

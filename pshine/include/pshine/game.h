@@ -18,15 +18,34 @@ enum pshine_celestial_body_type {
 	PSHINE_CELESTIAL_BODY_PLANET,
 };
 
-typedef union pshine_point3d {
+typedef union pshine_point3d_ {
 	struct { double x, y, z; } xyz;
 	double values[3];
 } pshine_point3d;
 
-typedef union pshine_vector3d {
+typedef union pshine_vector3d_ {
 	struct { double x, y, z; } xyz;
 	double values[3];
 } pshine_vector3d;
+
+// Scaled Coordinate Space Scale
+#define PSHINE_SCS_SCALE 6000.0
+// Scaled Coordinate Space Factor (`1.0 / PSHINE_SCS_SCALE`)
+#define PSHINE_SCS_FACTOR (1.0 / PSHINE_SCS_SCALE)
+
+#define PSHINE_SPEED_OF_LIGHT 299'792'458.0
+
+// 1:6000
+typedef union pshine_point3d_scaled_ {
+	struct { double x, y, z; } xyz;
+	double values[3];
+} pshine_point3d_scaled;
+
+// 1:1
+typedef union pshine_point3d_world_ {
+	struct { double x, y, z; } xyz;
+	double values[3];
+} pshine_point3d_world;
 
 struct pshine_celestial_body {
 	enum pshine_celestial_body_type type;
@@ -34,11 +53,11 @@ struct pshine_celestial_body {
 	struct pshine_orbit_info orbit;
 	double radius;
 	bool is_static;
-	pshine_point3d position;
+	pshine_point3d_world position;
 };
 
 struct pshine_atmosphere_info {
-	float height;
+	double height;
 	float rayleigh_coefs[3];
 	float rayleigh_falloff;
 	float mie_coef;

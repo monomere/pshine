@@ -13,5 +13,5 @@ layout (set = 2, binding = 0) uniform readonly BUFFER(StaticMeshUniforms, mesh);
 
 void main() {
 	o_normal = i_normal;
-	gl_Position = mesh.mvp * vec4(i_position, 1.0);
+	gl_Position = mesh.proj * mesh.view * mesh.model * vec4(i_position, 1.0);
 }

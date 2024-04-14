@@ -15,6 +15,10 @@
 #include "vk_util.h"
 #include "math.h"
 
+#define SCSd3_WCSd3(wcs) (double3mul((wcs), PSHINE_SCS_FACTOR))
+#define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
+#define SCSd_WCSd(wcs) ((wcs) * PSHINE_SCS_FACTOR)
+
 struct vulkan_renderer;
 enum queue_family {
 	QUEUE_GRAPHICS,
@@ -46,7 +50,9 @@ struct material_uniform_data {
 };
 
 struct static_mesh_uniform_data {
-	float4x4 mvp;
+	float4x4 proj;
+	float4x4 view;
+	float4x4 model;
 };
 
 struct atmo_lut_push_const_data {
@@ -428,6 +434,13 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	init_imgui(r);
 
 	{
+		VkPhysicalDeviceFeatures features = {};
+		vkGetPhysicalDeviceFeatures(r->physical_device, &features);
+		PSHINE_INFO("GPU 64 bit float support: %s", features.shaderFloat64 ? "true" : "false");
+		PSHINE_INFO("GPU 64 bit int support:   %s", features.shaderInt64 ? "true" : "false");
+	}
+
+	{
 		struct pshine_mesh_data mesh_data = {
 			.index_count = 6,
 			.indices = (uint32_t[]){ 0, 1, 2, 2, 0, 3 },
@@ -610,8 +623,8 @@ static struct vulkan_image generate_atmo_lut(struct vulkan_renderer *r, struct p
 	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.atmo_lut_layout, 0, 1, &dset, 0, NULL);
 	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.atmo_lut_pipeline);
 	struct atmo_lut_push_const_data data = {
-		.planet_radius = planet->as_body.radius,
-		.atmo_height = planet->atmosphere.height,
+		.planet_radius = SCSd_WCSd(planet->as_body.radius),
+		.atmo_height = SCSd_WCSd(planet->atmosphere.height),
 		.falloffs = float2xy(20.0f, 50.0f),
 		.samples = 15,
 	};
@@ -1915,20 +1928,18 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		vmaUnmapMemory(r->allocator, r->data.material_uniform_buffer.allocation);
 	}
 
-	float aspect_ratio = r->swapchain_extent.width /(float) r->swapchain_extent.height;
-	float4x4 view_mat = {};
-	setfloat4x4iden(&view_mat);
-	setfloat4x4lookat(
+	double aspect_ratio = r->swapchain_extent.width /(double) r->swapchain_extent.height;
+	double4x4 view_mat = {};
+	setdouble4x4iden(&view_mat);
+	setdouble4x4lookat(
 		&view_mat,
-		float3_double3(double3vs(r->game->camera_position.values)),
-		float3_double3(double3add(double3vs(r->game->camera_position.values), double3vs(r->game->camera_forward.values))),
-		float3xyz(0.0f, 1.0f, 0.0f)
+		SCSd3_WCSp3(r->game->camera_position),
+		double3add(SCSd3_WCSp3(r->game->camera_position), double3vs(r->game->camera_forward.values)),
+		double3xyz(0.0, 1.0, 0.0)
 	);
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
-	float4x4 proj_mat = {};
-	struct float4x4persp_info persp_info = setfloat4x4persp(&proj_mat, 60.0f, aspect_ratio, 0.01f);
-	float4x4 view_proj_mat = {};
-	float4x4mul(&view_proj_mat, &proj_mat, &view_mat);
+	double4x4 proj_mat = {};
+	struct double4x4persp_info persp_info = setdouble4x4persp(&proj_mat, 60.0, aspect_ratio, 0.01);
 
 	{
 		float3 cam_y = float3xyz(0.0f, 1.0f, 0.0f);
@@ -1936,7 +1947,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
 		cam_y = float3norm(float3cross(cam_z, cam_x));
 		struct global_uniform_data new_data = {
-			.camera = float4xyz3w(float3_double3(double3vs(r->game->camera_position.values)), persp_info.znear),
+			.camera = float4xyz3w(float3_double3(SCSd3_WCSp3(r->game->camera_position)), persp_info.znear),
 			.camera_right = float4xyz3w(cam_x, persp_info.plane.x),
 			.camera_up = float4xyz3w(cam_y, persp_info.plane.y),
 			.sun = float4xyz3w(float3norm(float3xyz(-1.0f, 0.0f, 0.0f)), 1.0f),
@@ -1953,11 +1964,13 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			struct static_mesh_uniform_data new_data = {};
-			float4x4 model_mat = {};
-			setfloat4x4iden(&model_mat);
-			float4x4trans(&model_mat, float3_double3(double3vs(p->as_body.position.values)));
-			float4x4scale(&model_mat, float3v(p->as_body.radius));
-			float4x4mul(&new_data.mvp, &view_proj_mat, &model_mat);
+			// float4x4 model_mat = {};
+			setfloat4x4iden(&new_data.model);
+			float4x4trans(&new_data.model, float3_double3(SCSd3_WCSp3(p->as_body.position)));
+			float4x4scale(&new_data.model, float3v(SCSd_WCSd(p->as_body.radius)));
+			new_data.proj = float4x4_double4x4(proj_mat);
+			new_data.view = float4x4_double4x4(view_mat);
+			// float4x4mul(&new_data.model, &view_proj_mat, &model_mat);
 
 			char *data_raw;
 			vmaMapMemory(r->allocator, p->graphics_data->uniform_buffer.allocation, (void**)&data_raw);
@@ -1976,8 +1989,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		// 	powf(400.0f / p->atmosphere.wavelengths[2], 4) * p->atmosphere.scattering_strength
 		// );
 		struct atmo_uniform_data new_data = {
-			.planet = float4xyz3w(float3_double3(double3vs(p->as_body.position.values)), p->as_body.radius),
-			.radius = p->as_body.radius + p->atmosphere.height,
+			.planet = float4xyz3w(float3_double3(SCSd3_WCSp3(p->as_body.position)), SCSd_WCSd(p->as_body.radius)),
+			.radius = SCSd_WCSd(p->as_body.radius + p->atmosphere.height * 5.0),
 			.coefs_ray = float4xyz3w(
 				float3vs(p->atmosphere.rayleigh_coefs),
 				p->atmosphere.rayleigh_falloff

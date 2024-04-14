@@ -3,19 +3,71 @@
 #define PSHINE_MATH_H_
 #include "pshine/util.h"
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <math.h>
+
+#define MATH_FN_ static inline
+#define MATH_FAST_FN_ MATH_FN_
 
 static const double π = 3.141592653589793;
 static const double euler = 2.718281828459045;
 static const double τ = 6.283185307179586;
 
+#define QFP_FRAC 20
+typedef union { int64_t i; uint64_t u; } Qfp;
+
+// https://stackoverflow.com/a/31662911/19776006
+MATH_FAST_FN_ void fixp__umul64wide_(uint64_t a, uint64_t b, uint64_t *hi, uint64_t *lo) {
+	uint64_t a_lo = (uint64_t)(uint32_t)a;
+	uint64_t a_hi = a >> 32;
+	uint64_t b_lo = (uint64_t)(uint32_t)b;
+	uint64_t b_hi = b >> 32;
+
+	uint64_t p0 = a_lo * b_lo;
+	uint64_t p1 = a_lo * b_hi;
+	uint64_t p2 = a_hi * b_lo;
+	uint64_t p3 = a_hi * b_hi;
+
+	uint32_t cy = (uint32_t)(((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32);
+
+	*lo = p0 + (p1 << 32) + (p2 << 32);
+	*hi = p3 + (p1 >> 32) + (p2 >> 32) + cy;
+}
+
+MATH_FAST_FN_ void fixp__mul64wide_(int64_t a, int64_t b, int64_t *hi, int64_t *lo) {
+	fixp__umul64wide_((uint64_t)a, (uint64_t)b, (uint64_t *)hi, (uint64_t *)lo);
+	if (a < 0LL) *hi -= b;
+	if (b < 0LL) *hi -= a;
+}
+
+MATH_FAST_FN_ int64_t fixp__mul_(int64_t a, int64_t b) {
+	int64_t res;
+	int64_t hi, lo;
+	fixp__mul64wide_(a, b, &hi, &lo);
+	res = ((uint64_t)hi << (64 - QFP_FRAC)) | ((uint64_t)lo >> QFP_FRAC);
+	return res;
+}
+
+MATH_FAST_FN_ Qfp addQ(Qfp a, Qfp b) { return (Qfp){ a.i + b.i }; }
+MATH_FAST_FN_ Qfp subQ(Qfp a, Qfp b) { return (Qfp){ a.i - b.i }; }
+MATH_FAST_FN_ Qfp mulQ(Qfp a, Qfp b) { return (Qfp){ fixp__mul_(a.i, b.i) }; }
+MATH_FAST_FN_ Qfp divQ(Qfp a, Qfp b) { return (Qfp){ (a.i / b.i) << QFP_FRAC }; }
+MATH_FAST_FN_ double double_Qfp(Qfp x) { return (double)x.i / (double)(1 << QFP_FRAC); }
+MATH_FAST_FN_ float float_Qfp(Qfp x) { return (float)x.i / (float)(1 << QFP_FRAC); }
+MATH_FAST_FN_ Qfp Qfp_double(double x) { return (Qfp){ (x * (1 << QFP_FRAC)) }; }
+MATH_FAST_FN_ Qfp Qfp_float(float x) { return (Qfp){ (x * (1 << QFP_FRAC)) }; }
+MATH_FAST_FN_ Qfp sqrtQ(Qfp a, Qfp b) { return (Qfp){ (a.i / b.i) << QFP_FRAC }; }
+MATH_FAST_FN_ Qfp tanQ(Qfp a, Qfp b) { return (Qfp){ (a.i / b.i) << QFP_FRAC }; }
+MATH_FAST_FN_ Qfp cosQ(Qfp a, Qfp b) { return (Qfp){ (a.i / b.i) << QFP_FRAC }; }
+MATH_FAST_FN_ Qfp sinQ(Qfp a, Qfp b) { return (Qfp){ (a.i / b.i) << QFP_FRAC }; }
+
 
 // float lerp, min, max, clamp
-static inline float minf(float a, float b) { return a < b ? a : b; }
-static inline float maxf(float a, float b) { return a > b ? a : b; }
-static inline float clampf(float x, float a, float b) { return minf(maxf(x, a), b); }
-static inline float lerpf(float a, float b, float t) { return a * 1 - t + b * t; }
+MATH_FN_ float minf(float a, float b) { return a < b ? a : b; }
+MATH_FN_ float maxf(float a, float b) { return a > b ? a : b; }
+MATH_FN_ float clampf(float x, float a, float b) { return minf(maxf(x, a), b); }
+MATH_FN_ float lerpf(float a, float b, float t) { return a * 1 - t + b * t; }
 
 // float2 type
 typedef union {
@@ -23,33 +75,33 @@ typedef union {
 	struct { float r, g; };
 	float vs[2];
 } float2;
-	
-static inline float2 float2xy(float x, float y) { return (float2){{ x, y }}; }
-static inline float2 float2rg(float r, float g) { return (float2){{ r, g }}; }
-static inline float2 float2vs(const float vs[2]) { return (float2){{ vs[0], vs[1] }}; }
-static inline float2 float2v(float v) { return (float2){{ v, v }}; }
-static inline float2 float2v0() { return float2v(0); }
+
+MATH_FN_ float2 float2xy(float x, float y) { return (float2){{ x, y }}; }
+MATH_FN_ float2 float2rg(float r, float g) { return (float2){{ r, g }}; }
+MATH_FN_ float2 float2vs(const float vs[2]) { return (float2){{ vs[0], vs[1] }}; }
+MATH_FN_ float2 float2v(float v) { return (float2){{ v, v }}; }
+MATH_FN_ float2 float2v0() { return float2v(0); }
 
 // float2 operations
-static inline float2 float2neg(float2 v) { return (float2){{ -v.vs[0], -v.vs[1] }}; }
-static inline float2 float2add(float2 a, float2 b) { return (float2){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1] }}; }
-static inline float2 float2sub(float2 a, float2 b) { return (float2){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1] }}; }
-static inline float2 float2mul(float2 v, float s) { return (float2){{ v.vs[0] * s, v.vs[1] * s }}; }
-static inline float2 float2div(float2 v, float s) { return (float2){{ v.vs[0] / s, v.vs[1] / s }}; }
-static inline float float2dot(float2 a, float2 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1]; }
-static inline float float2mag2(float2 v) { return float2dot(v, v); }
-static inline float float2mag(float2 v) { return sqrtf(float2mag2(v)); }
-static inline float2 float2norm(float2 v) {
+MATH_FN_ float2 float2neg(float2 v) { return (float2){{ -v.vs[0], -v.vs[1] }}; }
+MATH_FN_ float2 float2add(float2 a, float2 b) { return (float2){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1] }}; }
+MATH_FN_ float2 float2sub(float2 a, float2 b) { return (float2){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1] }}; }
+MATH_FN_ float2 float2mul(float2 v, float s) { return (float2){{ v.vs[0] * s, v.vs[1] * s }}; }
+MATH_FN_ float2 float2div(float2 v, float s) { return (float2){{ v.vs[0] / s, v.vs[1] / s }}; }
+MATH_FN_ float float2dot(float2 a, float2 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1]; }
+MATH_FN_ float float2mag2(float2 v) { return float2dot(v, v); }
+MATH_FN_ float float2mag(float2 v) { return sqrtf(float2mag2(v)); }
+MATH_FN_ float2 float2norm(float2 v) {
 	float m = float2mag2(v);
 	if (fabsf(m) <= 0.0000001f) return (float2){};
 	return float2div(v, sqrtf(m));
 }
 
 // float2 lerp, min, max, clamp
-static inline float2 float2min(float2 a, float2 b) { return (float2){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1] }}; }
-static inline float2 float2max(float2 a, float2 b) { return (float2){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1] }}; }
-static inline float2 float2clamp(float2 x, float2 a, float2 b) { return float2min(float2max(x, a), b); }
-static inline float2 float2lerp(float2 a, float2 b, float t) { return float2add(float2mul(a, 1 - t), float2mul(b, t)); }
+MATH_FN_ float2 float2min(float2 a, float2 b) { return (float2){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1] }}; }
+MATH_FN_ float2 float2max(float2 a, float2 b) { return (float2){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1] }}; }
+MATH_FN_ float2 float2clamp(float2 x, float2 a, float2 b) { return float2min(float2max(x, a), b); }
+MATH_FN_ float2 float2lerp(float2 a, float2 b, float t) { return float2add(float2mul(a, 1 - t), float2mul(b, t)); }
 
 // float3 type
 typedef union {
@@ -57,38 +109,38 @@ typedef union {
 	struct { float r, g, b; };
 	float vs[3];
 } float3;
-	
-static inline float3 float3xyz(float x, float y, float z) { return (float3){{ x, y, z }}; }
-static inline float3 float3rgb(float r, float g, float b) { return (float3){{ r, g, b }}; }
-static inline float3 float3vs(const float vs[3]) { return (float3){{ vs[0], vs[1], vs[2] }}; }
-static inline float3 float3v(float v) { return (float3){{ v, v, v }}; }
-static inline float3 float3v0() { return float3v(0); }
+
+MATH_FN_ float3 float3xyz(float x, float y, float z) { return (float3){{ x, y, z }}; }
+MATH_FN_ float3 float3rgb(float r, float g, float b) { return (float3){{ r, g, b }}; }
+MATH_FN_ float3 float3vs(const float vs[3]) { return (float3){{ vs[0], vs[1], vs[2] }}; }
+MATH_FN_ float3 float3v(float v) { return (float3){{ v, v, v }}; }
+MATH_FN_ float3 float3v0() { return float3v(0); }
 
 // float3 operations
-static inline float3 float3neg(float3 v) { return (float3){{ -v.vs[0], -v.vs[1], -v.vs[2] }}; }
-static inline float3 float3add(float3 a, float3 b) { return (float3){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1], a.vs[2] + b.vs[2] }}; }
-static inline float3 float3sub(float3 a, float3 b) { return (float3){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1], a.vs[2] - b.vs[2] }}; }
-static inline float3 float3mul(float3 v, float s) { return (float3){{ v.vs[0] * s, v.vs[1] * s, v.vs[2] * s }}; }
-static inline float3 float3div(float3 v, float s) { return (float3){{ v.vs[0] / s, v.vs[1] / s, v.vs[2] / s }}; }
-static inline float float3dot(float3 a, float3 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1] + a.vs[2] * b.vs[2]; }
-static inline float float3mag2(float3 v) { return float3dot(v, v); }
-static inline float float3mag(float3 v) { return sqrtf(float3mag2(v)); }
-static inline float3 float3norm(float3 v) {
+MATH_FN_ float3 float3neg(float3 v) { return (float3){{ -v.vs[0], -v.vs[1], -v.vs[2] }}; }
+MATH_FN_ float3 float3add(float3 a, float3 b) { return (float3){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1], a.vs[2] + b.vs[2] }}; }
+MATH_FN_ float3 float3sub(float3 a, float3 b) { return (float3){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1], a.vs[2] - b.vs[2] }}; }
+MATH_FN_ float3 float3mul(float3 v, float s) { return (float3){{ v.vs[0] * s, v.vs[1] * s, v.vs[2] * s }}; }
+MATH_FN_ float3 float3div(float3 v, float s) { return (float3){{ v.vs[0] / s, v.vs[1] / s, v.vs[2] / s }}; }
+MATH_FN_ float float3dot(float3 a, float3 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1] + a.vs[2] * b.vs[2]; }
+MATH_FN_ float float3mag2(float3 v) { return float3dot(v, v); }
+MATH_FN_ float float3mag(float3 v) { return sqrtf(float3mag2(v)); }
+MATH_FN_ float3 float3norm(float3 v) {
 	float m = float3mag2(v);
 	if (fabsf(m) <= 0.0000001f) return (float3){};
 	return float3div(v, sqrtf(m));
 }
 
 // float vector cross product
-static inline float3 float3cross(float3 a, float3 b) {
+MATH_FN_ float3 float3cross(float3 a, float3 b) {
 	return float3xyz(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
 
 // float3 lerp, min, max, clamp
-static inline float3 float3min(float3 a, float3 b) { return (float3){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] < b.vs[2] ? a.vs[2] : b.vs[2] }}; }
-static inline float3 float3max(float3 a, float3 b) { return (float3){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] > b.vs[2] ? a.vs[2] : b.vs[2] }}; }
-static inline float3 float3clamp(float3 x, float3 a, float3 b) { return float3min(float3max(x, a), b); }
-static inline float3 float3lerp(float3 a, float3 b, float t) { return float3add(float3mul(a, 1 - t), float3mul(b, t)); }
+MATH_FN_ float3 float3min(float3 a, float3 b) { return (float3){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] < b.vs[2] ? a.vs[2] : b.vs[2] }}; }
+MATH_FN_ float3 float3max(float3 a, float3 b) { return (float3){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] > b.vs[2] ? a.vs[2] : b.vs[2] }}; }
+MATH_FN_ float3 float3clamp(float3 x, float3 a, float3 b) { return float3min(float3max(x, a), b); }
+MATH_FN_ float3 float3lerp(float3 a, float3 b, float t) { return float3add(float3mul(a, 1 - t), float3mul(b, t)); }
 
 // float4 type
 typedef union {
@@ -96,94 +148,103 @@ typedef union {
 	struct { float r, g, b, a; };
 	float vs[4];
 } float4;
-	
-static inline float4 float4xyzw(float x, float y, float z, float w) { return (float4){{ x, y, z, w }}; }
-static inline float4 float4rgba(float r, float g, float b, float a) { return (float4){{ r, g, b, a }}; }
-static inline float4 float4vs(const float vs[4]) { return (float4){{ vs[0], vs[1], vs[2], vs[3] }}; }
-static inline float4 float4v(float v) { return (float4){{ v, v, v, v }}; }
-static inline float4 float4v0() { return float4v(0); }
+
+MATH_FN_ float4 float4xyzw(float x, float y, float z, float w) { return (float4){{ x, y, z, w }}; }
+MATH_FN_ float4 float4rgba(float r, float g, float b, float a) { return (float4){{ r, g, b, a }}; }
+MATH_FN_ float4 float4vs(const float vs[4]) { return (float4){{ vs[0], vs[1], vs[2], vs[3] }}; }
+MATH_FN_ float4 float4v(float v) { return (float4){{ v, v, v, v }}; }
+MATH_FN_ float4 float4v0() { return float4v(0); }
 
 // float4 type
-static inline float4 float4xyz3w(float3 xyz, float w) { return (float4){{ xyz.x, xyz.y, xyz.z, w }}; }
+MATH_FN_ float4 float4xyz3w(float3 xyz, float w) { return (float4){{ xyz.x, xyz.y, xyz.z, w }}; }
 
 // float4 operations
-static inline float4 float4neg(float4 v) { return (float4){{ -v.vs[0], -v.vs[1], -v.vs[2], -v.vs[3] }}; }
-static inline float4 float4add(float4 a, float4 b) { return (float4){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1], a.vs[2] + b.vs[2], a.vs[3] + b.vs[3] }}; }
-static inline float4 float4sub(float4 a, float4 b) { return (float4){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1], a.vs[2] - b.vs[2], a.vs[3] - b.vs[3] }}; }
-static inline float4 float4mul(float4 v, float s) { return (float4){{ v.vs[0] * s, v.vs[1] * s, v.vs[2] * s, v.vs[3] * s }}; }
-static inline float4 float4div(float4 v, float s) { return (float4){{ v.vs[0] / s, v.vs[1] / s, v.vs[2] / s, v.vs[3] / s }}; }
-static inline float float4dot(float4 a, float4 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1] + a.vs[2] * b.vs[2] + a.vs[3] * b.vs[3]; }
-static inline float float4mag2(float4 v) { return float4dot(v, v); }
-static inline float float4mag(float4 v) { return sqrtf(float4mag2(v)); }
-static inline float4 float4norm(float4 v) {
+MATH_FN_ float4 float4neg(float4 v) { return (float4){{ -v.vs[0], -v.vs[1], -v.vs[2], -v.vs[3] }}; }
+MATH_FN_ float4 float4add(float4 a, float4 b) { return (float4){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1], a.vs[2] + b.vs[2], a.vs[3] + b.vs[3] }}; }
+MATH_FN_ float4 float4sub(float4 a, float4 b) { return (float4){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1], a.vs[2] - b.vs[2], a.vs[3] - b.vs[3] }}; }
+MATH_FN_ float4 float4mul(float4 v, float s) { return (float4){{ v.vs[0] * s, v.vs[1] * s, v.vs[2] * s, v.vs[3] * s }}; }
+MATH_FN_ float4 float4div(float4 v, float s) { return (float4){{ v.vs[0] / s, v.vs[1] / s, v.vs[2] / s, v.vs[3] / s }}; }
+MATH_FN_ float float4dot(float4 a, float4 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1] + a.vs[2] * b.vs[2] + a.vs[3] * b.vs[3]; }
+MATH_FN_ float float4mag2(float4 v) { return float4dot(v, v); }
+MATH_FN_ float float4mag(float4 v) { return sqrtf(float4mag2(v)); }
+MATH_FN_ float4 float4norm(float4 v) {
 	float m = float4mag2(v);
 	if (fabsf(m) <= 0.0000001f) return (float4){};
 	return float4div(v, sqrtf(m));
 }
 
 // float4 lerp, min, max, clamp
-static inline float4 float4min(float4 a, float4 b) { return (float4){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] < b.vs[2] ? a.vs[2] : b.vs[2], a.vs[3] < b.vs[3] ? a.vs[3] : b.vs[3] }}; }
-static inline float4 float4max(float4 a, float4 b) { return (float4){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] > b.vs[2] ? a.vs[2] : b.vs[2], a.vs[3] > b.vs[3] ? a.vs[3] : b.vs[3] }}; }
-static inline float4 float4clamp(float4 x, float4 a, float4 b) { return float4min(float4max(x, a), b); }
-static inline float4 float4lerp(float4 a, float4 b, float t) { return float4add(float4mul(a, 1 - t), float4mul(b, t)); }
+MATH_FN_ float4 float4min(float4 a, float4 b) { return (float4){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] < b.vs[2] ? a.vs[2] : b.vs[2], a.vs[3] < b.vs[3] ? a.vs[3] : b.vs[3] }}; }
+MATH_FN_ float4 float4max(float4 a, float4 b) { return (float4){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] > b.vs[2] ? a.vs[2] : b.vs[2], a.vs[3] > b.vs[3] ? a.vs[3] : b.vs[3] }}; }
+MATH_FN_ float4 float4clamp(float4 x, float4 a, float4 b) { return float4min(float4max(x, a), b); }
+MATH_FN_ float4 float4lerp(float4 a, float4 b, float t) { return float4add(float4mul(a, 1 - t), float4mul(b, t)); }
 
 // float2x2 matrix
 typedef union {
+	struct { float vvs[4]; };
 	struct { float vs[2][2]; };
 	struct { float2 v2s[2]; };
 } float2x2;
 
 // float2x3 matrix
 typedef union {
+	struct { float vvs[6]; };
 	struct { float vs[2][3]; };
 	struct { float2 v2s[3]; };
 } float2x3;
 
 // float2x4 matrix
 typedef union {
+	struct { float vvs[8]; };
 	struct { float vs[2][4]; };
 	struct { float2 v2s[4]; };
 } float2x4;
 
 // float3x2 matrix
 typedef union {
+	struct { float vvs[6]; };
 	struct { float vs[3][2]; };
 	struct { float3 v3s[2]; };
 } float3x2;
 
 // float3x3 matrix
 typedef union {
+	struct { float vvs[9]; };
 	struct { float vs[3][3]; };
 	struct { float3 v3s[3]; };
 } float3x3;
 
 // float3x4 matrix
 typedef union {
+	struct { float vvs[12]; };
 	struct { float vs[3][4]; };
 	struct { float3 v3s[4]; };
 } float3x4;
 
 // float4x2 matrix
 typedef union {
+	struct { float vvs[8]; };
 	struct { float vs[4][2]; };
 	struct { float4 v4s[2]; };
 } float4x2;
 
 // float4x3 matrix
 typedef union {
+	struct { float vvs[12]; };
 	struct { float vs[4][3]; };
 	struct { float4 v4s[3]; };
 } float4x3;
 
 // float4x4 matrix
 typedef union {
+	struct { float vvs[16]; };
 	struct { float vs[4][4]; };
 	struct { float4 v4s[4]; };
 } float4x4;
 
 // float matrix operations
 
-static inline void setfloat4x4iden(float4x4 *m) {
+MATH_FN_ void setfloat4x4iden(float4x4 *m) {
 	memset(m->vs, 0, sizeof(m->vs));
 	m->vs[0][0] = 1.0;
 	m->vs[1][1] = 1.0;
@@ -191,7 +252,7 @@ static inline void setfloat4x4iden(float4x4 *m) {
 	m->vs[3][3] = 1.0;
 }
 
-static inline void float4x4trans(float4x4 *m, float3 d) {
+MATH_FN_ void float4x4trans(float4x4 *m, float3 d) {
 	float r[4] = {};
 	r[0] += m->vs[0][0] * d.x; r[1] += m->vs[0][1] * d.x; r[2] += m->vs[0][2] * d.x; r[3] += m->vs[0][3] * d.x;
 	r[0] += m->vs[1][0] * d.y; r[1] += m->vs[1][1] * d.y; r[2] += m->vs[1][2] * d.y; r[3] += m->vs[1][3] * d.y;
@@ -199,7 +260,7 @@ static inline void float4x4trans(float4x4 *m, float3 d) {
 	m->vs[3][0] += r[0]; m->vs[3][1] += r[1]; m->vs[3][2] += r[2]; m->vs[3][3] += r[3];
 }
 
-static inline void float4x4scale(float4x4 *m, float3 s) {
+MATH_FN_ void float4x4scale(float4x4 *m, float3 s) {
 	m->vs[0][0] *= s.x;
 	m->vs[0][1] *= s.y;
 	m->vs[0][2] *= s.z;
@@ -219,7 +280,7 @@ struct float4x4persp_info {
 	float znear;
 };
 
-static inline struct float4x4persp_info setfloat4x4persp_rhoz(float4x4 *m, float fov, float aspect, float znear, float zfar) {
+MATH_FN_ struct float4x4persp_info setfloat4x4persp_rhoz(float4x4 *m, float fov, float aspect, float znear, float zfar) {
 	// https://gist.github.com/pezcode/1609b61a1eedd207ec8c5acf6f94f53a
 	memset(m->vs, 0, sizeof(m->vs));
 	struct float4x4persp_info info;
@@ -238,7 +299,7 @@ static inline struct float4x4persp_info setfloat4x4persp_rhoz(float4x4 *m, float
 	return info;
 }
 
-static inline struct float4x4persp_info setfloat4x4persp_rhozi(float4x4 *m, float fov, float aspect, float znear) {
+MATH_FN_ struct float4x4persp_info setfloat4x4persp_rhozi(float4x4 *m, float fov, float aspect, float znear) {
 	// http://www.songho.ca/opengl/gl_projectionmatrix.html#perspective
 	// https://computergraphics.stackexchange.com/a/12453
 	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
@@ -258,12 +319,12 @@ static inline struct float4x4persp_info setfloat4x4persp_rhozi(float4x4 *m, floa
 	return info;
 }
 
-static inline struct float4x4persp_info setfloat4x4persp(float4x4 *m, float fov, float aspect, float znear) {
+MATH_FN_ struct float4x4persp_info setfloat4x4persp(float4x4 *m, float fov, float aspect, float znear) {
 	// return setfloat4x4persp_rhoz(m, fov, aspect, znear, (float)1000.0);
 	return setfloat4x4persp_rhozi(m, fov, aspect, znear);
 }
 
-static inline void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, float3 up) {
+MATH_FN_ void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, float3 up) {
 	memset(m->vs, 0, sizeof(m->vs));
 	float3 f = float3norm(float3sub(center, eye));
 	float3 s = float3norm(float3cross(up, f));
@@ -284,7 +345,7 @@ static inline void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, flo
 	m->vs[3][3] = 1.0f;
 }
 
-static inline void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4 *m2) {
+MATH_FN_ void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4 *m2) {
 	for (size_t i = 0; i < 4; ++i) {
 		for (size_t j = 0; j < 4; ++j) {
 			res->vs[j][i] = 0;
@@ -297,10 +358,10 @@ static inline void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4
 
 
 // double lerp, min, max, clamp
-static inline double mind(double a, double b) { return a < b ? a : b; }
-static inline double maxd(double a, double b) { return a > b ? a : b; }
-static inline double clampd(double x, double a, double b) { return mind(maxd(x, a), b); }
-static inline double lerpd(double a, double b, double t) { return a * 1 - t + b * t; }
+MATH_FN_ double mind(double a, double b) { return a < b ? a : b; }
+MATH_FN_ double maxd(double a, double b) { return a > b ? a : b; }
+MATH_FN_ double clampd(double x, double a, double b) { return mind(maxd(x, a), b); }
+MATH_FN_ double lerpd(double a, double b, double t) { return a * 1 - t + b * t; }
 
 // double2 type
 typedef union {
@@ -308,33 +369,33 @@ typedef union {
 	struct { double r, g; };
 	double vs[2];
 } double2;
-	
-static inline double2 double2xy(double x, double y) { return (double2){{ x, y }}; }
-static inline double2 double2rg(double r, double g) { return (double2){{ r, g }}; }
-static inline double2 double2vs(const double vs[2]) { return (double2){{ vs[0], vs[1] }}; }
-static inline double2 double2v(double v) { return (double2){{ v, v }}; }
-static inline double2 double2v0() { return double2v(0); }
+
+MATH_FN_ double2 double2xy(double x, double y) { return (double2){{ x, y }}; }
+MATH_FN_ double2 double2rg(double r, double g) { return (double2){{ r, g }}; }
+MATH_FN_ double2 double2vs(const double vs[2]) { return (double2){{ vs[0], vs[1] }}; }
+MATH_FN_ double2 double2v(double v) { return (double2){{ v, v }}; }
+MATH_FN_ double2 double2v0() { return double2v(0); }
 
 // double2 operations
-static inline double2 double2neg(double2 v) { return (double2){{ -v.vs[0], -v.vs[1] }}; }
-static inline double2 double2add(double2 a, double2 b) { return (double2){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1] }}; }
-static inline double2 double2sub(double2 a, double2 b) { return (double2){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1] }}; }
-static inline double2 double2mul(double2 v, double s) { return (double2){{ v.vs[0] * s, v.vs[1] * s }}; }
-static inline double2 double2div(double2 v, double s) { return (double2){{ v.vs[0] / s, v.vs[1] / s }}; }
-static inline double double2dot(double2 a, double2 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1]; }
-static inline double double2mag2(double2 v) { return double2dot(v, v); }
-static inline double double2mag(double2 v) { return sqrt(double2mag2(v)); }
-static inline double2 double2norm(double2 v) {
+MATH_FN_ double2 double2neg(double2 v) { return (double2){{ -v.vs[0], -v.vs[1] }}; }
+MATH_FN_ double2 double2add(double2 a, double2 b) { return (double2){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1] }}; }
+MATH_FN_ double2 double2sub(double2 a, double2 b) { return (double2){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1] }}; }
+MATH_FN_ double2 double2mul(double2 v, double s) { return (double2){{ v.vs[0] * s, v.vs[1] * s }}; }
+MATH_FN_ double2 double2div(double2 v, double s) { return (double2){{ v.vs[0] / s, v.vs[1] / s }}; }
+MATH_FN_ double double2dot(double2 a, double2 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1]; }
+MATH_FN_ double double2mag2(double2 v) { return double2dot(v, v); }
+MATH_FN_ double double2mag(double2 v) { return sqrt(double2mag2(v)); }
+MATH_FN_ double2 double2norm(double2 v) {
 	double m = double2mag2(v);
 	if (fabs(m) <= 0.00000001) return (double2){};
 	return double2div(v, sqrt(m));
 }
 
 // double2 lerp, min, max, clamp
-static inline double2 double2min(double2 a, double2 b) { return (double2){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1] }}; }
-static inline double2 double2max(double2 a, double2 b) { return (double2){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1] }}; }
-static inline double2 double2clamp(double2 x, double2 a, double2 b) { return double2min(double2max(x, a), b); }
-static inline double2 double2lerp(double2 a, double2 b, double t) { return double2add(double2mul(a, 1 - t), double2mul(b, t)); }
+MATH_FN_ double2 double2min(double2 a, double2 b) { return (double2){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1] }}; }
+MATH_FN_ double2 double2max(double2 a, double2 b) { return (double2){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1] }}; }
+MATH_FN_ double2 double2clamp(double2 x, double2 a, double2 b) { return double2min(double2max(x, a), b); }
+MATH_FN_ double2 double2lerp(double2 a, double2 b, double t) { return double2add(double2mul(a, 1 - t), double2mul(b, t)); }
 
 // double3 type
 typedef union {
@@ -342,38 +403,38 @@ typedef union {
 	struct { double r, g, b; };
 	double vs[3];
 } double3;
-	
-static inline double3 double3xyz(double x, double y, double z) { return (double3){{ x, y, z }}; }
-static inline double3 double3rgb(double r, double g, double b) { return (double3){{ r, g, b }}; }
-static inline double3 double3vs(const double vs[3]) { return (double3){{ vs[0], vs[1], vs[2] }}; }
-static inline double3 double3v(double v) { return (double3){{ v, v, v }}; }
-static inline double3 double3v0() { return double3v(0); }
+
+MATH_FN_ double3 double3xyz(double x, double y, double z) { return (double3){{ x, y, z }}; }
+MATH_FN_ double3 double3rgb(double r, double g, double b) { return (double3){{ r, g, b }}; }
+MATH_FN_ double3 double3vs(const double vs[3]) { return (double3){{ vs[0], vs[1], vs[2] }}; }
+MATH_FN_ double3 double3v(double v) { return (double3){{ v, v, v }}; }
+MATH_FN_ double3 double3v0() { return double3v(0); }
 
 // double3 operations
-static inline double3 double3neg(double3 v) { return (double3){{ -v.vs[0], -v.vs[1], -v.vs[2] }}; }
-static inline double3 double3add(double3 a, double3 b) { return (double3){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1], a.vs[2] + b.vs[2] }}; }
-static inline double3 double3sub(double3 a, double3 b) { return (double3){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1], a.vs[2] - b.vs[2] }}; }
-static inline double3 double3mul(double3 v, double s) { return (double3){{ v.vs[0] * s, v.vs[1] * s, v.vs[2] * s }}; }
-static inline double3 double3div(double3 v, double s) { return (double3){{ v.vs[0] / s, v.vs[1] / s, v.vs[2] / s }}; }
-static inline double double3dot(double3 a, double3 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1] + a.vs[2] * b.vs[2]; }
-static inline double double3mag2(double3 v) { return double3dot(v, v); }
-static inline double double3mag(double3 v) { return sqrt(double3mag2(v)); }
-static inline double3 double3norm(double3 v) {
+MATH_FN_ double3 double3neg(double3 v) { return (double3){{ -v.vs[0], -v.vs[1], -v.vs[2] }}; }
+MATH_FN_ double3 double3add(double3 a, double3 b) { return (double3){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1], a.vs[2] + b.vs[2] }}; }
+MATH_FN_ double3 double3sub(double3 a, double3 b) { return (double3){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1], a.vs[2] - b.vs[2] }}; }
+MATH_FN_ double3 double3mul(double3 v, double s) { return (double3){{ v.vs[0] * s, v.vs[1] * s, v.vs[2] * s }}; }
+MATH_FN_ double3 double3div(double3 v, double s) { return (double3){{ v.vs[0] / s, v.vs[1] / s, v.vs[2] / s }}; }
+MATH_FN_ double double3dot(double3 a, double3 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1] + a.vs[2] * b.vs[2]; }
+MATH_FN_ double double3mag2(double3 v) { return double3dot(v, v); }
+MATH_FN_ double double3mag(double3 v) { return sqrt(double3mag2(v)); }
+MATH_FN_ double3 double3norm(double3 v) {
 	double m = double3mag2(v);
 	if (fabs(m) <= 0.00000001) return (double3){};
 	return double3div(v, sqrt(m));
 }
 
 // double vector cross product
-static inline double3 double3cross(double3 a, double3 b) {
+MATH_FN_ double3 double3cross(double3 a, double3 b) {
 	return double3xyz(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
 
 // double3 lerp, min, max, clamp
-static inline double3 double3min(double3 a, double3 b) { return (double3){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] < b.vs[2] ? a.vs[2] : b.vs[2] }}; }
-static inline double3 double3max(double3 a, double3 b) { return (double3){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] > b.vs[2] ? a.vs[2] : b.vs[2] }}; }
-static inline double3 double3clamp(double3 x, double3 a, double3 b) { return double3min(double3max(x, a), b); }
-static inline double3 double3lerp(double3 a, double3 b, double t) { return double3add(double3mul(a, 1 - t), double3mul(b, t)); }
+MATH_FN_ double3 double3min(double3 a, double3 b) { return (double3){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] < b.vs[2] ? a.vs[2] : b.vs[2] }}; }
+MATH_FN_ double3 double3max(double3 a, double3 b) { return (double3){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] > b.vs[2] ? a.vs[2] : b.vs[2] }}; }
+MATH_FN_ double3 double3clamp(double3 x, double3 a, double3 b) { return double3min(double3max(x, a), b); }
+MATH_FN_ double3 double3lerp(double3 a, double3 b, double t) { return double3add(double3mul(a, 1 - t), double3mul(b, t)); }
 
 // double4 type
 typedef union {
@@ -381,94 +442,103 @@ typedef union {
 	struct { double r, g, b, a; };
 	double vs[4];
 } double4;
-	
-static inline double4 double4xyzw(double x, double y, double z, double w) { return (double4){{ x, y, z, w }}; }
-static inline double4 double4rgba(double r, double g, double b, double a) { return (double4){{ r, g, b, a }}; }
-static inline double4 double4vs(const double vs[4]) { return (double4){{ vs[0], vs[1], vs[2], vs[3] }}; }
-static inline double4 double4v(double v) { return (double4){{ v, v, v, v }}; }
-static inline double4 double4v0() { return double4v(0); }
+
+MATH_FN_ double4 double4xyzw(double x, double y, double z, double w) { return (double4){{ x, y, z, w }}; }
+MATH_FN_ double4 double4rgba(double r, double g, double b, double a) { return (double4){{ r, g, b, a }}; }
+MATH_FN_ double4 double4vs(const double vs[4]) { return (double4){{ vs[0], vs[1], vs[2], vs[3] }}; }
+MATH_FN_ double4 double4v(double v) { return (double4){{ v, v, v, v }}; }
+MATH_FN_ double4 double4v0() { return double4v(0); }
 
 // double4 type
-static inline double4 double4xyz3w(double3 xyz, double w) { return (double4){{ xyz.x, xyz.y, xyz.z, w }}; }
+MATH_FN_ double4 double4xyz3w(double3 xyz, double w) { return (double4){{ xyz.x, xyz.y, xyz.z, w }}; }
 
 // double4 operations
-static inline double4 double4neg(double4 v) { return (double4){{ -v.vs[0], -v.vs[1], -v.vs[2], -v.vs[3] }}; }
-static inline double4 double4add(double4 a, double4 b) { return (double4){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1], a.vs[2] + b.vs[2], a.vs[3] + b.vs[3] }}; }
-static inline double4 double4sub(double4 a, double4 b) { return (double4){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1], a.vs[2] - b.vs[2], a.vs[3] - b.vs[3] }}; }
-static inline double4 double4mul(double4 v, double s) { return (double4){{ v.vs[0] * s, v.vs[1] * s, v.vs[2] * s, v.vs[3] * s }}; }
-static inline double4 double4div(double4 v, double s) { return (double4){{ v.vs[0] / s, v.vs[1] / s, v.vs[2] / s, v.vs[3] / s }}; }
-static inline double double4dot(double4 a, double4 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1] + a.vs[2] * b.vs[2] + a.vs[3] * b.vs[3]; }
-static inline double double4mag2(double4 v) { return double4dot(v, v); }
-static inline double double4mag(double4 v) { return sqrt(double4mag2(v)); }
-static inline double4 double4norm(double4 v) {
+MATH_FN_ double4 double4neg(double4 v) { return (double4){{ -v.vs[0], -v.vs[1], -v.vs[2], -v.vs[3] }}; }
+MATH_FN_ double4 double4add(double4 a, double4 b) { return (double4){{ a.vs[0] + b.vs[0], a.vs[1] + b.vs[1], a.vs[2] + b.vs[2], a.vs[3] + b.vs[3] }}; }
+MATH_FN_ double4 double4sub(double4 a, double4 b) { return (double4){{ a.vs[0] - b.vs[0], a.vs[1] - b.vs[1], a.vs[2] - b.vs[2], a.vs[3] - b.vs[3] }}; }
+MATH_FN_ double4 double4mul(double4 v, double s) { return (double4){{ v.vs[0] * s, v.vs[1] * s, v.vs[2] * s, v.vs[3] * s }}; }
+MATH_FN_ double4 double4div(double4 v, double s) { return (double4){{ v.vs[0] / s, v.vs[1] / s, v.vs[2] / s, v.vs[3] / s }}; }
+MATH_FN_ double double4dot(double4 a, double4 b) { return a.vs[0] * b.vs[0] + a.vs[1] * b.vs[1] + a.vs[2] * b.vs[2] + a.vs[3] * b.vs[3]; }
+MATH_FN_ double double4mag2(double4 v) { return double4dot(v, v); }
+MATH_FN_ double double4mag(double4 v) { return sqrt(double4mag2(v)); }
+MATH_FN_ double4 double4norm(double4 v) {
 	double m = double4mag2(v);
 	if (fabs(m) <= 0.00000001) return (double4){};
 	return double4div(v, sqrt(m));
 }
 
 // double4 lerp, min, max, clamp
-static inline double4 double4min(double4 a, double4 b) { return (double4){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] < b.vs[2] ? a.vs[2] : b.vs[2], a.vs[3] < b.vs[3] ? a.vs[3] : b.vs[3] }}; }
-static inline double4 double4max(double4 a, double4 b) { return (double4){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] > b.vs[2] ? a.vs[2] : b.vs[2], a.vs[3] > b.vs[3] ? a.vs[3] : b.vs[3] }}; }
-static inline double4 double4clamp(double4 x, double4 a, double4 b) { return double4min(double4max(x, a), b); }
-static inline double4 double4lerp(double4 a, double4 b, double t) { return double4add(double4mul(a, 1 - t), double4mul(b, t)); }
+MATH_FN_ double4 double4min(double4 a, double4 b) { return (double4){{ a.vs[0] < b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] < b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] < b.vs[2] ? a.vs[2] : b.vs[2], a.vs[3] < b.vs[3] ? a.vs[3] : b.vs[3] }}; }
+MATH_FN_ double4 double4max(double4 a, double4 b) { return (double4){{ a.vs[0] > b.vs[0] ? a.vs[0] : b.vs[0], a.vs[1] > b.vs[1] ? a.vs[1] : b.vs[1], a.vs[2] > b.vs[2] ? a.vs[2] : b.vs[2], a.vs[3] > b.vs[3] ? a.vs[3] : b.vs[3] }}; }
+MATH_FN_ double4 double4clamp(double4 x, double4 a, double4 b) { return double4min(double4max(x, a), b); }
+MATH_FN_ double4 double4lerp(double4 a, double4 b, double t) { return double4add(double4mul(a, 1 - t), double4mul(b, t)); }
 
 // double2x2 matrix
 typedef union {
+	struct { double vvs[4]; };
 	struct { double vs[2][2]; };
 	struct { double2 v2s[2]; };
 } double2x2;
 
 // double2x3 matrix
 typedef union {
+	struct { double vvs[6]; };
 	struct { double vs[2][3]; };
 	struct { double2 v2s[3]; };
 } double2x3;
 
 // double2x4 matrix
 typedef union {
+	struct { double vvs[8]; };
 	struct { double vs[2][4]; };
 	struct { double2 v2s[4]; };
 } double2x4;
 
 // double3x2 matrix
 typedef union {
+	struct { double vvs[6]; };
 	struct { double vs[3][2]; };
 	struct { double3 v3s[2]; };
 } double3x2;
 
 // double3x3 matrix
 typedef union {
+	struct { double vvs[9]; };
 	struct { double vs[3][3]; };
 	struct { double3 v3s[3]; };
 } double3x3;
 
 // double3x4 matrix
 typedef union {
+	struct { double vvs[12]; };
 	struct { double vs[3][4]; };
 	struct { double3 v3s[4]; };
 } double3x4;
 
 // double4x2 matrix
 typedef union {
+	struct { double vvs[8]; };
 	struct { double vs[4][2]; };
 	struct { double4 v4s[2]; };
 } double4x2;
 
 // double4x3 matrix
 typedef union {
+	struct { double vvs[12]; };
 	struct { double vs[4][3]; };
 	struct { double4 v4s[3]; };
 } double4x3;
 
 // double4x4 matrix
 typedef union {
+	struct { double vvs[16]; };
 	struct { double vs[4][4]; };
 	struct { double4 v4s[4]; };
 } double4x4;
 
 // double matrix operations
 
-static inline void setdouble4x4iden(double4x4 *m) {
+MATH_FN_ void setdouble4x4iden(double4x4 *m) {
 	memset(m->vs, 0, sizeof(m->vs));
 	m->vs[0][0] = 1.0;
 	m->vs[1][1] = 1.0;
@@ -476,7 +546,7 @@ static inline void setdouble4x4iden(double4x4 *m) {
 	m->vs[3][3] = 1.0;
 }
 
-static inline void double4x4trans(double4x4 *m, double3 d) {
+MATH_FN_ void double4x4trans(double4x4 *m, double3 d) {
 	double r[4] = {};
 	r[0] += m->vs[0][0] * d.x; r[1] += m->vs[0][1] * d.x; r[2] += m->vs[0][2] * d.x; r[3] += m->vs[0][3] * d.x;
 	r[0] += m->vs[1][0] * d.y; r[1] += m->vs[1][1] * d.y; r[2] += m->vs[1][2] * d.y; r[3] += m->vs[1][3] * d.y;
@@ -484,7 +554,7 @@ static inline void double4x4trans(double4x4 *m, double3 d) {
 	m->vs[3][0] += r[0]; m->vs[3][1] += r[1]; m->vs[3][2] += r[2]; m->vs[3][3] += r[3];
 }
 
-static inline void double4x4scale(double4x4 *m, double3 s) {
+MATH_FN_ void double4x4scale(double4x4 *m, double3 s) {
 	m->vs[0][0] *= s.x;
 	m->vs[0][1] *= s.y;
 	m->vs[0][2] *= s.z;
@@ -504,7 +574,7 @@ struct double4x4persp_info {
 	double znear;
 };
 
-static inline struct double4x4persp_info setdouble4x4persp_rhoz(double4x4 *m, double fov, double aspect, double znear, double zfar) {
+MATH_FN_ struct double4x4persp_info setdouble4x4persp_rhoz(double4x4 *m, double fov, double aspect, double znear, double zfar) {
 	// https://gist.github.com/pezcode/1609b61a1eedd207ec8c5acf6f94f53a
 	memset(m->vs, 0, sizeof(m->vs));
 	struct double4x4persp_info info;
@@ -523,7 +593,7 @@ static inline struct double4x4persp_info setdouble4x4persp_rhoz(double4x4 *m, do
 	return info;
 }
 
-static inline struct double4x4persp_info setdouble4x4persp_rhozi(double4x4 *m, double fov, double aspect, double znear) {
+MATH_FN_ struct double4x4persp_info setdouble4x4persp_rhozi(double4x4 *m, double fov, double aspect, double znear) {
 	// http://www.songho.ca/opengl/gl_projectionmatrix.html#perspective
 	// https://computergraphics.stackexchange.com/a/12453
 	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
@@ -543,12 +613,12 @@ static inline struct double4x4persp_info setdouble4x4persp_rhozi(double4x4 *m, d
 	return info;
 }
 
-static inline struct double4x4persp_info setdouble4x4persp(double4x4 *m, double fov, double aspect, double znear) {
+MATH_FN_ struct double4x4persp_info setdouble4x4persp(double4x4 *m, double fov, double aspect, double znear) {
 	// return setdouble4x4persp_rhoz(m, fov, aspect, znear, (double)1000.0);
 	return setdouble4x4persp_rhozi(m, fov, aspect, znear);
 }
 
-static inline void setdouble4x4lookat(double4x4 *m, double3 eye, double3 center, double3 up) {
+MATH_FN_ void setdouble4x4lookat(double4x4 *m, double3 eye, double3 center, double3 up) {
 	memset(m->vs, 0, sizeof(m->vs));
 	double3 f = double3norm(double3sub(center, eye));
 	double3 s = double3norm(double3cross(up, f));
@@ -569,7 +639,7 @@ static inline void setdouble4x4lookat(double4x4 *m, double3 eye, double3 center,
 	m->vs[3][3] = 1.0f;
 }
 
-static inline void double4x4mul(double4x4 *res, const double4x4 *m1, const double4x4 *m2) {
+MATH_FN_ void double4x4mul(double4x4 *res, const double4x4 *m1, const double4x4 *m2) {
 	for (size_t i = 0; i < 4; ++i) {
 		for (size_t j = 0; j < 4; ++j) {
 			res->vs[j][i] = 0;
@@ -582,21 +652,75 @@ static inline void double4x4mul(double4x4 *res, const double4x4 *m1, const doubl
 
 
 // double2 to float2
-static inline float2 float2_double2(double2 v) { return (float2){{ (float)v.vs[0], (float)v.vs[1] }}; }
+MATH_FN_ float2 float2_double2(double2 x) { return (float2){{ (float)x.vs[0], (float)x.vs[1] }}; }
 
 // double3 to float3
-static inline float3 float3_double3(double3 v) { return (float3){{ (float)v.vs[0], (float)v.vs[1], (float)v.vs[2] }}; }
+MATH_FN_ float3 float3_double3(double3 x) { return (float3){{ (float)x.vs[0], (float)x.vs[1], (float)x.vs[2] }}; }
 
 // double4 to float4
-static inline float4 float4_double4(double4 v) { return (float4){{ (float)v.vs[0], (float)v.vs[1], (float)v.vs[2], (float)v.vs[3] }}; }
+MATH_FN_ float4 float4_double4(double4 x) { return (float4){{ (float)x.vs[0], (float)x.vs[1], (float)x.vs[2], (float)x.vs[3] }}; }
+
+// double2x2 to float2x2
+MATH_FN_ float2x2 float2x2_double2x2(double2x2 x) { return (float2x2){{ (float)x.vs[0][0], (float)x.vs[0][1], (float)x.vs[1][0], (float)x.vs[1][1] }}; }
+
+// double2x3 to float2x3
+MATH_FN_ float2x3 float2x3_double2x3(double2x3 x) { return (float2x3){{ (float)x.vs[0][0], (float)x.vs[0][1], (float)x.vs[0][2], (float)x.vs[1][0], (float)x.vs[1][1], (float)x.vs[1][2] }}; }
+
+// double2x4 to float2x4
+MATH_FN_ float2x4 float2x4_double2x4(double2x4 x) { return (float2x4){{ (float)x.vs[0][0], (float)x.vs[0][1], (float)x.vs[0][2], (float)x.vs[0][3], (float)x.vs[1][0], (float)x.vs[1][1], (float)x.vs[1][2], (float)x.vs[1][3] }}; }
+
+// double3x2 to float3x2
+MATH_FN_ float3x2 float3x2_double3x2(double3x2 x) { return (float3x2){{ (float)x.vs[0][0], (float)x.vs[0][1], (float)x.vs[1][0], (float)x.vs[1][1], (float)x.vs[2][0], (float)x.vs[2][1] }}; }
+
+// double3x3 to float3x3
+MATH_FN_ float3x3 float3x3_double3x3(double3x3 x) { return (float3x3){{ (float)x.vs[0][0], (float)x.vs[0][1], (float)x.vs[0][2], (float)x.vs[1][0], (float)x.vs[1][1], (float)x.vs[1][2], (float)x.vs[2][0], (float)x.vs[2][1], (float)x.vs[2][2] }}; }
+
+// double3x4 to float3x4
+MATH_FN_ float3x4 float3x4_double3x4(double3x4 x) { return (float3x4){{ (float)x.vs[0][0], (float)x.vs[0][1], (float)x.vs[0][2], (float)x.vs[0][3], (float)x.vs[1][0], (float)x.vs[1][1], (float)x.vs[1][2], (float)x.vs[1][3], (float)x.vs[2][0], (float)x.vs[2][1], (float)x.vs[2][2], (float)x.vs[2][3] }}; }
+
+// double4x2 to float4x2
+MATH_FN_ float4x2 float4x2_double4x2(double4x2 x) { return (float4x2){{ (float)x.vs[0][0], (float)x.vs[0][1], (float)x.vs[1][0], (float)x.vs[1][1], (float)x.vs[2][0], (float)x.vs[2][1], (float)x.vs[3][0], (float)x.vs[3][1] }}; }
+
+// double4x3 to float4x3
+MATH_FN_ float4x3 float4x3_double4x3(double4x3 x) { return (float4x3){{ (float)x.vs[0][0], (float)x.vs[0][1], (float)x.vs[0][2], (float)x.vs[1][0], (float)x.vs[1][1], (float)x.vs[1][2], (float)x.vs[2][0], (float)x.vs[2][1], (float)x.vs[2][2], (float)x.vs[3][0], (float)x.vs[3][1], (float)x.vs[3][2] }}; }
+
+// double4x4 to float4x4
+MATH_FN_ float4x4 float4x4_double4x4(double4x4 x) { return (float4x4){{ (float)x.vs[0][0], (float)x.vs[0][1], (float)x.vs[0][2], (float)x.vs[0][3], (float)x.vs[1][0], (float)x.vs[1][1], (float)x.vs[1][2], (float)x.vs[1][3], (float)x.vs[2][0], (float)x.vs[2][1], (float)x.vs[2][2], (float)x.vs[2][3], (float)x.vs[3][0], (float)x.vs[3][1], (float)x.vs[3][2], (float)x.vs[3][3] }}; }
 
 // float2 to double2
-static inline double2 double2_float2(float2 v) { return (double2){{ (double)v.vs[0], (double)v.vs[1] }}; }
+MATH_FN_ double2 double2_float2(float2 x) { return (double2){{ (double)x.vs[0], (double)x.vs[1] }}; }
 
 // float3 to double3
-static inline double3 double3_float3(float3 v) { return (double3){{ (double)v.vs[0], (double)v.vs[1], (double)v.vs[2] }}; }
+MATH_FN_ double3 double3_float3(float3 x) { return (double3){{ (double)x.vs[0], (double)x.vs[1], (double)x.vs[2] }}; }
 
 // float4 to double4
-static inline double4 double4_float4(float4 v) { return (double4){{ (double)v.vs[0], (double)v.vs[1], (double)v.vs[2], (double)v.vs[3] }}; }
+MATH_FN_ double4 double4_float4(float4 x) { return (double4){{ (double)x.vs[0], (double)x.vs[1], (double)x.vs[2], (double)x.vs[3] }}; }
+
+// float2x2 to double2x2
+MATH_FN_ double2x2 double2x2_float2x2(float2x2 x) { return (double2x2){{ (double)x.vs[0][0], (double)x.vs[0][1], (double)x.vs[1][0], (double)x.vs[1][1] }}; }
+
+// float2x3 to double2x3
+MATH_FN_ double2x3 double2x3_float2x3(float2x3 x) { return (double2x3){{ (double)x.vs[0][0], (double)x.vs[0][1], (double)x.vs[0][2], (double)x.vs[1][0], (double)x.vs[1][1], (double)x.vs[1][2] }}; }
+
+// float2x4 to double2x4
+MATH_FN_ double2x4 double2x4_float2x4(float2x4 x) { return (double2x4){{ (double)x.vs[0][0], (double)x.vs[0][1], (double)x.vs[0][2], (double)x.vs[0][3], (double)x.vs[1][0], (double)x.vs[1][1], (double)x.vs[1][2], (double)x.vs[1][3] }}; }
+
+// float3x2 to double3x2
+MATH_FN_ double3x2 double3x2_float3x2(float3x2 x) { return (double3x2){{ (double)x.vs[0][0], (double)x.vs[0][1], (double)x.vs[1][0], (double)x.vs[1][1], (double)x.vs[2][0], (double)x.vs[2][1] }}; }
+
+// float3x3 to double3x3
+MATH_FN_ double3x3 double3x3_float3x3(float3x3 x) { return (double3x3){{ (double)x.vs[0][0], (double)x.vs[0][1], (double)x.vs[0][2], (double)x.vs[1][0], (double)x.vs[1][1], (double)x.vs[1][2], (double)x.vs[2][0], (double)x.vs[2][1], (double)x.vs[2][2] }}; }
+
+// float3x4 to double3x4
+MATH_FN_ double3x4 double3x4_float3x4(float3x4 x) { return (double3x4){{ (double)x.vs[0][0], (double)x.vs[0][1], (double)x.vs[0][2], (double)x.vs[0][3], (double)x.vs[1][0], (double)x.vs[1][1], (double)x.vs[1][2], (double)x.vs[1][3], (double)x.vs[2][0], (double)x.vs[2][1], (double)x.vs[2][2], (double)x.vs[2][3] }}; }
+
+// float4x2 to double4x2
+MATH_FN_ double4x2 double4x2_float4x2(float4x2 x) { return (double4x2){{ (double)x.vs[0][0], (double)x.vs[0][1], (double)x.vs[1][0], (double)x.vs[1][1], (double)x.vs[2][0], (double)x.vs[2][1], (double)x.vs[3][0], (double)x.vs[3][1] }}; }
+
+// float4x3 to double4x3
+MATH_FN_ double4x3 double4x3_float4x3(float4x3 x) { return (double4x3){{ (double)x.vs[0][0], (double)x.vs[0][1], (double)x.vs[0][2], (double)x.vs[1][0], (double)x.vs[1][1], (double)x.vs[1][2], (double)x.vs[2][0], (double)x.vs[2][1], (double)x.vs[2][2], (double)x.vs[3][0], (double)x.vs[3][1], (double)x.vs[3][2] }}; }
+
+// float4x4 to double4x4
+MATH_FN_ double4x4 double4x4_float4x4(float4x4 x) { return (double4x4){{ (double)x.vs[0][0], (double)x.vs[0][1], (double)x.vs[0][2], (double)x.vs[0][3], (double)x.vs[1][0], (double)x.vs[1][1], (double)x.vs[1][2], (double)x.vs[1][3], (double)x.vs[2][0], (double)x.vs[2][1], (double)x.vs[2][2], (double)x.vs[2][3], (double)x.vs[3][0], (double)x.vs[3][1], (double)x.vs[3][2], (double)x.vs[3][3] }}; }
 
 #endif // PSHINE_MATH_H_

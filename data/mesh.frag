@@ -10,6 +10,6 @@ layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 1, binding = 0) uniform readonly BUFFER(MaterialUniforms, material);
 
 void main() {
-	float f = mix(0.2, 1.0, dot(normalize(global.sun.xyz), normalize(i_normal)));
+	float f = dot(normalize(global.sun.xyz), normalize(i_normal));
 	o_color = vec4(material.color.rgb * f, 1.0);
 }

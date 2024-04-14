@@ -1,9 +1,73 @@
 import math, dataclasses, re, itertools, sys, typing
 
+HEADER = f"""
+#include "pshine/util.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <math.h>
+
+#define MATH_FN_ static inline
+#define MATH_FAST_FN_ MATH_FN_
+""".strip()
+
 CONSTS = f"""
 static const double π = {math.pi};
 static const double euler = {math.e};
 static const double τ = {math.tau};
+""".strip()
+
+Q = (43,20)
+Qn = f"Q{Q[0]}{Q[1]}"
+
+FIXP_IMPL = R"""
+#define QFP_FRAC `qs
+typedef union { int64_t i; uint64_t u; } `T;
+
+// https://stackoverflow.com/a/31662911/19776006
+MATH_FAST_FN_ void fixp__umul64wide_(uint64_t a, uint64_t b, uint64_t *hi, uint64_t *lo) {
+	uint64_t a_lo = (uint64_t)(uint32_t)a;
+	uint64_t a_hi = a >> 32;
+	uint64_t b_lo = (uint64_t)(uint32_t)b;
+	uint64_t b_hi = b >> 32;
+
+	uint64_t p0 = a_lo * b_lo;
+	uint64_t p1 = a_lo * b_hi;
+	uint64_t p2 = a_hi * b_lo;
+	uint64_t p3 = a_hi * b_hi;
+
+	uint32_t cy = (uint32_t)(((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32);
+
+	*lo = p0 + (p1 << 32) + (p2 << 32);
+	*hi = p3 + (p1 >> 32) + (p2 >> 32) + cy;
+}
+
+MATH_FAST_FN_ void fixp__mul64wide_(int64_t a, int64_t b, int64_t *hi, int64_t *lo) {
+	fixp__umul64wide_((uint64_t)a, (uint64_t)b, (uint64_t *)hi, (uint64_t *)lo);
+	if (a < 0LL) *hi -= b;
+	if (b < 0LL) *hi -= a;
+}
+
+MATH_FAST_FN_ int64_t fixp__mul_(int64_t a, int64_t b) {
+	int64_t res;
+	int64_t hi, lo;
+	fixp__mul64wide_(a, b, &hi, &lo);
+	res = ((uint64_t)hi << (64 - QFP_FRAC)) | ((uint64_t)lo >> QFP_FRAC);
+	return res;
+}
+
+MATH_FAST_FN_ `T `$add(`T a, `T b) { return (`T){ a.i + b.i }; }
+MATH_FAST_FN_ `T `$sub(`T a, `T b) { return (`T){ a.i - b.i }; }
+MATH_FAST_FN_ `T `$mul(`T a, `T b) { return (`T){ fixp__mul_(a.i, b.i) }; }
+MATH_FAST_FN_ `T `$div(`T a, `T b) { return (`T){ (a.i / b.i) << QFP_FRAC }; }
+MATH_FAST_FN_ double double_`T(`T x) { return (double)x.i / (double)(1 << QFP_FRAC); }
+MATH_FAST_FN_ float float_`T(`T x) { return (float)x.i / (float)(1 << QFP_FRAC); }
+MATH_FAST_FN_ `T `T_double(double x) { return (`T){ (x * (1 << QFP_FRAC)) }; }
+MATH_FAST_FN_ `T `T_float(float x) { return (`T){ (x * (1 << QFP_FRAC)) }; }
+MATH_FAST_FN_ `T `$sqrt(`T a, `T b) { return (`T){ (a.i / b.i) << QFP_FRAC }; }
+MATH_FAST_FN_ `T `$tan(`T a, `T b) { return (`T){ (a.i / b.i) << QFP_FRAC }; }
+MATH_FAST_FN_ `T `$cos(`T a, `T b) { return (`T){ (a.i / b.i) << QFP_FRAC }; }
+MATH_FAST_FN_ `T `$sin(`T a, `T b) { return (`T){ (a.i / b.i) << QFP_FRAC }; }
 """.strip()
 
 TEMPLATES: list[tuple[set[str], str, str]] = [
@@ -13,54 +77,55 @@ typedef union {
 	struct { `B `[rgba,$Dim,0,$At,$CutEnd,$SeqC]; };
 	`B vs[`[$Dim,0,$At,$Str]];
 } `T;
-	
-static inline `T `T`[xyzw,$Dim,0,$At,$CutEnd,$SeqJ](`[xyzw,$Dim,0,$At,$CutEnd,`B {0},$Map,$SeqC]) { return `[xyzw,$Dim,0,$At,$CutEnd,$ctor]; }
-static inline `T `T`[rgba,$Dim,0,$At,$CutEnd,$SeqJ](`[rgba,$Dim,0,$At,$CutEnd,`B {0},$Map,$SeqC]) { return `[rgba,$Dim,0,$At,$CutEnd,$ctor]; }
-static inline `T `$vs(const `B vs[`[$Dim,0,$At,$Str]]) { return `[vs{0},$Dim,,$Dims,$ctor]; }
-static inline `T `$v(`B v) { return `[v,$Dim,,$Dims,$ctor]; }
-static inline `T `$v0() { return `$v(0); }
+
+MATH_FN_ `T `T`[xyzw,$Dim,0,$At,$CutEnd,$SeqJ](`[xyzw,$Dim,0,$At,$CutEnd,`B {0},$Map,$SeqC]) { return `[xyzw,$Dim,0,$At,$CutEnd,$ctor]; }
+MATH_FN_ `T `T`[rgba,$Dim,0,$At,$CutEnd,$SeqJ](`[rgba,$Dim,0,$At,$CutEnd,`B {0},$Map,$SeqC]) { return `[rgba,$Dim,0,$At,$CutEnd,$ctor]; }
+MATH_FN_ `T `$vs(const `B vs[`[$Dim,0,$At,$Str]]) { return `[vs{0},$Dim,,$Dims,$ctor]; }
+MATH_FN_ `T `$v(`B v) { return `[v,$Dim,,$Dims,$ctor]; }
+MATH_FN_ `T `$v0() { return `$v(0); }
 """.strip()),
-	({"castv"}, "{nameb} to {namea}", R"""
-static inline `Ta `Ta_`Tb(`Tb v) { return `[(`Ba)v{0},$ElWise,$ctor]; }
+	({"cast"}, "{nameb} to {namea}", R"""
+MATH_FN_ `Ta `Ta_`Tb(`Tb x) { return `[(`Ba)x{0},$ElWise,$ctor]; }
 """.strip()),
 	({"v4"}, "{name} type", R"""
-static inline `T `T.xyz3w(`B3 xyz, `B w) { return `[xyz,xyz.{0},$Map,w,$SList,$Add,$ctor]; }
+MATH_FN_ `T `T.xyz3w(`B3 xyz, `B w) { return `[xyz,xyz.{0},$Map,w,$SList,$Add,$ctor]; }
 """.strip()),
 	({"v"}, "{name} operations", R"""
-static inline `T `$neg(`T v) { return `[-v{0},$ElWise,$ctor]; }
-static inline `T `$add(`T a, `T b) { return `[a{0} + b{0},$ElWise,$ctor]; }
-static inline `T `$sub(`T a, `T b) { return `[a{0} - b{0},$ElWise,$ctor]; }
-static inline `T `$mul(`T v, `B s) { return `[v{0} * s,$ElWise,$ctor]; }
-static inline `T `$div(`T v, `B s) { return `[v{0} / s,$ElWise,$ctor]; }
-static inline `B `$dot(`T a, `T b) { return `[a{0} * b{0},$ElWise,$SeqP]; }
-static inline `B `$mag2(`T v) { return `[v,v,$dot]; }
-static inline `B `$mag(`T v) { return `[v,$mag2,$sqrt]; }
-static inline `T `$norm(`T v) {
+MATH_FN_ `T `$neg(`T v) { return `[-v{0},$ElWise,$ctor]; }
+MATH_FN_ `T `$add(`T a, `T b) { return `[a{0} + b{0},$ElWise,$ctor]; }
+MATH_FN_ `T `$sub(`T a, `T b) { return `[a{0} - b{0},$ElWise,$ctor]; }
+MATH_FN_ `T `$mul(`T v, `B s) { return `[v{0} * s,$ElWise,$ctor]; }
+MATH_FN_ `T `$div(`T v, `B s) { return `[v{0} / s,$ElWise,$ctor]; }
+MATH_FN_ `B `$dot(`T a, `T b) { return `[a{0} * b{0},$ElWise,$SeqP]; }
+MATH_FN_ `B `$mag2(`T v) { return `[v,v,$dot]; }
+MATH_FN_ `B `$mag(`T v) { return `[v,$mag2,$sqrt]; }
+MATH_FN_ `T `$norm(`T v) {
 	`B m = `[v,$mag2];
 	if (`[m,$fabs] <= `eps) return (`T){};
 	return `[v,m,$sqrt,$div];
 }
 """.strip()),
 	({"v3"}, "{base} vector cross product", R"""
-static inline `T `$cross(`T a, `T b) {
+MATH_FN_ `T `$cross(`T a, `T b) {
 	return `T.xyz(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
 """.strip()),
 	({"s", "v"}, "{name} lerp, min, max, clamp", R"""
-static inline `T `$min(`T a, `T b) { return `[a{0} < b{0} ? a{0} : b{0},$ElWise,$ctor]; }
-static inline `T `$max(`T a, `T b) { return `[a{0} > b{0} ? a{0} : b{0},$ElWise,$ctor]; }
-static inline `T `$clamp(`T x, `T a, `T b) { return `[x,a,$max,b,$min]; }
-static inline `T `$lerp(`T a, `T b, `B t) { return `[a,1 - t,$muls,b,t,$muls,$add]; }
+MATH_FN_ `T `$min(`T a, `T b) { return `[a{0} < b{0} ? a{0} : b{0},$ElWise,$ctor]; }
+MATH_FN_ `T `$max(`T a, `T b) { return `[a{0} > b{0} ? a{0} : b{0},$ElWise,$ctor]; }
+MATH_FN_ `T `$clamp(`T x, `T a, `T b) { return `[x,a,$max,b,$min]; }
+MATH_FN_ `T `$lerp(`T a, `T b, `B t) { return `[a,1 - t,$muls,b,t,$muls,$add]; }
 """.strip()),
 	({"m"}, "{name} matrix", R"""
 typedef union {
+	struct { `B vvs[`[$Dim,0,$At,$Dim,1,$At,$Mul,$Str]]; };
 	struct { `B vs[`[$Dim,0,$At,$Str]][`[$Dim,1,$At,$Str]]; };
 	struct { `B`[$Dim,0,$At,$Str] v`[$Dim,0,$At,$Str]s[`[$Dim,1,$At,$Str]]; };
 } `T;
 """.strip()),
 	# TODO: matrix multiplication
 	({"m4x4"}, "{base} matrix operations", R"""
-static inline void set`B4x4iden(`B4x4 *m) {
+MATH_FN_ void set`B4x4iden(`B4x4 *m) {
 	memset(m->vs, 0, sizeof(m->vs));
 	m->vs[0][0] = 1.0;
 	m->vs[1][1] = 1.0;
@@ -68,7 +133,7 @@ static inline void set`B4x4iden(`B4x4 *m) {
 	m->vs[3][3] = 1.0;
 }
 
-static inline void `B4x4trans(`B4x4 *m, `B3 d) {
+MATH_FN_ void `B4x4trans(`B4x4 *m, `B3 d) {
 	`B r[4] = {};
 	`[r{0} += m->vs[0\]{0} * d.x,4,,$Dims,$SeqS];
 	`[r{0} += m->vs[1\]{0} * d.y,4,,$Dims,$SeqS];
@@ -76,7 +141,7 @@ static inline void `B4x4trans(`B4x4 *m, `B3 d) {
 	`[m->vs[3\]{0} += r{0},4,,$Dims,$SeqS];
 }
 
-static inline void `B4x4scale(`B4x4 *m, `B3 s) {
+MATH_FN_ void `B4x4scale(`B4x4 *m, `B3 s) {
 	m->vs[0][0] *= s.x;
 	m->vs[0][1] *= s.y;
 	m->vs[0][2] *= s.z;
@@ -96,7 +161,7 @@ struct `B4x4persp_info {
 	`B znear;
 };
 
-static inline struct `B4x4persp_info set`B4x4persp_rhoz(`B4x4 *m, `B fov, `B aspect, `B znear, `B zfar) {
+MATH_FN_ struct `B4x4persp_info set`B4x4persp_rhoz(`B4x4 *m, `B fov, `B aspect, `B znear, `B zfar) {
 	// https://gist.github.com/pezcode/1609b61a1eedd207ec8c5acf6f94f53a
 	memset(m->vs, 0, sizeof(m->vs));
 	struct `B4x4persp_info info;
@@ -115,7 +180,7 @@ static inline struct `B4x4persp_info set`B4x4persp_rhoz(`B4x4 *m, `B fov, `B asp
 	return info;
 }
 
-static inline struct `B4x4persp_info set`B4x4persp_rhozi(`B4x4 *m, `B fov, `B aspect, `B znear) {
+MATH_FN_ struct `B4x4persp_info set`B4x4persp_rhozi(`B4x4 *m, `B fov, `B aspect, `B znear) {
 	// http://www.songho.ca/opengl/gl_projectionmatrix.html#perspective
 	// https://computergraphics.stackexchange.com/a/12453
 	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
@@ -135,12 +200,12 @@ static inline struct `B4x4persp_info set`B4x4persp_rhozi(`B4x4 *m, `B fov, `B as
 	return info;
 }
 
-static inline struct `B4x4persp_info set`B4x4persp(`B4x4 *m, `B fov, `B aspect, `B znear) {
+MATH_FN_ struct `B4x4persp_info set`B4x4persp(`B4x4 *m, `B fov, `B aspect, `B znear) {
 	// return set`B4x4persp_rhoz(m, fov, aspect, znear, (`B)1000.0);
 	return set`B4x4persp_rhozi(m, fov, aspect, znear);
 }
 
-static inline void set`B4x4lookat(`B4x4 *m, `B3 eye, `B3 center, `B3 up) {
+MATH_FN_ void set`B4x4lookat(`B4x4 *m, `B3 eye, `B3 center, `B3 up) {
 	memset(m->vs, 0, sizeof(m->vs));
 	`B3 f = `B3norm(`B3sub(center, eye));
 	`B3 s = `B3norm(`B3cross(up, f));
@@ -161,7 +226,7 @@ static inline void set`B4x4lookat(`B4x4 *m, `B3 eye, `B3 center, `B3 up) {
 	m->vs[3][3] = 1.0f;
 }
 
-static inline void `B4x4mul(`B4x4 *res, const `B4x4 *m1, const `B4x4 *m2) {
+MATH_FN_ void `B4x4mul(`B4x4 *res, const `B4x4 *m1, const `B4x4 *m2) {
 	for (size_t i = 0; i < 4; ++i) {
 		for (size_t j = 0; j < 4; ++j) {
 			res->vs[j][i] = 0;
@@ -173,6 +238,8 @@ static inline void `B4x4mul(`B4x4 *res, const `B4x4 *m1, const `B4x4 *m2) {
 
 """)
 ]
+
+# TODO: Qfp casting
 
 @dataclasses.dataclass(frozen=True)
 class Ty:
@@ -199,7 +266,7 @@ class Ty:
 
 PATTERN = re.compile(r"\`(\$?[a-zA-Z]+\.?|\[(|\\.|[^\]])*\])")
 
-def instantiate(ty: Ty, source: str, vars: dict[str, str]):
+def instantiate(ty: Ty, source: str, vars: dict[str, typing.Any]):
 	def get_var(name: str) -> str:
 		if name in vars: return vars[name]
 		raise NameError(f"unknown var: {name}")
@@ -247,6 +314,9 @@ def instantiate(ty: Ty, source: str, vars: dict[str, str]):
 		"At": (2, lambda l, s: l[int(s)]),
 		"Map": (2, lambda l, s: [s.format(e) for e in l]),
 		"Add": (2, lambda a, b: a + b),
+		"Sub": (2, lambda a, b: a - b),
+		"Mul": (2, lambda a, b: a * b),
+		"Div": (2, lambda a, b: a / b),
 		"neg": (1, fn_unop("neg")),
 		"mag2": (1, fn_unop("mag2")),
 		"mag": (1, fn_unop("mag")),
@@ -311,7 +381,11 @@ BASE_BUILTIN_OPS = {
 
 
 class Generator:
-	BASE_TYPES = (("float", "0.0000001f"), ("double", "0.00000001"))
+	BASE_TYPES = (
+		("float", "0.0000001f", True, BASE_BUILTIN_OPS),
+		("double", "0.00000001", True, BASE_BUILTIN_OPS),
+		# ("Qfp", "(Qfp){10}", False, {}),
+	)
 	BASE_DIMS = (2, 3, 4)
 
 	def __init__(self, templates: list[tuple[set[str], str, str]], fout: typing.TextIO):
@@ -359,6 +433,13 @@ class Generator:
 			tyb = Ty((dim,), base_tyb.base_ty, False, op_map, {}, cons, base_tyb.epsilon)
 			self._generate_for2({"cast", "castv"}, tya, tyb)
 	
+	def _generate_matrix_casts(self, base_tya: Ty, base_tyb: Ty):
+		cons = "({name}){{{{ {} }}}}"
+		for dim in itertools.product(self.BASE_DIMS, self.BASE_DIMS):
+			tya = Ty(dim, base_tya.base_ty, False, {}, {}, cons, base_tya.epsilon)
+			tyb = Ty(dim, base_tyb.base_ty, False, {}, {}, cons, base_tyb.epsilon)
+			self._generate_for2({"cast", "castm"}, tya, tyb)
+	
 	def _generate_matrix(self, base_ty: Ty):
 		cons = "({name}){{{{ {} }}}}"
 		for dim in itertools.product(self.BASE_DIMS, self.BASE_DIMS):
@@ -369,25 +450,33 @@ class Generator:
 		print("// DO NOT EDIT; THIS FILE WAS GENERATED BY generate_math.py", file=self.fout)
 		print("#ifndef PSHINE_MATH_H_", file=self.fout)
 		print("#define PSHINE_MATH_H_", file=self.fout)
-		print("#include \"pshine/util.h\"", file=self.fout)
-		print("#include <stddef.h>", file=self.fout)
-		print("#include <string.h>", file=self.fout)
-		print("#include <math.h>", file=self.fout)
+		print(HEADER, file=self.fout)
 		print("", file=self.fout)
 		print(CONSTS, file=self.fout)
 		print("", file=self.fout)
-		for base_ty, epsilon in self.BASE_TYPES:
-			ty = Ty((1,), base_ty, True, {}, BASE_BUILTIN_OPS, "{}", epsilon)
+		print(instantiate(
+			Ty((1,), "Qfp", False, {}, {}, "({name}){{ {} }}", f"({Qn}){{10}}"),
+			FIXP_IMPL,
+			{ "T": "Qfp", "Qs": Q[1], "qs": str(Q[1]) }
+		), file=self.fout)
+		print("", file=self.fout)
+		for base_ty, epsilon, is_builtin, builtin_ops in self.BASE_TYPES:
+			ty = Ty((1,), base_ty, is_builtin, {}, builtin_ops, "{}", epsilon)
 			self._generate_scalar(ty)
 			self._generate_vector(ty)
 			self._generate_matrix(ty)
 		for a, b in itertools.product(self.BASE_TYPES, self.BASE_TYPES):
+			if a[0] == "Qfp" or b[0] == "Qfp": continue
 			if a == b: continue
-			tya = Ty((1,), a[0], True, {}, BASE_BUILTIN_OPS, "{}", a[1])
-			tyb = Ty((1,), b[0], True, {}, BASE_BUILTIN_OPS, "{}", b[1])
+			tya = Ty((1,), a[0], a[2], {}, a[3], "{}", a[1])
+			tyb = Ty((1,), b[0], b[2], {}, b[3], "{}", b[1])
 			self._generate_vector_casts(tya, tyb)
+			self._generate_matrix_casts(tya, tyb)
 		print("\n#endif // PSHINE_MATH_H_", file=self.fout)
 
 if __name__ == "__main__":
-	with open(sys.argv[1], "w") as fout:
-		Generator(TEMPLATES, fout).generate()
+	if sys.argv[1] == "-":
+		Generator(TEMPLATES, sys.stdout).generate()
+	else:
+		with open(sys.argv[1], "w") as fout:
+			Generator(TEMPLATES, fout).generate()
