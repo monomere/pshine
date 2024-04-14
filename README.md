@@ -9,7 +9,7 @@ TODO:
 - [ ] Terrain generation, textures.
 - [ ] Mesh LOD.
 
-## Cloning
+## Setting Up
 
 > requirements: git, wget, python, internet connection
 
@@ -17,6 +17,16 @@ TODO:
 git clone https://github.com/monomere/pshine
 cd pshine
 ```
+
+### Script
+
+You can do the steps below manually, but there's a bash script that does them for you.
+
+```bash
+./setup.sh
+```
+
+### Volk and VMA
 
 The graphics backend uses [volk](https://github.com/zeux/volk) and
 [VMA](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator),
@@ -33,7 +43,7 @@ wget -P include https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/Vulka
 TBD. The shader language compiler (giraffe) uses [owl](https://github.com/ianh/owl), but it doesn't have a gitignore and
 doesn't prefix some of the symbols in the generated header. Giraffe is currently in development so this doesn't matter.
 
-## Generating the ImGui bindings
+### Generating the ImGui bindings
 
 The project uses [dear_bindings](https://github.com/dearimgui/dear_bindings) to generate c version of the c++ imgui headers.
 
@@ -69,12 +79,15 @@ python vendor/dear_bindings/dear_bindings.py \
 
 ## Building
 
-> requirements: ninja, gcc-compatible c/c++ compiler, glfw
+> requirements: ninja, gcc-compatible c/c++ compiler, glfw, python (optional)
 
 To build (incremental)
 ```bash
 ninja
 ```
+
+> If you edit generate_math.py, ninja will try to regenerate the
+> [math.h](/pshine/src/pshine/math.h) header, which requires python.
 
 > **NB:** by default, the build.ninja file uses the full LLVM setup
 > with lld, clang, libc++, etc. To use the system-provided stuff
