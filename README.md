@@ -139,8 +139,8 @@ Key|Action
 
 - [x] Use double precision for position data and etc.
 - [x] Fake perspective for celestial bodies.
-- [ ] Fixed point math?
-- [ ] Bug: mesh scale is wrong
+- [x] Fixed point math?
+- [x] Bug: ~~mesh scale is wrong~~ forgot to remove `* 5.0f` when passing atmosphere height.
 - [ ] Use near-origin coordinates for the "player".
 - [ ] Velocty reference-frame.
 

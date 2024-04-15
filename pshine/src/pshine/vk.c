@@ -1990,7 +1990,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		// );
 		struct atmo_uniform_data new_data = {
 			.planet = float4xyz3w(float3_double3(SCSd3_WCSp3(p->as_body.position)), SCSd_WCSd(p->as_body.radius)),
-			.radius = SCSd_WCSd(p->as_body.radius + p->atmosphere.height * 5.0),
+			.radius = SCSd_WCSd(p->as_body.radius + p->atmosphere.height),
 			.coefs_ray = float4xyz3w(
 				float3vs(p->atmosphere.rayleigh_coefs),
 				p->atmosphere.rayleigh_falloff
