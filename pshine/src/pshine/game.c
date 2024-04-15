@@ -4,6 +4,76 @@
 #include <pshine/util.h>
 #include <cimgui/cimgui.h>
 
+enum si_prefix {
+	SI_ONE,
+	SI_KILO,
+	SI_MEGA,
+	SI_GIGA,
+	SI_PETA,
+	SI_EXA,
+	SI_ZETTA,
+	SI_YOTTA,
+	SI_RONNA,
+	SI_QUETTA,
+};
+
+static enum si_prefix find_optimal_si_prefix(double value) {
+	if (value < 1'000.0) return SI_ONE;
+	if (value < 1'000'000.0) return SI_KILO;
+	if (value < 1'000'000'000.0) return SI_MEGA;
+	if (value < 1'000'000'000'000.0) return SI_GIGA;
+	if (value < 1'000'000'000'000'000.0) return SI_PETA;
+	return SI_EXA;
+}
+
+static const char *si_prefix_string(enum si_prefix p) {
+	switch (p) {
+	case SI_ONE:    return "";
+	case SI_KILO:   return "k";
+	case SI_MEGA:   return "M";
+	case SI_GIGA:   return "G";
+	case SI_PETA:   return "P";
+	case SI_EXA:    return "E";
+	case SI_ZETTA:  return "Z";
+	case SI_YOTTA:  return "Y";
+	case SI_RONNA:  return "R";
+	case SI_QUETTA: return "Q";
+	}
+	return "";
+}
+
+static const char *si_prefix_english(enum si_prefix p) {
+	switch (p) {
+	case SI_ONE:    return "";
+	case SI_KILO:   return "thousand";
+	case SI_MEGA:   return "million";
+	case SI_GIGA:   return "billion";
+	case SI_PETA:   return "trillion";
+	case SI_EXA:    return "quadrillion";
+	case SI_ZETTA:  return "quntillion";
+	case SI_YOTTA:  return "sextillion";
+	case SI_RONNA:  return "septillion";
+	case SI_QUETTA: return "octillion";
+	}
+	return "";
+}
+
+static double apply_si_prefix(enum si_prefix p, double value) {
+	switch (p) {
+	case SI_ONE:    return value;
+	case SI_KILO:   return value / 1'000.0;
+	case SI_MEGA:   return value / 1'000'000.0;
+	case SI_GIGA:   return value / 1'000'000'000.0;
+	case SI_PETA:   return value / 1'000'000'000'000.0;
+	case SI_EXA:    return value / 1'000'000'000'000'000.0;
+	case SI_ZETTA:  return value / 1'000'000'000'000'000'000.0;
+	case SI_YOTTA:  return value / 1'000'000'000'000'000'000'000.0;
+	case SI_RONNA:  return value / 1'000'000'000'000'000'000'000'000.0;
+	case SI_QUETTA: return value / 1'000'000'000'000'000'000'000'000'000.0;
+	}
+	return value;
+}
+
 typedef struct pshine_static_mesh_vertex planet_vertex;
 
 // requires: |a| = |b|
@@ -157,7 +227,7 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->has_atmosphere = true;
 	// similar to Earth, where the radius of earth
 	// is 6371km and the atmosphere height is 100km
-	planet->atmosphere.height = 100'000;
+	planet->atmosphere.height = 0.015696123 * radius;
 	planet->atmosphere.rayleigh_coefs[0] = 3.8f;
 	planet->atmosphere.rayleigh_coefs[1] = 13.5f;
 	planet->atmosphere.rayleigh_coefs[2] = 33.1f;
@@ -314,8 +384,12 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 
 	if (ImGui_Begin("Camera", NULL, 0)) {
 		double3 p = double3vs(game->camera_position.values);
+		double d = double3mag(double3sub(p, double3vs(game->celestial_bodies_own[0]->position.values))) - game->celestial_bodies_own[0]->radius;
+		enum si_prefix d_prefix = find_optimal_si_prefix(d);
+		double d_scaled = apply_si_prefix(d_prefix, d);
 		ImGui_Text("WCS Position: %.3fm %.3fm %.3fm", p.x, p.y, p.z);
-		ImGui_Text("SCS Position: %.3fm %.3fm %.3fm", p.x * PSHINE_SCS_FACTOR, p.y * PSHINE_SCS_FACTOR, p.z * PSHINE_SCS_FACTOR);
+		ImGui_Text("SCS Position: %.3fu %.3fu %.3fu", p.x * PSHINE_SCS_FACTOR, p.y * PSHINE_SCS_FACTOR, p.z * PSHINE_SCS_FACTOR);
+		ImGui_Text("Distance from planet surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
 		ImGui_InputDouble("movement speed, m/s", &game->data_own->move_speed);
 	}
 	ImGui_End();
