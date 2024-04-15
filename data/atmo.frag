@@ -131,7 +131,7 @@ vec4 compute_color(vec2 uv, vec4 col, float depth) {
 	float dst_thru_atmo = min(atmo_hit.y, dst_to_surface - dst_to_atmo);
 
 	if (dst_thru_atmo > 0.0) {
-		const float epsilon = 0.0001;
+		const float epsilon = 0.00001;
 		vec3 ray_origin_atmo = ray_origin + ray_dir * (dst_to_atmo + epsilon);
 		vec3 light = compute_light(ray_origin_atmo, ray_dir, dst_thru_atmo - epsilon * 2.0, col.rgb);
 

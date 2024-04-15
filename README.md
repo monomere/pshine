@@ -141,7 +141,9 @@ Key|Action
 - [x] Fake perspective for celestial bodies.
 - [x] Fixed point math?
 - [x] Bug: ~~mesh scale is wrong~~ forgot to remove `* 5.0f` when passing atmosphere height.
-- [ ] The bug is still there :(
+- [x] ~~The bug is still there :(~~ nevermind, it was correct all along.
+- [ ] Fix rotation matrices, and matrices in general.
+- [ ] Rewrite the math library generation, its so ugly.
 - [ ] Use near-origin coordinates for the "player".
 - [ ] Velocty reference-frame.
 

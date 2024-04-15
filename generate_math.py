@@ -1,9 +1,10 @@
 import math, dataclasses, re, itertools, sys, typing, functools
 
+HAVE_FIXP = False
+
 HEADER = f"""
 #include "pshine/util.h"
-#include <stddef.h>
-#include <stdint.h>
+#include <stddef.h>{'\n#include <stdint.h>' if HAVE_FIXP else ''}
 #include <string.h>
 #include <math.h>
 
@@ -142,7 +143,53 @@ MATH_FN_ void set`B4x4iden(`B4x4 *m) {
 	m->vs[2][2] = 1.0;
 	m->vs[3][3] = 1.0;
 }
+	
+MATH_FN_ void set`B3x3iden(`B3x3 *m) {
+	memset(m->vs, 0, sizeof(m->vs));
+	m->vs[0][0] = 1.0;
+	m->vs[1][1] = 1.0;
+	m->vs[2][2] = 1.0;
+}
+MATH_FN_ void `B3x3axisangle(`B3x3 *m, `B3 axis, `B angle) {
+	memset(m->vs, 0, sizeof(m->vs));
+	`B a = angle, c = `[a,$cos], s = `[a,$sin];
+	axis = `B3norm(axis);
+	`B3 t = `B3mul(axis, 1 - c);
 
+	`B r00 = c + t.x * axis.x;
+	`B r01 = t.x * axis.y + s * axis.z;
+	`B r02 = t.x * axis.z - s * axis.y;
+
+	`B r10 = t.y * axis.x - s * axis.z;
+	`B r11 = c + t.y * axis.y;
+	`B r12 = t.y * axis.z + s * axis.x;
+
+	`B r20 = t.z * axis.x + s * axis.y;
+	`B r21 = t.z * axis.y - s * axis.x;
+	`B r22 = c + t.z * axis.z;
+
+	`B3x3 r;
+	r.v3s[0] = `B3add(`B3add(`B3mul(m->v3s[0], r00), `B3mul(m->v3s[1], r01)), `B3mul(m->v3s[2], r02));
+	r.v3s[1] = `B3add(`B3add(`B3mul(m->v3s[0], r10), `B3mul(m->v3s[1], r11)), `B3mul(m->v3s[2], r12));
+	r.v3s[2] = `B3add(`B3add(`B3mul(m->v3s[0], r20), `B3mul(m->v3s[1], r21)), `B3mul(m->v3s[2], r22));
+	*m = r;
+}
+MATH_FN_ void set`B3x3rotation(`B3x3 *m, `B yaw, `B pitch, `B roll) {
+	memset(m->vs, 0, sizeof(m->vs));
+	`B α = yaw, β = pitch, γ = roll;
+	`B sα = `[α,$sin], sβ = `[β,$sin], sγ = `[γ,$sin];
+	`B cα = `[α,$cos], cβ = `[β,$cos], cγ = `[γ,$cos];
+
+	m->vs[0][0] = cα * cβ;
+	m->vs[1][0] = sα * cβ;
+	m->vs[2][0] = -sβ;
+	m->vs[0][1] = cα * sβ * sγ - sα * cγ;
+	m->vs[1][1] = sα * sβ * sγ + cα * cγ;
+	m->vs[2][1] = cβ * sγ;
+	m->vs[0][2] = cα * sβ * cγ + sα * sγ;
+	m->vs[1][2] = sα * sβ * cγ - cα * sγ;
+	m->vs[2][2] = cβ * cγ;
+}
 MATH_FN_ void `B4x4trans(`B4x4 *m, `B3 d) {
 	`B r[4] = {};
 	`[r{0} += m->vs[0\]{0} * d.x,4,,$Dims,$SeqS];
@@ -244,6 +291,14 @@ MATH_FN_ void `B4x4mul(`B4x4 *res, const `B4x4 *m1, const `B4x4 *m2) {
 				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
 		}
 	}
+}
+
+MATH_FN_ `B3 `B3x3mulv(const `B3x3 *m, `B3 v) {
+	return `B3xyz(
+		m->vs[0][0] * v.x + m->vs[1][0] * v.y + m->vs[2][0] * v.z,
+		m->vs[0][1] * v.x + m->vs[1][1] * v.y + m->vs[2][1] * v.z,
+		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z
+	);
 }
 
 """)
@@ -416,6 +471,7 @@ def instantiate(ty: Ty, source: str, vars: dict[str, typing.Any]):
 		"Tb": (0, lambda: ty.base_ty if isinstance(ty, CompositeTy) else ty),
 		"Tt": (0, lambda: ty),
 		"V": (1, lambda name: vars[name]),
+		"MkVt": (2, lambda n, ty: CompositeTy((int(n),), ty, False, {"muls":"mul","mul":"??"}, {}, ctor_fmt="({name}){{{{ {} }}}}")),
 		"TName": (1, lambda ty: ty.name),
 		"TDim": (1, lambda ty: ty.dim),
 		"TCtor": (2, lambda s, ty: ty.ctor(", ".join(s))),
@@ -431,10 +487,16 @@ def instantiate(ty: Ty, source: str, vars: dict[str, typing.Any]):
 		"mag2": (1, fn_gunop(ty, "mag2")),
 		"mag": (1, fn_gunop(ty, "mag")),
 		"norm": (1, fn_gunop(ty, "norm")),
+		"gneg": (2, lambda x, ty: fn_gunop(ty, "neg")(x)),
+		"gmag2": (2, lambda x, ty: fn_gunop(ty, "mag2")(x)),
+		"gmag": (2, lambda x, ty: fn_gunop(ty, "mag")(x)),
+		"gnorm": (2, lambda x, ty: fn_gunop(ty, "norm")(x)),
 		"sqrt": (1, fn_cmath("sqrt")),
 		"fabs": (1, fn_cmath("fabs")),
 		"fmod": (1, fn_cmath("fmod")),
 		"tan": (1, fn_cmath("tan")),
+		"cos": (1, fn_cmath("cos")),
+		"sin": (1, fn_cmath("sin")),
 	}
 
 	def repl(m: re.Match) -> str:
@@ -453,7 +515,6 @@ def instantiate(ty: Ty, source: str, vars: dict[str, typing.Any]):
 						narg = 2
 						fn = fn_gbinop(ty, name)
 					if len(stack) < narg:
-						print(stack)
 						raise Exception(f"stack underflow for {name}, expected {narg} but only {len(stack)} available.")
 					stack.append(fn(*reversed([stack.pop() for _ in range(narg)])))
 				else:
@@ -495,7 +556,7 @@ class Generator:
 	BASE_TYPES = (
 		BaseTy((1,), "float", True, {}, BASE_BUILTIN_OPS, ctor_fmt="{}", epsilon_fmt="0.000001f"),
 		BaseTy((1,), "double", True, {}, BASE_BUILTIN_OPS, ctor_fmt="{}", epsilon_fmt="0.000000001"),
-		BaseTy((1,), "Qfp", False, { "muls": "mul" }, {},
+	) + ((BaseTy((1,), "Qfp", False, { "muls": "mul" }, {},
 			ctor_fmt="{}",
 			cast_to_fmt="{to}_{name}({0})",
 			cast_from_fmt="{name}_{from}({0})",
@@ -503,8 +564,7 @@ class Generator:
 			name_fmt="{}{name}",
 			zero_fmt="({name}){{0}}",
 			one_fmt="({name}){{1}}",
-		),
-	)
+	),) if HAVE_FIXP else ())
 	BASE_DIMS = (2, 3, 4)
 
 	def __init__(self, templates: list[tuple[set[str], str, str]], fout: typing.TextIO):
@@ -593,11 +653,12 @@ class Generator:
 		print("", file=self.fout)
 		print(CONSTS, file=self.fout)
 		print("", file=self.fout)
-		print(instantiate(
-			self.BASE_TYPES[2],
-			FIXP_IMPL,
-			{ "T": "Qfp", "Qs": Q[1], "qs": str(Q[1]) }
-		), file=self.fout)
+		if HAVE_FIXP:
+			print(instantiate(
+				self.BASE_TYPES[2], # type: ignore
+				FIXP_IMPL,
+				{ "T": "Qfp", "Qs": Q[1], "qs": str(Q[1]) }
+			), file=self.fout)
 		print("", file=self.fout)
 		for ty in self.BASE_TYPES:
 			self._generate_scalar(ty)

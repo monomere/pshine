@@ -26,6 +26,7 @@ static enum si_prefix find_optimal_si_prefix(double value) {
 	return SI_EXA;
 }
 
+[[maybe_unused]]
 static const char *si_prefix_string(enum si_prefix p) {
 	switch (p) {
 	case SI_ONE:    return "";
@@ -270,7 +271,7 @@ void pshine_init_game(struct pshine_game *game) {
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0;
 	game->data_own->movement_mode = 1;
-	game->data_own->move_speed = PSHINE_SPEED_OF_LIGHT;
+	game->data_own->move_speed = 5'000.0; //PSHINE_SPEED_OF_LIGHT;
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
@@ -304,22 +305,33 @@ static const double ROTATE_SPEED = 1.0;
 
 [[maybe_unused]]
 static void update_camera_fly(struct pshine_game *game, float delta_time) {
-	double3 delta = {};
-	if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
-	else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
-	if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
-	else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
-	if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
-	else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
+	{
+		double3 delta = {};
+		if (pshine_is_key_down(game->renderer, PSHINE_KEY_LEFT)) delta.x += 1.0;
+		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_RIGHT)) delta.x -= 1.0;
+		if (pshine_is_key_down(game->renderer, PSHINE_KEY_UP)) delta.y += 1.0;
+		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_DOWN)) delta.y -= 1.0;
+		game->data_own->camera_pitch += delta.y * ROTATE_SPEED * delta_time;
+		game->data_own->camera_yaw += delta.x * ROTATE_SPEED * delta_time;
+	}
+
+	double3x3 mat = {};
+	setdouble3x3rotation(&mat, 0, game->data_own->camera_pitch, game->data_own->camera_yaw);
+
+	double3 cam_forward = double3x3mulv(&mat, double3xyz(0, 0, 1));
 
 	double3 cam_pos = double3vs(game->camera_position.values);
-	cam_pos = double3add(cam_pos, double3mul(double3norm(delta), game->data_own->move_speed * delta_time));
-
-	// float3 cam_forward = float3norm(float3sub(float3vs(game->celestial_bodies_own[0]->position.values), cam_pos));
-	double3 cam_forward = double3xyz(0.0, 0.0, 1.0);
-
-	game->data_own->camera_pitch += delta.y * ROTATE_SPEED * delta_time;
-	game->data_own->camera_yaw += delta.x * ROTATE_SPEED * delta_time;
+	{
+		double3 delta = {};
+		if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
+		else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
+		if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
+		else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
+		if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
+		else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
+		delta = double3x3mulv(&mat, delta);
+		cam_pos = double3add(cam_pos, double3mul(double3norm(delta), game->data_own->move_speed * delta_time));
+	}
 
 
 	*(double3*)game->camera_position.values = cam_pos;
@@ -391,6 +403,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		ImGui_Text("SCS Position: %.3fu %.3fu %.3fu", p.x * PSHINE_SCS_FACTOR, p.y * PSHINE_SCS_FACTOR, p.z * PSHINE_SCS_FACTOR);
 		ImGui_Text("Distance from planet surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
 		ImGui_InputDouble("movement speed, m/s", &game->data_own->move_speed);
+		ImGui_Text("yaw: %.3frad, pitch: %.3frad", game->data_own->camera_yaw, game->data_own->camera_pitch);
 	}
 	ImGui_End();
 

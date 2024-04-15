@@ -3,7 +3,6 @@
 #define PSHINE_MATH_H_
 #include "pshine/util.h"
 #include <stddef.h>
-#include <stdint.h>
 #include <string.h>
 #include <math.h>
 
@@ -14,59 +13,6 @@ static const double π = 3.141592653589793;
 static const double euler = 2.718281828459045;
 static const double τ = 6.283185307179586;
 
-#define QFP_FRAC 20
-typedef union { int64_t i; uint64_t u; } Qfp;
-
-// https://stackoverflow.com/a/31662911/19776006
-MATH_FAST_FN_ void fixp__umul64wide_(uint64_t a, uint64_t b, uint64_t *hi, uint64_t *lo) {
-	uint64_t a_lo = (uint64_t)(uint32_t)a;
-	uint64_t a_hi = a >> 32;
-	uint64_t b_lo = (uint64_t)(uint32_t)b;
-	uint64_t b_hi = b >> 32;
-
-	uint64_t p0 = a_lo * b_lo;
-	uint64_t p1 = a_lo * b_hi;
-	uint64_t p2 = a_hi * b_lo;
-	uint64_t p3 = a_hi * b_hi;
-
-	uint32_t cy = (uint32_t)(((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32);
-
-	*lo = p0 + (p1 << 32) + (p2 << 32);
-	*hi = p3 + (p1 >> 32) + (p2 >> 32) + cy;
-}
-
-MATH_FAST_FN_ void fixp__mul64wide_(int64_t a, int64_t b, int64_t *hi, int64_t *lo) {
-	fixp__umul64wide_((uint64_t)a, (uint64_t)b, (uint64_t *)hi, (uint64_t *)lo);
-	if (a < 0LL) *hi -= b;
-	if (b < 0LL) *hi -= a;
-}
-
-MATH_FAST_FN_ int64_t fixp__mul_(int64_t a, int64_t b) {
-	int64_t res;
-	int64_t hi, lo;
-	fixp__mul64wide_(a, b, &hi, &lo);
-	res = ((uint64_t)hi << (64 - QFP_FRAC)) | ((uint64_t)lo >> QFP_FRAC);
-	return res;
-}
-
-MATH_FAST_FN_ Qfp addQfp(Qfp a, Qfp b) { return (Qfp){ a.i + b.i }; }
-MATH_FAST_FN_ Qfp subQfp(Qfp a, Qfp b) { return (Qfp){ a.i - b.i }; }
-MATH_FAST_FN_ Qfp mulQfp(Qfp a, Qfp b) { return (Qfp){ fixp__mul_(a.i, b.i) }; }
-MATH_FAST_FN_ Qfp divQfp(Qfp a, Qfp b) { return (Qfp){ (a.i / b.i) << QFP_FRAC }; }
-MATH_FAST_FN_ double double_Qfp(Qfp x) { return (double)x.i / (double)(1 << QFP_FRAC); }
-MATH_FAST_FN_ float float_Qfp(Qfp x) { return (float)x.i / (float)(1 << QFP_FRAC); }
-MATH_FAST_FN_ Qfp Qfp_double(double x) { return (Qfp){ (x * (1 << QFP_FRAC)) }; }
-MATH_FAST_FN_ Qfp Qfp_float(float x) { return (Qfp){ (x * (1 << QFP_FRAC)) }; }
-MATH_FAST_FN_ Qfp negQfp(Qfp x) { return (Qfp){ -x.i }; }
-MATH_FAST_FN_ bool ltQfp(Qfp a, Qfp b) { return a.i < b.i; }
-MATH_FAST_FN_ bool gtQfp(Qfp a, Qfp b) { return a.i > b.i; }
-MATH_FAST_FN_ bool leQfp(Qfp a, Qfp b) { return a.i <= b.i; }
-MATH_FAST_FN_ bool geQfp(Qfp a, Qfp b) { return a.i >= b.i; }
-MATH_FAST_FN_ Qfp fabsQfp(Qfp x) { return (Qfp){ .u = x.u & ~(1UL << 63) }; }
-MATH_FAST_FN_ Qfp sqrtQfp(Qfp x) { return Qfp_double(sqrt(double_Qfp(x))); }
-MATH_FAST_FN_ Qfp tanQfp(Qfp x) { return Qfp_double(tan(double_Qfp(x))); }
-MATH_FAST_FN_ Qfp cosQfp(Qfp x) { return Qfp_double(cos(double_Qfp(x))); }
-MATH_FAST_FN_ Qfp sinQfp(Qfp x) { return Qfp_double(sin(double_Qfp(x))); }
 
 
 // float lerp, min, max, clamp
@@ -261,7 +207,53 @@ MATH_FN_ void setfloat4x4iden(float4x4 *m) {
 	m->vs[2][2] = 1.0;
 	m->vs[3][3] = 1.0;
 }
+	
+MATH_FN_ void setfloat3x3iden(float3x3 *m) {
+	memset(m->vs, 0, sizeof(m->vs));
+	m->vs[0][0] = 1.0;
+	m->vs[1][1] = 1.0;
+	m->vs[2][2] = 1.0;
+}
+MATH_FN_ void float3x3axisangle(float3x3 *m, float3 axis, float angle) {
+	memset(m->vs, 0, sizeof(m->vs));
+	float a = angle, c = cosf(a), s = sinf(a);
+	axis = float3norm(axis);
+	float3 t = float3mul(axis, 1 - c);
 
+	float r00 = c + t.x * axis.x;
+	float r01 = t.x * axis.y + s * axis.z;
+	float r02 = t.x * axis.z - s * axis.y;
+
+	float r10 = t.y * axis.x - s * axis.z;
+	float r11 = c + t.y * axis.y;
+	float r12 = t.y * axis.z + s * axis.x;
+
+	float r20 = t.z * axis.x + s * axis.y;
+	float r21 = t.z * axis.y - s * axis.x;
+	float r22 = c + t.z * axis.z;
+
+	float3x3 r;
+	r.v3s[0] = float3add(float3add(float3mul(m->v3s[0], r00), float3mul(m->v3s[1], r01)), float3mul(m->v3s[2], r02));
+	r.v3s[1] = float3add(float3add(float3mul(m->v3s[0], r10), float3mul(m->v3s[1], r11)), float3mul(m->v3s[2], r12));
+	r.v3s[2] = float3add(float3add(float3mul(m->v3s[0], r20), float3mul(m->v3s[1], r21)), float3mul(m->v3s[2], r22));
+	*m = r;
+}
+MATH_FN_ void setfloat3x3rotation(float3x3 *m, float yaw, float pitch, float roll) {
+	memset(m->vs, 0, sizeof(m->vs));
+	float α = yaw, β = pitch, γ = roll;
+	float sα = sinf(α), sβ = sinf(β), sγ = sinf(γ);
+	float cα = cosf(α), cβ = cosf(β), cγ = cosf(γ);
+
+	m->vs[0][0] = cα * cβ;
+	m->vs[1][0] = sα * cβ;
+	m->vs[2][0] = -sβ;
+	m->vs[0][1] = cα * sβ * sγ - sα * cγ;
+	m->vs[1][1] = sα * sβ * sγ + cα * cγ;
+	m->vs[2][1] = cβ * sγ;
+	m->vs[0][2] = cα * sβ * cγ + sα * sγ;
+	m->vs[1][2] = sα * sβ * cγ - cα * sγ;
+	m->vs[2][2] = cβ * cγ;
+}
 MATH_FN_ void float4x4trans(float4x4 *m, float3 d) {
 	float r[4] = {};
 	r[0] += m->vs[0][0] * d.x; r[1] += m->vs[0][1] * d.x; r[2] += m->vs[0][2] * d.x; r[3] += m->vs[0][3] * d.x;
@@ -363,6 +355,14 @@ MATH_FN_ void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4 *m2)
 				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
 		}
 	}
+}
+
+MATH_FN_ float3 float3x3mulv(const float3x3 *m, float3 v) {
+	return float3xyz(
+		m->vs[0][0] * v.x + m->vs[1][0] * v.y + m->vs[2][0] * v.z,
+		m->vs[0][1] * v.x + m->vs[1][1] * v.y + m->vs[2][1] * v.z,
+		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z
+	);
 }
 
 
@@ -559,7 +559,53 @@ MATH_FN_ void setdouble4x4iden(double4x4 *m) {
 	m->vs[2][2] = 1.0;
 	m->vs[3][3] = 1.0;
 }
+	
+MATH_FN_ void setdouble3x3iden(double3x3 *m) {
+	memset(m->vs, 0, sizeof(m->vs));
+	m->vs[0][0] = 1.0;
+	m->vs[1][1] = 1.0;
+	m->vs[2][2] = 1.0;
+}
+MATH_FN_ void double3x3axisangle(double3x3 *m, double3 axis, double angle) {
+	memset(m->vs, 0, sizeof(m->vs));
+	double a = angle, c = cos(a), s = sin(a);
+	axis = double3norm(axis);
+	double3 t = double3mul(axis, 1 - c);
 
+	double r00 = c + t.x * axis.x;
+	double r01 = t.x * axis.y + s * axis.z;
+	double r02 = t.x * axis.z - s * axis.y;
+
+	double r10 = t.y * axis.x - s * axis.z;
+	double r11 = c + t.y * axis.y;
+	double r12 = t.y * axis.z + s * axis.x;
+
+	double r20 = t.z * axis.x + s * axis.y;
+	double r21 = t.z * axis.y - s * axis.x;
+	double r22 = c + t.z * axis.z;
+
+	double3x3 r;
+	r.v3s[0] = double3add(double3add(double3mul(m->v3s[0], r00), double3mul(m->v3s[1], r01)), double3mul(m->v3s[2], r02));
+	r.v3s[1] = double3add(double3add(double3mul(m->v3s[0], r10), double3mul(m->v3s[1], r11)), double3mul(m->v3s[2], r12));
+	r.v3s[2] = double3add(double3add(double3mul(m->v3s[0], r20), double3mul(m->v3s[1], r21)), double3mul(m->v3s[2], r22));
+	*m = r;
+}
+MATH_FN_ void setdouble3x3rotation(double3x3 *m, double yaw, double pitch, double roll) {
+	memset(m->vs, 0, sizeof(m->vs));
+	double α = yaw, β = pitch, γ = roll;
+	double sα = sin(α), sβ = sin(β), sγ = sin(γ);
+	double cα = cos(α), cβ = cos(β), cγ = cos(γ);
+
+	m->vs[0][0] = cα * cβ;
+	m->vs[1][0] = sα * cβ;
+	m->vs[2][0] = -sβ;
+	m->vs[0][1] = cα * sβ * sγ - sα * cγ;
+	m->vs[1][1] = sα * sβ * sγ + cα * cγ;
+	m->vs[2][1] = cβ * sγ;
+	m->vs[0][2] = cα * sβ * cγ + sα * sγ;
+	m->vs[1][2] = sα * sβ * cγ - cα * sγ;
+	m->vs[2][2] = cβ * cγ;
+}
 MATH_FN_ void double4x4trans(double4x4 *m, double3 d) {
 	double r[4] = {};
 	r[0] += m->vs[0][0] * d.x; r[1] += m->vs[0][1] * d.x; r[2] += m->vs[0][2] * d.x; r[3] += m->vs[0][3] * d.x;
@@ -663,190 +709,15 @@ MATH_FN_ void double4x4mul(double4x4 *res, const double4x4 *m1, const double4x4 
 	}
 }
 
-
-
-// Qfp lerp, min, max, clamp
-MATH_FN_ Qfp minQfp(Qfp a, Qfp b) { return ltQfp(a, b) ? a : b; }
-MATH_FN_ Qfp maxQfp(Qfp a, Qfp b) { return gtQfp(a, b) ? a : b; }
-MATH_FN_ Qfp clampQfp(Qfp x, Qfp a, Qfp b) { return minQfp(maxQfp(x, a), b); }
-MATH_FN_ Qfp lerpQfp(Qfp a, Qfp b, Qfp t) { return addQfp(mulQfp(a, subQfp((Qfp){1}, t)), mulQfp(b, t)); }
-
-// Qfp2 type
-typedef union {
-	struct { Qfp x, y; };
-	struct { Qfp r, g; };
-	Qfp vs[2];
-} Qfp2;
-
-MATH_FN_ Qfp2 Qfp2xy(Qfp x, Qfp y) { return (Qfp2){{ x, y }}; }
-MATH_FN_ Qfp2 Qfp2rg(Qfp r, Qfp g) { return (Qfp2){{ r, g }}; }
-MATH_FN_ Qfp2 Qfp2vs(const Qfp vs[2]) { return (Qfp2){{ vs[0], vs[1] }}; }
-MATH_FN_ Qfp2 Qfp2v(Qfp v) { return (Qfp2){{ v, v }}; }
-MATH_FN_ Qfp2 Qfp2v0() { return Qfp2v((Qfp){0}); }
-
-// Qfp2 operations
-MATH_FN_ Qfp2 Qfp2neg(Qfp2 v) { return (Qfp2){{ negQfp(v.vs[0]), negQfp(v.vs[1]) }}; }
-MATH_FN_ Qfp2 Qfp2add(Qfp2 a, Qfp2 b) { return (Qfp2){{ addQfp(a.vs[0], b.vs[0]), addQfp(a.vs[1], b.vs[1]) }}; }
-MATH_FN_ Qfp2 Qfp2sub(Qfp2 a, Qfp2 b) { return (Qfp2){{ subQfp(a.vs[0], b.vs[0]), subQfp(a.vs[1], b.vs[1]) }}; }
-MATH_FN_ Qfp2 Qfp2mul(Qfp2 v, Qfp s) { return (Qfp2){{ mulQfp(v.vs[0], s), mulQfp(v.vs[1], s) }}; }
-MATH_FN_ Qfp2 Qfp2div(Qfp2 v, Qfp s) { return (Qfp2){{ divQfp(v.vs[0], s), divQfp(v.vs[1], s) }}; }
-MATH_FN_ Qfp Qfp2dot(Qfp2 a, Qfp2 b) { return addQfp(mulQfp(a.vs[0], b.vs[0]), mulQfp(a.vs[1], b.vs[1])); }
-MATH_FN_ Qfp Qfp2mag2(Qfp2 v) { return Qfp2dot(v, v); }
-MATH_FN_ Qfp Qfp2mag(Qfp2 v) { return sqrtQfp(Qfp2mag2(v)); }
-MATH_FN_ Qfp2 Qfp2norm(Qfp2 v) {
-	Qfp m = Qfp2mag2(v);
-	if (leQfp(fabsQfp(m), (Qfp){2})) return (Qfp2){};
-	return Qfp2div(v, sqrtQfp(m));
-}
-
-// Qfp2 lerp, min, max, clamp
-MATH_FN_ Qfp2 Qfp2min(Qfp2 a, Qfp2 b) { return (Qfp2){{ ltQfp(a.vs[0], b.vs[0]) ? a.vs[0] : b.vs[0], ltQfp(a.vs[1], b.vs[1]) ? a.vs[1] : b.vs[1] }}; }
-MATH_FN_ Qfp2 Qfp2max(Qfp2 a, Qfp2 b) { return (Qfp2){{ gtQfp(a.vs[0], b.vs[0]) ? a.vs[0] : b.vs[0], gtQfp(a.vs[1], b.vs[1]) ? a.vs[1] : b.vs[1] }}; }
-MATH_FN_ Qfp2 Qfp2clamp(Qfp2 x, Qfp2 a, Qfp2 b) { return Qfp2min(Qfp2max(x, a), b); }
-MATH_FN_ Qfp2 Qfp2lerp(Qfp2 a, Qfp2 b, Qfp t) { return Qfp2add(Qfp2mul(a, subQfp((Qfp){1}, t)), Qfp2mul(b, t)); }
-
-// Qfp3 type
-typedef union {
-	struct { Qfp x, y, z; };
-	struct { Qfp r, g, b; };
-	Qfp vs[3];
-} Qfp3;
-
-MATH_FN_ Qfp3 Qfp3xyz(Qfp x, Qfp y, Qfp z) { return (Qfp3){{ x, y, z }}; }
-MATH_FN_ Qfp3 Qfp3rgb(Qfp r, Qfp g, Qfp b) { return (Qfp3){{ r, g, b }}; }
-MATH_FN_ Qfp3 Qfp3vs(const Qfp vs[3]) { return (Qfp3){{ vs[0], vs[1], vs[2] }}; }
-MATH_FN_ Qfp3 Qfp3v(Qfp v) { return (Qfp3){{ v, v, v }}; }
-MATH_FN_ Qfp3 Qfp3v0() { return Qfp3v((Qfp){0}); }
-
-// Qfp3 operations
-MATH_FN_ Qfp3 Qfp3neg(Qfp3 v) { return (Qfp3){{ negQfp(v.vs[0]), negQfp(v.vs[1]), negQfp(v.vs[2]) }}; }
-MATH_FN_ Qfp3 Qfp3add(Qfp3 a, Qfp3 b) { return (Qfp3){{ addQfp(a.vs[0], b.vs[0]), addQfp(a.vs[1], b.vs[1]), addQfp(a.vs[2], b.vs[2]) }}; }
-MATH_FN_ Qfp3 Qfp3sub(Qfp3 a, Qfp3 b) { return (Qfp3){{ subQfp(a.vs[0], b.vs[0]), subQfp(a.vs[1], b.vs[1]), subQfp(a.vs[2], b.vs[2]) }}; }
-MATH_FN_ Qfp3 Qfp3mul(Qfp3 v, Qfp s) { return (Qfp3){{ mulQfp(v.vs[0], s), mulQfp(v.vs[1], s), mulQfp(v.vs[2], s) }}; }
-MATH_FN_ Qfp3 Qfp3div(Qfp3 v, Qfp s) { return (Qfp3){{ divQfp(v.vs[0], s), divQfp(v.vs[1], s), divQfp(v.vs[2], s) }}; }
-MATH_FN_ Qfp Qfp3dot(Qfp3 a, Qfp3 b) { return addQfp(addQfp(mulQfp(a.vs[0], b.vs[0]), mulQfp(a.vs[1], b.vs[1])), mulQfp(a.vs[2], b.vs[2])); }
-MATH_FN_ Qfp Qfp3mag2(Qfp3 v) { return Qfp3dot(v, v); }
-MATH_FN_ Qfp Qfp3mag(Qfp3 v) { return sqrtQfp(Qfp3mag2(v)); }
-MATH_FN_ Qfp3 Qfp3norm(Qfp3 v) {
-	Qfp m = Qfp3mag2(v);
-	if (leQfp(fabsQfp(m), (Qfp){2})) return (Qfp3){};
-	return Qfp3div(v, sqrtQfp(m));
-}
-
-// Qfp vector cross product
-MATH_FN_ Qfp3 Qfp3cross(Qfp3 a, Qfp3 b) {
-	return Qfp3xyz(
-		subQfp(mulQfp(a.y, b.z), mulQfp(a.z, b.y)),
-		subQfp(mulQfp(a.z, b.x), mulQfp(a.x, b.z)),
-		subQfp(mulQfp(a.x, b.y), mulQfp(a.y, b.x))
+MATH_FN_ double3 double3x3mulv(const double3x3 *m, double3 v) {
+	return double3xyz(
+		m->vs[0][0] * v.x + m->vs[1][0] * v.y + m->vs[2][0] * v.z,
+		m->vs[0][1] * v.x + m->vs[1][1] * v.y + m->vs[2][1] * v.z,
+		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z
 	);
 }
 
-// Qfp3 lerp, min, max, clamp
-MATH_FN_ Qfp3 Qfp3min(Qfp3 a, Qfp3 b) { return (Qfp3){{ ltQfp(a.vs[0], b.vs[0]) ? a.vs[0] : b.vs[0], ltQfp(a.vs[1], b.vs[1]) ? a.vs[1] : b.vs[1], ltQfp(a.vs[2], b.vs[2]) ? a.vs[2] : b.vs[2] }}; }
-MATH_FN_ Qfp3 Qfp3max(Qfp3 a, Qfp3 b) { return (Qfp3){{ gtQfp(a.vs[0], b.vs[0]) ? a.vs[0] : b.vs[0], gtQfp(a.vs[1], b.vs[1]) ? a.vs[1] : b.vs[1], gtQfp(a.vs[2], b.vs[2]) ? a.vs[2] : b.vs[2] }}; }
-MATH_FN_ Qfp3 Qfp3clamp(Qfp3 x, Qfp3 a, Qfp3 b) { return Qfp3min(Qfp3max(x, a), b); }
-MATH_FN_ Qfp3 Qfp3lerp(Qfp3 a, Qfp3 b, Qfp t) { return Qfp3add(Qfp3mul(a, subQfp((Qfp){1}, t)), Qfp3mul(b, t)); }
 
-// Qfp4 type
-typedef union {
-	struct { Qfp x, y, z, w; };
-	struct { Qfp r, g, b, a; };
-	Qfp vs[4];
-} Qfp4;
-
-MATH_FN_ Qfp4 Qfp4xyzw(Qfp x, Qfp y, Qfp z, Qfp w) { return (Qfp4){{ x, y, z, w }}; }
-MATH_FN_ Qfp4 Qfp4rgba(Qfp r, Qfp g, Qfp b, Qfp a) { return (Qfp4){{ r, g, b, a }}; }
-MATH_FN_ Qfp4 Qfp4vs(const Qfp vs[4]) { return (Qfp4){{ vs[0], vs[1], vs[2], vs[3] }}; }
-MATH_FN_ Qfp4 Qfp4v(Qfp v) { return (Qfp4){{ v, v, v, v }}; }
-MATH_FN_ Qfp4 Qfp4v0() { return Qfp4v((Qfp){0}); }
-
-// Qfp4 type
-MATH_FN_ Qfp4 Qfp4xyz3w(Qfp3 xyz, Qfp w) { return (Qfp4){{ xyz.x, xyz.y, xyz.z, w }}; }
-
-// Qfp4 operations
-MATH_FN_ Qfp4 Qfp4neg(Qfp4 v) { return (Qfp4){{ negQfp(v.vs[0]), negQfp(v.vs[1]), negQfp(v.vs[2]), negQfp(v.vs[3]) }}; }
-MATH_FN_ Qfp4 Qfp4add(Qfp4 a, Qfp4 b) { return (Qfp4){{ addQfp(a.vs[0], b.vs[0]), addQfp(a.vs[1], b.vs[1]), addQfp(a.vs[2], b.vs[2]), addQfp(a.vs[3], b.vs[3]) }}; }
-MATH_FN_ Qfp4 Qfp4sub(Qfp4 a, Qfp4 b) { return (Qfp4){{ subQfp(a.vs[0], b.vs[0]), subQfp(a.vs[1], b.vs[1]), subQfp(a.vs[2], b.vs[2]), subQfp(a.vs[3], b.vs[3]) }}; }
-MATH_FN_ Qfp4 Qfp4mul(Qfp4 v, Qfp s) { return (Qfp4){{ mulQfp(v.vs[0], s), mulQfp(v.vs[1], s), mulQfp(v.vs[2], s), mulQfp(v.vs[3], s) }}; }
-MATH_FN_ Qfp4 Qfp4div(Qfp4 v, Qfp s) { return (Qfp4){{ divQfp(v.vs[0], s), divQfp(v.vs[1], s), divQfp(v.vs[2], s), divQfp(v.vs[3], s) }}; }
-MATH_FN_ Qfp Qfp4dot(Qfp4 a, Qfp4 b) { return addQfp(addQfp(addQfp(mulQfp(a.vs[0], b.vs[0]), mulQfp(a.vs[1], b.vs[1])), mulQfp(a.vs[2], b.vs[2])), mulQfp(a.vs[3], b.vs[3])); }
-MATH_FN_ Qfp Qfp4mag2(Qfp4 v) { return Qfp4dot(v, v); }
-MATH_FN_ Qfp Qfp4mag(Qfp4 v) { return sqrtQfp(Qfp4mag2(v)); }
-MATH_FN_ Qfp4 Qfp4norm(Qfp4 v) {
-	Qfp m = Qfp4mag2(v);
-	if (leQfp(fabsQfp(m), (Qfp){2})) return (Qfp4){};
-	return Qfp4div(v, sqrtQfp(m));
-}
-
-// Qfp4 lerp, min, max, clamp
-MATH_FN_ Qfp4 Qfp4min(Qfp4 a, Qfp4 b) { return (Qfp4){{ ltQfp(a.vs[0], b.vs[0]) ? a.vs[0] : b.vs[0], ltQfp(a.vs[1], b.vs[1]) ? a.vs[1] : b.vs[1], ltQfp(a.vs[2], b.vs[2]) ? a.vs[2] : b.vs[2], ltQfp(a.vs[3], b.vs[3]) ? a.vs[3] : b.vs[3] }}; }
-MATH_FN_ Qfp4 Qfp4max(Qfp4 a, Qfp4 b) { return (Qfp4){{ gtQfp(a.vs[0], b.vs[0]) ? a.vs[0] : b.vs[0], gtQfp(a.vs[1], b.vs[1]) ? a.vs[1] : b.vs[1], gtQfp(a.vs[2], b.vs[2]) ? a.vs[2] : b.vs[2], gtQfp(a.vs[3], b.vs[3]) ? a.vs[3] : b.vs[3] }}; }
-MATH_FN_ Qfp4 Qfp4clamp(Qfp4 x, Qfp4 a, Qfp4 b) { return Qfp4min(Qfp4max(x, a), b); }
-MATH_FN_ Qfp4 Qfp4lerp(Qfp4 a, Qfp4 b, Qfp t) { return Qfp4add(Qfp4mul(a, subQfp((Qfp){1}, t)), Qfp4mul(b, t)); }
-
-// Qfp2x2 matrix
-typedef union {
-	struct { Qfp vvs[4]; };
-	struct { Qfp vs[2][2]; };
-	struct { Qfp2 v2s[2]; };
-} Qfp2x2;
-
-// Qfp2x3 matrix
-typedef union {
-	struct { Qfp vvs[6]; };
-	struct { Qfp vs[2][3]; };
-	struct { Qfp2 v2s[3]; };
-} Qfp2x3;
-
-// Qfp2x4 matrix
-typedef union {
-	struct { Qfp vvs[8]; };
-	struct { Qfp vs[2][4]; };
-	struct { Qfp2 v2s[4]; };
-} Qfp2x4;
-
-// Qfp3x2 matrix
-typedef union {
-	struct { Qfp vvs[6]; };
-	struct { Qfp vs[3][2]; };
-	struct { Qfp3 v3s[2]; };
-} Qfp3x2;
-
-// Qfp3x3 matrix
-typedef union {
-	struct { Qfp vvs[9]; };
-	struct { Qfp vs[3][3]; };
-	struct { Qfp3 v3s[3]; };
-} Qfp3x3;
-
-// Qfp3x4 matrix
-typedef union {
-	struct { Qfp vvs[12]; };
-	struct { Qfp vs[3][4]; };
-	struct { Qfp3 v3s[4]; };
-} Qfp3x4;
-
-// Qfp4x2 matrix
-typedef union {
-	struct { Qfp vvs[8]; };
-	struct { Qfp vs[4][2]; };
-	struct { Qfp4 v4s[2]; };
-} Qfp4x2;
-
-// Qfp4x3 matrix
-typedef union {
-	struct { Qfp vvs[12]; };
-	struct { Qfp vs[4][3]; };
-	struct { Qfp4 v4s[3]; };
-} Qfp4x3;
-
-// Qfp4x4 matrix
-typedef union {
-	struct { Qfp vvs[16]; };
-	struct { Qfp vs[4][4]; };
-	struct { Qfp4 v4s[4]; };
-} Qfp4x4;
 
 // double2 to float2
 MATH_FN_ float2 float2_double2(double2 x) { return (float2){{ (float)(x.vs[0]), (float)(x.vs[1]) }}; }
@@ -884,42 +755,6 @@ MATH_FN_ float4x3 float4x3_double4x3(double4x3 x) { return (float4x3){{ (float)(
 // double4x4 to float4x4
 MATH_FN_ float4x4 float4x4_double4x4(double4x4 x) { return (float4x4){{ (float)(x.vs[0][0]), (float)(x.vs[0][1]), (float)(x.vs[0][2]), (float)(x.vs[0][3]), (float)(x.vs[1][0]), (float)(x.vs[1][1]), (float)(x.vs[1][2]), (float)(x.vs[1][3]), (float)(x.vs[2][0]), (float)(x.vs[2][1]), (float)(x.vs[2][2]), (float)(x.vs[2][3]), (float)(x.vs[3][0]), (float)(x.vs[3][1]), (float)(x.vs[3][2]), (float)(x.vs[3][3]) }}; }
 
-// Qfp2 to float2
-MATH_FN_ float2 float2_Qfp2(Qfp2 x) { return (float2){{ float_Qfp(x.vs[0]), float_Qfp(x.vs[1]) }}; }
-
-// Qfp3 to float3
-MATH_FN_ float3 float3_Qfp3(Qfp3 x) { return (float3){{ float_Qfp(x.vs[0]), float_Qfp(x.vs[1]), float_Qfp(x.vs[2]) }}; }
-
-// Qfp4 to float4
-MATH_FN_ float4 float4_Qfp4(Qfp4 x) { return (float4){{ float_Qfp(x.vs[0]), float_Qfp(x.vs[1]), float_Qfp(x.vs[2]), float_Qfp(x.vs[3]) }}; }
-
-// Qfp2x2 to float2x2
-MATH_FN_ float2x2 float2x2_Qfp2x2(Qfp2x2 x) { return (float2x2){{ float_Qfp(x.vs[0][0]), float_Qfp(x.vs[0][1]), float_Qfp(x.vs[1][0]), float_Qfp(x.vs[1][1]) }}; }
-
-// Qfp2x3 to float2x3
-MATH_FN_ float2x3 float2x3_Qfp2x3(Qfp2x3 x) { return (float2x3){{ float_Qfp(x.vs[0][0]), float_Qfp(x.vs[0][1]), float_Qfp(x.vs[0][2]), float_Qfp(x.vs[1][0]), float_Qfp(x.vs[1][1]), float_Qfp(x.vs[1][2]) }}; }
-
-// Qfp2x4 to float2x4
-MATH_FN_ float2x4 float2x4_Qfp2x4(Qfp2x4 x) { return (float2x4){{ float_Qfp(x.vs[0][0]), float_Qfp(x.vs[0][1]), float_Qfp(x.vs[0][2]), float_Qfp(x.vs[0][3]), float_Qfp(x.vs[1][0]), float_Qfp(x.vs[1][1]), float_Qfp(x.vs[1][2]), float_Qfp(x.vs[1][3]) }}; }
-
-// Qfp3x2 to float3x2
-MATH_FN_ float3x2 float3x2_Qfp3x2(Qfp3x2 x) { return (float3x2){{ float_Qfp(x.vs[0][0]), float_Qfp(x.vs[0][1]), float_Qfp(x.vs[1][0]), float_Qfp(x.vs[1][1]), float_Qfp(x.vs[2][0]), float_Qfp(x.vs[2][1]) }}; }
-
-// Qfp3x3 to float3x3
-MATH_FN_ float3x3 float3x3_Qfp3x3(Qfp3x3 x) { return (float3x3){{ float_Qfp(x.vs[0][0]), float_Qfp(x.vs[0][1]), float_Qfp(x.vs[0][2]), float_Qfp(x.vs[1][0]), float_Qfp(x.vs[1][1]), float_Qfp(x.vs[1][2]), float_Qfp(x.vs[2][0]), float_Qfp(x.vs[2][1]), float_Qfp(x.vs[2][2]) }}; }
-
-// Qfp3x4 to float3x4
-MATH_FN_ float3x4 float3x4_Qfp3x4(Qfp3x4 x) { return (float3x4){{ float_Qfp(x.vs[0][0]), float_Qfp(x.vs[0][1]), float_Qfp(x.vs[0][2]), float_Qfp(x.vs[0][3]), float_Qfp(x.vs[1][0]), float_Qfp(x.vs[1][1]), float_Qfp(x.vs[1][2]), float_Qfp(x.vs[1][3]), float_Qfp(x.vs[2][0]), float_Qfp(x.vs[2][1]), float_Qfp(x.vs[2][2]), float_Qfp(x.vs[2][3]) }}; }
-
-// Qfp4x2 to float4x2
-MATH_FN_ float4x2 float4x2_Qfp4x2(Qfp4x2 x) { return (float4x2){{ float_Qfp(x.vs[0][0]), float_Qfp(x.vs[0][1]), float_Qfp(x.vs[1][0]), float_Qfp(x.vs[1][1]), float_Qfp(x.vs[2][0]), float_Qfp(x.vs[2][1]), float_Qfp(x.vs[3][0]), float_Qfp(x.vs[3][1]) }}; }
-
-// Qfp4x3 to float4x3
-MATH_FN_ float4x3 float4x3_Qfp4x3(Qfp4x3 x) { return (float4x3){{ float_Qfp(x.vs[0][0]), float_Qfp(x.vs[0][1]), float_Qfp(x.vs[0][2]), float_Qfp(x.vs[1][0]), float_Qfp(x.vs[1][1]), float_Qfp(x.vs[1][2]), float_Qfp(x.vs[2][0]), float_Qfp(x.vs[2][1]), float_Qfp(x.vs[2][2]), float_Qfp(x.vs[3][0]), float_Qfp(x.vs[3][1]), float_Qfp(x.vs[3][2]) }}; }
-
-// Qfp4x4 to float4x4
-MATH_FN_ float4x4 float4x4_Qfp4x4(Qfp4x4 x) { return (float4x4){{ float_Qfp(x.vs[0][0]), float_Qfp(x.vs[0][1]), float_Qfp(x.vs[0][2]), float_Qfp(x.vs[0][3]), float_Qfp(x.vs[1][0]), float_Qfp(x.vs[1][1]), float_Qfp(x.vs[1][2]), float_Qfp(x.vs[1][3]), float_Qfp(x.vs[2][0]), float_Qfp(x.vs[2][1]), float_Qfp(x.vs[2][2]), float_Qfp(x.vs[2][3]), float_Qfp(x.vs[3][0]), float_Qfp(x.vs[3][1]), float_Qfp(x.vs[3][2]), float_Qfp(x.vs[3][3]) }}; }
-
 // float2 to double2
 MATH_FN_ double2 double2_float2(float2 x) { return (double2){{ (double)(x.vs[0]), (double)(x.vs[1]) }}; }
 
@@ -955,113 +790,5 @@ MATH_FN_ double4x3 double4x3_float4x3(float4x3 x) { return (double4x3){{ (double
 
 // float4x4 to double4x4
 MATH_FN_ double4x4 double4x4_float4x4(float4x4 x) { return (double4x4){{ (double)(x.vs[0][0]), (double)(x.vs[0][1]), (double)(x.vs[0][2]), (double)(x.vs[0][3]), (double)(x.vs[1][0]), (double)(x.vs[1][1]), (double)(x.vs[1][2]), (double)(x.vs[1][3]), (double)(x.vs[2][0]), (double)(x.vs[2][1]), (double)(x.vs[2][2]), (double)(x.vs[2][3]), (double)(x.vs[3][0]), (double)(x.vs[3][1]), (double)(x.vs[3][2]), (double)(x.vs[3][3]) }}; }
-
-// Qfp2 to double2
-MATH_FN_ double2 double2_Qfp2(Qfp2 x) { return (double2){{ double_Qfp(x.vs[0]), double_Qfp(x.vs[1]) }}; }
-
-// Qfp3 to double3
-MATH_FN_ double3 double3_Qfp3(Qfp3 x) { return (double3){{ double_Qfp(x.vs[0]), double_Qfp(x.vs[1]), double_Qfp(x.vs[2]) }}; }
-
-// Qfp4 to double4
-MATH_FN_ double4 double4_Qfp4(Qfp4 x) { return (double4){{ double_Qfp(x.vs[0]), double_Qfp(x.vs[1]), double_Qfp(x.vs[2]), double_Qfp(x.vs[3]) }}; }
-
-// Qfp2x2 to double2x2
-MATH_FN_ double2x2 double2x2_Qfp2x2(Qfp2x2 x) { return (double2x2){{ double_Qfp(x.vs[0][0]), double_Qfp(x.vs[0][1]), double_Qfp(x.vs[1][0]), double_Qfp(x.vs[1][1]) }}; }
-
-// Qfp2x3 to double2x3
-MATH_FN_ double2x3 double2x3_Qfp2x3(Qfp2x3 x) { return (double2x3){{ double_Qfp(x.vs[0][0]), double_Qfp(x.vs[0][1]), double_Qfp(x.vs[0][2]), double_Qfp(x.vs[1][0]), double_Qfp(x.vs[1][1]), double_Qfp(x.vs[1][2]) }}; }
-
-// Qfp2x4 to double2x4
-MATH_FN_ double2x4 double2x4_Qfp2x4(Qfp2x4 x) { return (double2x4){{ double_Qfp(x.vs[0][0]), double_Qfp(x.vs[0][1]), double_Qfp(x.vs[0][2]), double_Qfp(x.vs[0][3]), double_Qfp(x.vs[1][0]), double_Qfp(x.vs[1][1]), double_Qfp(x.vs[1][2]), double_Qfp(x.vs[1][3]) }}; }
-
-// Qfp3x2 to double3x2
-MATH_FN_ double3x2 double3x2_Qfp3x2(Qfp3x2 x) { return (double3x2){{ double_Qfp(x.vs[0][0]), double_Qfp(x.vs[0][1]), double_Qfp(x.vs[1][0]), double_Qfp(x.vs[1][1]), double_Qfp(x.vs[2][0]), double_Qfp(x.vs[2][1]) }}; }
-
-// Qfp3x3 to double3x3
-MATH_FN_ double3x3 double3x3_Qfp3x3(Qfp3x3 x) { return (double3x3){{ double_Qfp(x.vs[0][0]), double_Qfp(x.vs[0][1]), double_Qfp(x.vs[0][2]), double_Qfp(x.vs[1][0]), double_Qfp(x.vs[1][1]), double_Qfp(x.vs[1][2]), double_Qfp(x.vs[2][0]), double_Qfp(x.vs[2][1]), double_Qfp(x.vs[2][2]) }}; }
-
-// Qfp3x4 to double3x4
-MATH_FN_ double3x4 double3x4_Qfp3x4(Qfp3x4 x) { return (double3x4){{ double_Qfp(x.vs[0][0]), double_Qfp(x.vs[0][1]), double_Qfp(x.vs[0][2]), double_Qfp(x.vs[0][3]), double_Qfp(x.vs[1][0]), double_Qfp(x.vs[1][1]), double_Qfp(x.vs[1][2]), double_Qfp(x.vs[1][3]), double_Qfp(x.vs[2][0]), double_Qfp(x.vs[2][1]), double_Qfp(x.vs[2][2]), double_Qfp(x.vs[2][3]) }}; }
-
-// Qfp4x2 to double4x2
-MATH_FN_ double4x2 double4x2_Qfp4x2(Qfp4x2 x) { return (double4x2){{ double_Qfp(x.vs[0][0]), double_Qfp(x.vs[0][1]), double_Qfp(x.vs[1][0]), double_Qfp(x.vs[1][1]), double_Qfp(x.vs[2][0]), double_Qfp(x.vs[2][1]), double_Qfp(x.vs[3][0]), double_Qfp(x.vs[3][1]) }}; }
-
-// Qfp4x3 to double4x3
-MATH_FN_ double4x3 double4x3_Qfp4x3(Qfp4x3 x) { return (double4x3){{ double_Qfp(x.vs[0][0]), double_Qfp(x.vs[0][1]), double_Qfp(x.vs[0][2]), double_Qfp(x.vs[1][0]), double_Qfp(x.vs[1][1]), double_Qfp(x.vs[1][2]), double_Qfp(x.vs[2][0]), double_Qfp(x.vs[2][1]), double_Qfp(x.vs[2][2]), double_Qfp(x.vs[3][0]), double_Qfp(x.vs[3][1]), double_Qfp(x.vs[3][2]) }}; }
-
-// Qfp4x4 to double4x4
-MATH_FN_ double4x4 double4x4_Qfp4x4(Qfp4x4 x) { return (double4x4){{ double_Qfp(x.vs[0][0]), double_Qfp(x.vs[0][1]), double_Qfp(x.vs[0][2]), double_Qfp(x.vs[0][3]), double_Qfp(x.vs[1][0]), double_Qfp(x.vs[1][1]), double_Qfp(x.vs[1][2]), double_Qfp(x.vs[1][3]), double_Qfp(x.vs[2][0]), double_Qfp(x.vs[2][1]), double_Qfp(x.vs[2][2]), double_Qfp(x.vs[2][3]), double_Qfp(x.vs[3][0]), double_Qfp(x.vs[3][1]), double_Qfp(x.vs[3][2]), double_Qfp(x.vs[3][3]) }}; }
-
-// float2 to Qfp2
-MATH_FN_ Qfp2 Qfp2_float2(float2 x) { return (Qfp2){{ Qfp_float(x.vs[0]), Qfp_float(x.vs[1]) }}; }
-
-// float3 to Qfp3
-MATH_FN_ Qfp3 Qfp3_float3(float3 x) { return (Qfp3){{ Qfp_float(x.vs[0]), Qfp_float(x.vs[1]), Qfp_float(x.vs[2]) }}; }
-
-// float4 to Qfp4
-MATH_FN_ Qfp4 Qfp4_float4(float4 x) { return (Qfp4){{ Qfp_float(x.vs[0]), Qfp_float(x.vs[1]), Qfp_float(x.vs[2]), Qfp_float(x.vs[3]) }}; }
-
-// float2x2 to Qfp2x2
-MATH_FN_ Qfp2x2 Qfp2x2_float2x2(float2x2 x) { return (Qfp2x2){{ Qfp_float(x.vs[0][0]), Qfp_float(x.vs[0][1]), Qfp_float(x.vs[1][0]), Qfp_float(x.vs[1][1]) }}; }
-
-// float2x3 to Qfp2x3
-MATH_FN_ Qfp2x3 Qfp2x3_float2x3(float2x3 x) { return (Qfp2x3){{ Qfp_float(x.vs[0][0]), Qfp_float(x.vs[0][1]), Qfp_float(x.vs[0][2]), Qfp_float(x.vs[1][0]), Qfp_float(x.vs[1][1]), Qfp_float(x.vs[1][2]) }}; }
-
-// float2x4 to Qfp2x4
-MATH_FN_ Qfp2x4 Qfp2x4_float2x4(float2x4 x) { return (Qfp2x4){{ Qfp_float(x.vs[0][0]), Qfp_float(x.vs[0][1]), Qfp_float(x.vs[0][2]), Qfp_float(x.vs[0][3]), Qfp_float(x.vs[1][0]), Qfp_float(x.vs[1][1]), Qfp_float(x.vs[1][2]), Qfp_float(x.vs[1][3]) }}; }
-
-// float3x2 to Qfp3x2
-MATH_FN_ Qfp3x2 Qfp3x2_float3x2(float3x2 x) { return (Qfp3x2){{ Qfp_float(x.vs[0][0]), Qfp_float(x.vs[0][1]), Qfp_float(x.vs[1][0]), Qfp_float(x.vs[1][1]), Qfp_float(x.vs[2][0]), Qfp_float(x.vs[2][1]) }}; }
-
-// float3x3 to Qfp3x3
-MATH_FN_ Qfp3x3 Qfp3x3_float3x3(float3x3 x) { return (Qfp3x3){{ Qfp_float(x.vs[0][0]), Qfp_float(x.vs[0][1]), Qfp_float(x.vs[0][2]), Qfp_float(x.vs[1][0]), Qfp_float(x.vs[1][1]), Qfp_float(x.vs[1][2]), Qfp_float(x.vs[2][0]), Qfp_float(x.vs[2][1]), Qfp_float(x.vs[2][2]) }}; }
-
-// float3x4 to Qfp3x4
-MATH_FN_ Qfp3x4 Qfp3x4_float3x4(float3x4 x) { return (Qfp3x4){{ Qfp_float(x.vs[0][0]), Qfp_float(x.vs[0][1]), Qfp_float(x.vs[0][2]), Qfp_float(x.vs[0][3]), Qfp_float(x.vs[1][0]), Qfp_float(x.vs[1][1]), Qfp_float(x.vs[1][2]), Qfp_float(x.vs[1][3]), Qfp_float(x.vs[2][0]), Qfp_float(x.vs[2][1]), Qfp_float(x.vs[2][2]), Qfp_float(x.vs[2][3]) }}; }
-
-// float4x2 to Qfp4x2
-MATH_FN_ Qfp4x2 Qfp4x2_float4x2(float4x2 x) { return (Qfp4x2){{ Qfp_float(x.vs[0][0]), Qfp_float(x.vs[0][1]), Qfp_float(x.vs[1][0]), Qfp_float(x.vs[1][1]), Qfp_float(x.vs[2][0]), Qfp_float(x.vs[2][1]), Qfp_float(x.vs[3][0]), Qfp_float(x.vs[3][1]) }}; }
-
-// float4x3 to Qfp4x3
-MATH_FN_ Qfp4x3 Qfp4x3_float4x3(float4x3 x) { return (Qfp4x3){{ Qfp_float(x.vs[0][0]), Qfp_float(x.vs[0][1]), Qfp_float(x.vs[0][2]), Qfp_float(x.vs[1][0]), Qfp_float(x.vs[1][1]), Qfp_float(x.vs[1][2]), Qfp_float(x.vs[2][0]), Qfp_float(x.vs[2][1]), Qfp_float(x.vs[2][2]), Qfp_float(x.vs[3][0]), Qfp_float(x.vs[3][1]), Qfp_float(x.vs[3][2]) }}; }
-
-// float4x4 to Qfp4x4
-MATH_FN_ Qfp4x4 Qfp4x4_float4x4(float4x4 x) { return (Qfp4x4){{ Qfp_float(x.vs[0][0]), Qfp_float(x.vs[0][1]), Qfp_float(x.vs[0][2]), Qfp_float(x.vs[0][3]), Qfp_float(x.vs[1][0]), Qfp_float(x.vs[1][1]), Qfp_float(x.vs[1][2]), Qfp_float(x.vs[1][3]), Qfp_float(x.vs[2][0]), Qfp_float(x.vs[2][1]), Qfp_float(x.vs[2][2]), Qfp_float(x.vs[2][3]), Qfp_float(x.vs[3][0]), Qfp_float(x.vs[3][1]), Qfp_float(x.vs[3][2]), Qfp_float(x.vs[3][3]) }}; }
-
-// double2 to Qfp2
-MATH_FN_ Qfp2 Qfp2_double2(double2 x) { return (Qfp2){{ Qfp_double(x.vs[0]), Qfp_double(x.vs[1]) }}; }
-
-// double3 to Qfp3
-MATH_FN_ Qfp3 Qfp3_double3(double3 x) { return (Qfp3){{ Qfp_double(x.vs[0]), Qfp_double(x.vs[1]), Qfp_double(x.vs[2]) }}; }
-
-// double4 to Qfp4
-MATH_FN_ Qfp4 Qfp4_double4(double4 x) { return (Qfp4){{ Qfp_double(x.vs[0]), Qfp_double(x.vs[1]), Qfp_double(x.vs[2]), Qfp_double(x.vs[3]) }}; }
-
-// double2x2 to Qfp2x2
-MATH_FN_ Qfp2x2 Qfp2x2_double2x2(double2x2 x) { return (Qfp2x2){{ Qfp_double(x.vs[0][0]), Qfp_double(x.vs[0][1]), Qfp_double(x.vs[1][0]), Qfp_double(x.vs[1][1]) }}; }
-
-// double2x3 to Qfp2x3
-MATH_FN_ Qfp2x3 Qfp2x3_double2x3(double2x3 x) { return (Qfp2x3){{ Qfp_double(x.vs[0][0]), Qfp_double(x.vs[0][1]), Qfp_double(x.vs[0][2]), Qfp_double(x.vs[1][0]), Qfp_double(x.vs[1][1]), Qfp_double(x.vs[1][2]) }}; }
-
-// double2x4 to Qfp2x4
-MATH_FN_ Qfp2x4 Qfp2x4_double2x4(double2x4 x) { return (Qfp2x4){{ Qfp_double(x.vs[0][0]), Qfp_double(x.vs[0][1]), Qfp_double(x.vs[0][2]), Qfp_double(x.vs[0][3]), Qfp_double(x.vs[1][0]), Qfp_double(x.vs[1][1]), Qfp_double(x.vs[1][2]), Qfp_double(x.vs[1][3]) }}; }
-
-// double3x2 to Qfp3x2
-MATH_FN_ Qfp3x2 Qfp3x2_double3x2(double3x2 x) { return (Qfp3x2){{ Qfp_double(x.vs[0][0]), Qfp_double(x.vs[0][1]), Qfp_double(x.vs[1][0]), Qfp_double(x.vs[1][1]), Qfp_double(x.vs[2][0]), Qfp_double(x.vs[2][1]) }}; }
-
-// double3x3 to Qfp3x3
-MATH_FN_ Qfp3x3 Qfp3x3_double3x3(double3x3 x) { return (Qfp3x3){{ Qfp_double(x.vs[0][0]), Qfp_double(x.vs[0][1]), Qfp_double(x.vs[0][2]), Qfp_double(x.vs[1][0]), Qfp_double(x.vs[1][1]), Qfp_double(x.vs[1][2]), Qfp_double(x.vs[2][0]), Qfp_double(x.vs[2][1]), Qfp_double(x.vs[2][2]) }}; }
-
-// double3x4 to Qfp3x4
-MATH_FN_ Qfp3x4 Qfp3x4_double3x4(double3x4 x) { return (Qfp3x4){{ Qfp_double(x.vs[0][0]), Qfp_double(x.vs[0][1]), Qfp_double(x.vs[0][2]), Qfp_double(x.vs[0][3]), Qfp_double(x.vs[1][0]), Qfp_double(x.vs[1][1]), Qfp_double(x.vs[1][2]), Qfp_double(x.vs[1][3]), Qfp_double(x.vs[2][0]), Qfp_double(x.vs[2][1]), Qfp_double(x.vs[2][2]), Qfp_double(x.vs[2][3]) }}; }
-
-// double4x2 to Qfp4x2
-MATH_FN_ Qfp4x2 Qfp4x2_double4x2(double4x2 x) { return (Qfp4x2){{ Qfp_double(x.vs[0][0]), Qfp_double(x.vs[0][1]), Qfp_double(x.vs[1][0]), Qfp_double(x.vs[1][1]), Qfp_double(x.vs[2][0]), Qfp_double(x.vs[2][1]), Qfp_double(x.vs[3][0]), Qfp_double(x.vs[3][1]) }}; }
-
-// double4x3 to Qfp4x3
-MATH_FN_ Qfp4x3 Qfp4x3_double4x3(double4x3 x) { return (Qfp4x3){{ Qfp_double(x.vs[0][0]), Qfp_double(x.vs[0][1]), Qfp_double(x.vs[0][2]), Qfp_double(x.vs[1][0]), Qfp_double(x.vs[1][1]), Qfp_double(x.vs[1][2]), Qfp_double(x.vs[2][0]), Qfp_double(x.vs[2][1]), Qfp_double(x.vs[2][2]), Qfp_double(x.vs[3][0]), Qfp_double(x.vs[3][1]), Qfp_double(x.vs[3][2]) }}; }
-
-// double4x4 to Qfp4x4
-MATH_FN_ Qfp4x4 Qfp4x4_double4x4(double4x4 x) { return (Qfp4x4){{ Qfp_double(x.vs[0][0]), Qfp_double(x.vs[0][1]), Qfp_double(x.vs[0][2]), Qfp_double(x.vs[0][3]), Qfp_double(x.vs[1][0]), Qfp_double(x.vs[1][1]), Qfp_double(x.vs[1][2]), Qfp_double(x.vs[1][3]), Qfp_double(x.vs[2][0]), Qfp_double(x.vs[2][1]), Qfp_double(x.vs[2][2]), Qfp_double(x.vs[2][3]), Qfp_double(x.vs[3][0]), Qfp_double(x.vs[3][1]), Qfp_double(x.vs[3][2]), Qfp_double(x.vs[3][3]) }}; }
 
 #endif // PSHINE_MATH_H_
