@@ -675,7 +675,7 @@ static void key_cb_glfw_(GLFWwindow *window, int key, int scancode, int action, 
 }
 
 static void init_glfw(struct vulkan_renderer *r) {
-	glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+	glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
 	glfwSetErrorCallback(&error_cb_glfw_);
 	if (!glfwInit()) PSHINE_PANIC("could not initialize GLFW");
 
@@ -1185,7 +1185,7 @@ static void init_fbufs(struct vulkan_renderer *r) {
 			}
 		}
 	});
-	NAME_VK_OBJECT(r, r->transients.color_0.image, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT, "transient color0 image");
+	NAME_VK_OBJECT(r, r->transients.color_0.image, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, "transient color0 image");
 	NAME_VK_OBJECT(r, r->transients.color_0.view, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT, "transient color0 image view");
 
 	for (uint32_t i = 0; i < r->swapchain_image_count; ++i) {

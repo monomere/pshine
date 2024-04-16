@@ -228,7 +228,7 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->has_atmosphere = true;
 	// similar to Earth, where the radius of earth
 	// is 6371km and the atmosphere height is 100km
-	planet->atmosphere.height = 0.015696123 * radius;
+	planet->atmosphere.height = 500'000.0; // 0.015696123 * radius;
 	planet->atmosphere.rayleigh_coefs[0] = 3.8f;
 	planet->atmosphere.rayleigh_coefs[1] = 13.5f;
 	planet->atmosphere.rayleigh_coefs[2] = 33.1f;
@@ -402,7 +402,11 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		ImGui_Text("WCS Position: %.3fm %.3fm %.3fm", p.x, p.y, p.z);
 		ImGui_Text("SCS Position: %.3fu %.3fu %.3fu", p.x * PSHINE_SCS_FACTOR, p.y * PSHINE_SCS_FACTOR, p.z * PSHINE_SCS_FACTOR);
 		ImGui_Text("Distance from planet surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
-		ImGui_InputDouble("movement speed, m/s", &game->data_own->move_speed);
+		{
+			float v = game->data_own->move_speed;
+			ImGui_DragFloatEx("movement speed, m/s", &v, 100.0f, 0.0f, PSHINE_SPEED_OF_LIGHT * 0.01f, "%.3f", 0);
+			game->data_own->move_speed = v;
+		}
 		ImGui_Text("yaw: %.3frad, pitch: %.3frad", game->data_own->camera_yaw, game->data_own->camera_pitch);
 	}
 	ImGui_End();
