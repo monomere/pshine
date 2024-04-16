@@ -398,7 +398,7 @@ static inline void name_vk_object_impl(
 	const char *n, ...
 ) {
 	va_list va;
-	va_start(va, fmt);
+	va_start(va, n);
 	char *s = pshine_vformat_string(n, va);
 	va_end(va);
 	CHECKVK(vkDebugMarkerSetObjectNameEXT((r)->device, &(VkDebugMarkerObjectNameInfoEXT){
