@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -25,4 +26,10 @@ char *pshine_read_file(const char *fname, size_t *size) {
 	read(fdin, buf, st.st_size);
 	buf[st.st_size] = '\0';
 	return buf;
+}
+
+size_t pshine_get_mem_usage() {
+	struct rusage usage;
+	getrusage(RUSAGE_SELF, &usage);
+	return usage.ru_maxrss;
 }

@@ -3,5 +3,5 @@
 cxxstdlib = -stdlib=libc++
 cxxld = -fuse-ld=lld
 
-cc = clang -fdiagnostics-color
+cc = clang -fdiagnostics-color -D_DEFAULT_SOURCE
 cxx = clang++ -fdiagnostics-color

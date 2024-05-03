@@ -5,6 +5,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <time.h>
+
+struct pshine_timeval { int64_t sec; int64_t nsec; };
+
+static inline struct pshine_timeval pshine_timeval_delta(struct pshine_timeval t1, struct pshine_timeval t2) {
+	enum { NS_PER_SECOND = 1000000000 };
+	struct pshine_timeval td;
+	td.nsec = t2.nsec - t1.nsec;
+	td.sec  = t2.sec - t1.sec;
+	if (td.sec > 0 && td.nsec < 0) {
+		td.nsec += NS_PER_SECOND;
+		td.sec--;
+	} else if (td.sec < 0 && td.nsec > 0) {
+		td.nsec -= NS_PER_SECOND;
+		td.sec++;
+	}
+	return td;
+}
+
+#define PSHINE_TIMEVAL_FMTSTR "%ld.%.9lds"
+#define PSHINE_TIMEVAL_FMT(VAL) ((VAL).sec), ((VAL).nsec)
+
+static inline struct pshine_timeval pshine_timeval_now() {
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC, &tp);
+	return (struct pshine_timeval){ .sec = tp.tv_sec, .nsec = tp.tv_nsec };
+}
 
 struct pshine_log_sink {
 	FILE *fout;
@@ -77,8 +104,19 @@ void pshine_log_impl(
 		"check failed: %s ('" #e "' evaluated to 0)", m __VA_OPT__(,) __VA_ARGS__\
 	) : (void)0);
 
+#define PSHINE_MEASURE(LABEL, EXPR) ({ \
+	struct pshine_timeval start = pshine_timeval_now(); \
+	typeof(EXPR) res = EXPR; \
+	struct pshine_timeval end = pshine_timeval_now(); \
+	struct pshine_timeval delta = pshine_timeval_delta(start, end); \
+	PSHINE_INFO(LABEL " took " PSHINE_TIMEVAL_FMTSTR, PSHINE_TIMEVAL_FMT(delta)); \
+	res; })
+
 // NB: returns a malloc'd buffer
 char *pshine_read_file(const char *fname, size_t *size);
+
+// in KiB
+size_t pshine_get_mem_usage();
 
 struct pshine_dyna_dead_item_ {
 	size_t next;

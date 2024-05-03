@@ -480,7 +480,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			p->graphics_data = calloc(1, sizeof(struct pshine_planet_graphics_data));
-			p->graphics_data->atmo_lut = generate_atmo_lut(r, p);
+			p->graphics_data->atmo_lut = PSHINE_MEASURE("atmosphere LUT gen", generate_atmo_lut(r, p));
 			p->graphics_data->mesh_ref = r->sphere_mesh;
 			p->graphics_data->uniform_buffer = allocate_buffer(
 				r,
@@ -626,7 +626,7 @@ static struct vulkan_image generate_atmo_lut(struct vulkan_renderer *r, struct p
 		.planet_radius = SCSd_WCSd(planet->as_body.radius),
 		.atmo_height = SCSd_WCSd(planet->atmosphere.height),
 		.falloffs = float2xy(20.0f, 50.0f),
-		.samples = 15,
+		.samples = 4096,
 	};
 	vkCmdPushConstants(command_buffer, r->pipelines.atmo_lut_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(struct atmo_lut_push_const_data), &data);
 	vkCmdDispatch(command_buffer, atmo_lut_extent.width / 16, atmo_lut_extent.height / 16, 1);
@@ -941,7 +941,7 @@ static void init_swapchain(struct vulkan_renderer *r) {
 		.pQueueFamilyIndices = (uint32_t[]) { r->queue_families[QUEUE_GRAPHICS], r->queue_families[QUEUE_PRESENT] },
 		.preTransform = surface_capabilities.currentTransform,
 		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-		.presentMode = VK_PRESENT_MODE_FIFO_KHR,
+		.presentMode = VK_PRESENT_MODE_MAILBOX_KHR,
 		.oldSwapchain = VK_NULL_HANDLE,
 	}, NULL, &r->swapchain));
 
@@ -2002,7 +2002,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				p->atmosphere.mie_falloff
 			),
 			.optical_depth_samples = 5,
-			.scatter_point_samples = 30,
+			.scatter_point_samples = 80,
 		};
 		char *data_raw;
 		vmaMapMemory(r->allocator, r->data.atmo_uniform_buffer.allocation, (void**)&data_raw);
@@ -2125,11 +2125,49 @@ static void render(struct vulkan_renderer *r, uint32_t current_frame) {
 	}));
 }
 
+struct renderer_stats {
+	float fps;
+	float delta_time;
+	float avg_delta_time;
+	size_t frame_number;
+	struct {
+		float total_usage; // MiB
+		size_t allocation_count;
+	} gpu_memory;
+	float cpu_memory_used;
+};
+
+static void show_stats_window(struct vulkan_renderer *r, const struct renderer_stats *stats) {
+	if (ImGui_Begin("Stats", NULL, 0)) {
+		ImGui_Text("FPS: %.1f", stats->fps);
+		ImGui_Text("Delta Time: %.2fms", stats->delta_time * 1000.0f);
+		ImGui_Text("Avg. Delta Time: %.2fms", stats->avg_delta_time * 1000.0f);
+		ImGui_Text("Frame: %zu", stats->frame_number);
+		ImGui_Text("CPU Memory (MiB): %.2f", stats->cpu_memory_used);
+		ImGui_Text("GPU Memory (MiB): %.2f", stats->gpu_memory.total_usage);
+		ImGui_Text("GPU Allocation Count: %zu", stats->gpu_memory.allocation_count);
+	}
+	ImGui_End();
+}
+
+static void set_gpu_mem_usage(struct vulkan_renderer *r, struct renderer_stats *stats) {
+	VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+	vmaGetHeapBudgets(r->allocator, budgets);
+	stats->gpu_memory.total_usage = (size_t)(budgets[0].usage / 1024) / 1024.0f;
+	stats->gpu_memory.allocation_count = budgets[0].statistics.allocationCount;
+}
+
 void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer) {
 	struct vulkan_renderer *r = (void*)renderer;
+	
 	float last_time = glfwGetTime();
 	uint32_t current_frame = 0;
+	size_t frame_number = 0, frames_since_dt_reset = 0;
+	
+	float delta_time_sum = 0.0f;
+
 	while (!glfwWindowShouldClose(r->window)) {
+		++frame_number; ++frames_since_dt_reset;
 		float current_time = glfwGetTime();
 		float delta_time = current_time - last_time;
 		glfwPollEvents();
@@ -2138,8 +2176,25 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 		ImGui_NewFrame();
 		ImGui_ShowDemoWindow(NULL);
 		pshine_update_game(game, delta_time);
+		{
+			struct renderer_stats stats = {
+				.frame_number = frame_number,
+				.avg_delta_time = delta_time_sum / frames_since_dt_reset,
+				.delta_time = delta_time,
+				.cpu_memory_used = pshine_get_mem_usage() / 1024.0f,
+				.gpu_memory = {},
+				.fps = 1.0f / delta_time,
+			};
+			set_gpu_mem_usage(r, &stats);
+			show_stats_window(r, &stats);
+		}
 		ImGui_Render();
 		render(r, current_frame);
+		if (delta_time_sum >= 20.0f) {
+			delta_time_sum = 0.0f;
+			frames_since_dt_reset = 0;
+		}
+		delta_time_sum += delta_time;
 		last_time = current_time;
 		current_frame = (current_frame + 1) % FRAMES_IN_FLIGHT;
 	}

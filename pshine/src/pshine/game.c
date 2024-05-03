@@ -232,8 +232,8 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->atmosphere.rayleigh_coefs[0] = 3.8f;
 	planet->atmosphere.rayleigh_coefs[1] = 13.5f;
 	planet->atmosphere.rayleigh_coefs[2] = 33.1f;
-	planet->atmosphere.rayleigh_falloff = 20.0f;
-	planet->atmosphere.mie_coef = 21.0f;
+	planet->atmosphere.rayleigh_falloff = 10.0f;
+	planet->atmosphere.mie_coef = 20.5f;
 	planet->atmosphere.mie_ext_coef = 1.1f;
 	planet->atmosphere.mie_g_coef = -0.87f;
 	planet->atmosphere.mie_falloff = 50.0f;
@@ -258,20 +258,20 @@ struct pshine_game_data {
 
 void pshine_init_game(struct pshine_game *game) {
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
-	game->celestial_body_count = 2;
+	game->celestial_body_count = 1;
 	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
 	game->celestial_bodies_own[0] = calloc(1, sizeof(struct pshine_planet));
 	init_planet((void*)game->celestial_bodies_own[0], 6'371'000.0, double3v0());
-	game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
-	init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -10'000'000.0, 0.0));
+	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
+	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
 	game->camera_position.xyz.z = -6'371'000.0;
-	game->data_own->camera_dist = 6'371'000.0;
+	game->data_own->camera_dist = 6'371'000.0 * 2.0;
 	game->data_own->camera_yaw = 0.0;
 	game->data_own->camera_pitch = 0.0;
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0;
 	game->data_own->movement_mode = 1;
-	game->data_own->move_speed = 5'000.0; //PSHINE_SPEED_OF_LIGHT;
+	game->data_own->move_speed = 500'000.0; //PSHINE_SPEED_OF_LIGHT;
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
@@ -408,6 +408,25 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 			game->data_own->move_speed = v;
 		}
 		ImGui_Text("yaw: %.3frad, pitch: %.3frad", game->data_own->camera_yaw, game->data_own->camera_pitch);
+	}
+	ImGui_End();
+
+	if (ImGui_Begin("Atmosphere", NULL, 0)) {
+		struct pshine_atmosphere_info *atmo = &((struct pshine_planet*)game->celestial_bodies_own[0])->atmosphere;
+		// rayleigh_coefs[0] = 3.8f;
+		// rayleigh_coefs[1] = 13.5f;
+		// rayleigh_coefs[2] = 33.1f;
+		// rayleigh_falloff = 10.0f;
+		// mie_coef = 20.5f;
+		// mie_ext_coef = 1.1f;
+		// mie_g_coef = -0.87f;
+		// mie_falloff = 50.0f;
+		ImGui_SliderFloat3("Rayleigh Coefs.", atmo->rayleigh_coefs, 0.001f, 50.0f);
+		ImGui_SliderFloat("Rayleigh Falloff.", &atmo->rayleigh_falloff, 0.0001f, 100.0f);
+		ImGui_SliderFloat("Mie Coef.", &atmo->mie_coef, 0.001f, 50.0f);
+		ImGui_SliderFloat("Mie Ext. Coef.", &atmo->mie_ext_coef, 0.001f, 5.0f);
+		ImGui_SliderFloat("Mie 'g' Coef.", &atmo->mie_g_coef, -0.9999f, 0.9999f);
+		ImGui_SliderFloat("Mie Falloff.", &atmo->mie_falloff, 0.0001f, 100.0f);
 	}
 	ImGui_End();
 

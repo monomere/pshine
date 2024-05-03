@@ -4,8 +4,8 @@ Atmosphere and meshing playground. WIP.
 
 TODO:
 
-- [ ] Actual atmosphere rendering.
-- [ ] Move the backend to vulkan (shouldn't be super hard).
+- [x] Actual atmosphere rendering.
+- [x] Move the backend to vulkan (shouldn't be super hard).
 - [ ] Terrain generation, textures.
 - [ ] Mesh LOD.
 
@@ -141,7 +141,7 @@ Key|Action
 - [x] Fake perspective for celestial bodies.
 - [x] Fixed point math?
 - [x] Bug: ~~mesh scale is wrong~~ forgot to remove `* 5.0f` when passing atmosphere height.
-- [x] ~~The bug is still there :(~~ nevermind, it was correct all along.
+- [x] ~~The bug is still there :(~~ ~~nevermind, it was correct all along.~~ no, its still a bug....
 - [ ] Fix rotation matrices, and matrices in general.
 - [ ] Rewrite the math library generation, its so ugly.
 - [ ] Use near-origin coordinates for the "player".
