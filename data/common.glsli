@@ -17,6 +17,7 @@ struct AtmosphereUniforms {
 	vec4 planet;     // xyz, w=radius
 	vec4 coefs_ray;  // xyz=k_ray, w=falloff_ray
 	vec4 coefs_mie;  // x=k_mie, y=k_mie_ext, z=g, w=falloff_mie
+	vec4 camera;     // xyz, w=_
 	float radius;
 	uint optical_depth_samples;
 	uint scatter_point_samples;

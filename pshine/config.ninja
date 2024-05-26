@@ -12,4 +12,4 @@ debug = -g
 debugc =
 debugcxx =
 
-libs = -lglfw -lm
+libs = -lglfw -lm -lvulkan

@@ -5,6 +5,7 @@
 
 #define VK_NO_PROTOTYPES
 #include <volk.h>
+// #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <vk_mem_alloc.h>
 
@@ -40,6 +41,7 @@ struct atmo_uniform_data {
 	float4 planet; // xyz, w=radius
 	float4 coefs_ray; // xyz=k_ray, w=falloff_ray
 	float4 coefs_mie; // x=k_mie, y=k_mie_ext, z=g, w=falloff_mie
+	float4 camera; // xyz, w=_
 	float radius;
 	unsigned int optical_depth_samples;
 	unsigned int scatter_point_samples;
@@ -622,10 +624,18 @@ static struct vulkan_image generate_atmo_lut(struct vulkan_renderer *r, struct p
 	);
 	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.atmo_lut_layout, 0, 1, &dset, 0, NULL);
 	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.atmo_lut_pipeline);
+	
+	double
+		scs_atmo_h = SCSd_WCSd(planet->atmosphere.height),
+		scs_body_r = SCSd_WCSd(planet->as_body.radius);
+	double scs_body_r_scaled = scs_body_r / (scs_body_r + scs_atmo_h);
 	struct atmo_lut_push_const_data data = {
-		.planet_radius = SCSd_WCSd(planet->as_body.radius),
-		.atmo_height = SCSd_WCSd(planet->atmosphere.height),
-		.falloffs = float2xy(20.0f, 50.0f),
+		.planet_radius = scs_body_r_scaled,
+		.atmo_height = 1.0f - scs_body_r_scaled,
+		.falloffs = float2xy(
+			planet->atmosphere.rayleigh_falloff,
+			planet->atmosphere.mie_falloff
+		),
 		.samples = 4096,
 	};
 	vkCmdPushConstants(command_buffer, r->pipelines.atmo_lut_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(struct atmo_lut_push_const_data), &data);
@@ -675,6 +685,8 @@ static void key_cb_glfw_(GLFWwindow *window, int key, int scancode, int action, 
 }
 
 static void init_glfw(struct vulkan_renderer *r) {
+	glfwInitVulkanLoader(vkGetInstanceProcAddr);
+	PSHINE_DEBUG("GLFW version: %s", glfwGetVersionString());
 	glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
 	glfwSetErrorCallback(&error_cb_glfw_);
 	if (!glfwInit()) PSHINE_PANIC("could not initialize GLFW");
@@ -746,9 +758,13 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	{
 		uint32_t physical_device_count = 0;
 		CHECKVK(vkEnumeratePhysicalDevices(r->instance, &physical_device_count, NULL));
-		VkPhysicalDevice physical_devices[physical_device_count];
+		PSHINE_DEBUG("physical_device_count=%u", physical_device_count);
+		VkPhysicalDevice *physical_devices = malloc(sizeof(VkPhysicalDevice) * physical_device_count);
+		PSHINE_DEBUG("physical_devices=%p", physical_devices);
+		PSHINE_DEBUG("r->instance=%p, vkEnumeratePhysicalDevices=%p", r->instance, vkEnumeratePhysicalDevices);
 		CHECKVK(vkEnumeratePhysicalDevices(r->instance, &physical_device_count, physical_devices));
 		r->physical_device = physical_devices[0]; // TODO: physical device selection
+		free(physical_devices);
 	}
 
 	{
@@ -941,7 +957,7 @@ static void init_swapchain(struct vulkan_renderer *r) {
 		.pQueueFamilyIndices = (uint32_t[]) { r->queue_families[QUEUE_GRAPHICS], r->queue_families[QUEUE_PRESENT] },
 		.preTransform = surface_capabilities.currentTransform,
 		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-		.presentMode = VK_PRESENT_MODE_MAILBOX_KHR,
+		.presentMode = VK_PRESENT_MODE_FIFO_KHR,
 		.oldSwapchain = VK_NULL_HANDLE,
 	}, NULL, &r->swapchain));
 
@@ -1988,9 +2004,26 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		// 	powf(400.0f / p->atmosphere.wavelengths[1], 4) * p->atmosphere.scattering_strength,
 		// 	powf(400.0f / p->atmosphere.wavelengths[2], 4) * p->atmosphere.scattering_strength
 		// );
+
+		double scs_atmo_h = SCSd_WCSd(p->atmosphere.height);
+		double scs_body_r = SCSd_WCSd(p->as_body.radius);
+
+		double scale_fact = scs_body_r + scs_atmo_h;
+
+		double3 scs_body_pos = SCSd3_WCSp3(p->as_body.position);
+		double3 scs_body_pos_scaled = double3div(scs_body_pos, scale_fact);
+
+		double scs_body_r_scaled = scs_body_r / scale_fact;
+		double3 scs_cam = SCSd3_WCSp3(r->game->camera_position);
+		double3 scs_cam_scaled = double3div(scs_cam, scale_fact);
+
 		struct atmo_uniform_data new_data = {
-			.planet = float4xyz3w(float3_double3(SCSd3_WCSp3(p->as_body.position)), SCSd_WCSd(p->as_body.radius)),
-			.radius = SCSd_WCSd(p->as_body.radius + p->atmosphere.height),
+			.planet = float4xyz3w(
+				float3_double3(scs_body_pos_scaled),
+				scs_body_r_scaled
+			),
+			.radius = 1.0f,
+			.camera = float4xyz3w(float3_double3(scs_cam_scaled), 0.0f),
 			.coefs_ray = float4xyz3w(
 				float3vs(p->atmosphere.rayleigh_coefs),
 				p->atmosphere.rayleigh_falloff

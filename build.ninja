@@ -21,11 +21,11 @@ owl = vendor/owl/owl
 python = python
 
 rule cc
-  command = $cc -c $in -o $out $cflags -O$opt $debug $debugc -MD -MF $out.d
+  command = $cc -c $in -o $out $cflags $cflags2 -O$opt $debug $debugc -MD -MF $out.d
   depfile = $out.d
 
 rule cxx
-  command = $cxx -c $in -o $out $cxxflags -O$opt $debug $debugcxx -MD -MF $out.d
+  command = $cxx -c $in -o $out $cxxflags $cxxflags2 -O$opt $debug $debugcxx -MD -MF $out.d
   depfile = $out.d
 
 rule glslc
@@ -33,7 +33,7 @@ rule glslc
   depfile = $out.d
 
 rule ld
-  command = $ld $in -o $out $libs $debugc
+  command = $ld $in -o $out $libs $ldflags $ldflags2 $debugc
 
 rule owl
   command = $owl -c $in -p $owlprefix -o $out

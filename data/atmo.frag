@@ -227,11 +227,11 @@ vec3 compute_light(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
 
 		vec3 trans = exp(
 			-(opt.x + params.z) * atmo.coefs_ray.xyz
-			// -(opt.y + params.w) * atmo.coefs_mie.x * atmo.coefs_mie.y
+			-(opt.y + params.w) * atmo.coefs_mie.x * atmo.coefs_mie.y
 		);
 
 		sum_ray += params.x * step_len * trans;
-		// sum_mie += params.y * step_len * trans;
+		sum_mie += params.y * step_len * trans;
 		p += ray_dir * step_len;
 	}
 
@@ -241,14 +241,14 @@ vec3 compute_light(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
 	float phase_ray = 3.0 / (50.2654824574 /* (16 * pi) */) * (1.0 + c * c);
 	vec3 scatter
 		= phase_ray * atmo.coefs_ray.xyz * sum_ray; // sum_ray * atmo.coefs_ray.xyz * phase_ray(c * c)
-		// + sum_mie * atmo.coefs_mie.x * phase_mie(atmo.coefs_mie.z, c, c * c)
+		+ sum_mie * atmo.coefs_mie.x * phase_mie(atmo.coefs_mie.z, c, c * c)
 		;
 	vec3 opacity = exp(-atmo.coefs_ray.xyz * opt.x);
 	return scatter * 10.0 + col * opacity;
 }
 
 vec4 compute_color(vec2 uv, vec4 col, float depth) {
-	vec3 ray_origin = global.camera.xyz;
+	vec3 ray_origin = atmo.camera.xyz;
 	vec2 ray_ndc = vec2(uv.x, 1.0 - uv.y) * 2.0 - 1.0;
 	// vec4 ray_clip = vec4(ray_ndc, 0.0, 1.0);
 	// vec4 ray_eye =  global.proj * ray_clip;

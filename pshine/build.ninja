@@ -9,6 +9,7 @@ build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      | $mod/src
 
 build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/vk_mem_alloc.cc
 build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
+  cflags2 = -DVK_USE_PLATFORM_WAYLAND_KHR
 
 build $builddir/vendor/cimgui/backends/cimgui_impl_glfw.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_glfw.cpp
 build $builddir/vendor/cimgui/backends/cimgui_impl_vulkan.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_vulkan.cpp

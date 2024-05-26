@@ -226,13 +226,13 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->as_body.parent_ref = NULL;
 	*(double3*)planet->as_body.position.values = center;
 	planet->has_atmosphere = true;
-	// similar to Earth, where the radius of earth
-	// is 6371km and the atmosphere height is 100km
-	planet->atmosphere.height = 500'000.0; // 0.015696123 * radius;
+	// similar to Earth, the radius is 6371km
+	// and the atmosphere height is 100km
+	planet->atmosphere.height = 0.15696123 * radius;
 	planet->atmosphere.rayleigh_coefs[0] = 3.8f;
 	planet->atmosphere.rayleigh_coefs[1] = 13.5f;
 	planet->atmosphere.rayleigh_coefs[2] = 33.1f;
-	planet->atmosphere.rayleigh_falloff = 10.0f;
+	planet->atmosphere.rayleigh_falloff = 20.0f;
 	planet->atmosphere.mie_coef = 20.5f;
 	planet->atmosphere.mie_ext_coef = 1.1f;
 	planet->atmosphere.mie_g_coef = -0.87f;
@@ -264,14 +264,14 @@ void pshine_init_game(struct pshine_game *game) {
 	init_planet((void*)game->celestial_bodies_own[0], 6'371'000.0, double3v0());
 	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
 	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
-	game->camera_position.xyz.z = -6'371'000.0;
-	game->data_own->camera_dist = 6'371'000.0 * 2.0;
+	game->data_own->camera_dist = game->celestial_bodies_own[0]->radius + 15'000.0;
+	game->camera_position.xyz.z = -game->data_own->camera_dist;
 	game->data_own->camera_yaw = 0.0;
 	game->data_own->camera_pitch = 0.0;
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0;
 	game->data_own->movement_mode = 1;
-	game->data_own->move_speed = 500'000.0; //PSHINE_SPEED_OF_LIGHT;
+	game->data_own->move_speed = 5'000'000.0; //PSHINE_SPEED_OF_LIGHT;
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
@@ -363,6 +363,7 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 	), game->data_own->camera_dist);
 
 	double3 cam_forward = double3norm(double3sub(double3vs(game->celestial_bodies_own[0]->position.values), cam_pos));
+	// double3 cam_forward = double3xyz(-1.0f, 0.0f, 0.0f);
 
 	*(double3*)game->camera_position.values = cam_pos;
 	*(double3*)game->camera_forward.values = cam_forward;
