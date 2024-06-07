@@ -272,6 +272,9 @@ void pshine_init_game(struct pshine_game *game) {
 	game->atmo_blend_factor = 0.0;
 	game->data_own->movement_mode = 1;
 	game->data_own->move_speed = 5'000'000.0; //PSHINE_SPEED_OF_LIGHT;
+	game->sun_direction_.xyz.x = -1.0;
+	game->sun_direction_.xyz.y =  0.0;
+	game->sun_direction_.xyz.z =  0.0;
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
@@ -428,6 +431,14 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		ImGui_SliderFloat("Mie Ext. Coef.", &atmo->mie_ext_coef, 0.001f, 5.0f);
 		ImGui_SliderFloat("Mie 'g' Coef.", &atmo->mie_g_coef, -0.9999f, 0.9999f);
 		ImGui_SliderFloat("Mie Falloff.", &atmo->mie_falloff, 0.0001f, 100.0f);
+	}
+	ImGui_End();
+
+	if (ImGui_Begin("System", NULL, 0)) {
+		float3 p = float3_double3(double3vs(game->sun_direction_.values));
+		if (ImGui_SliderFloat3("Sun", p.vs, -1.0f, 1.0)) {
+			*(double3*)game->sun_direction_.values = double3_float3(p);
+		}
 	}
 	ImGui_End();
 

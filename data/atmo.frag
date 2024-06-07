@@ -34,14 +34,14 @@ float phase_mie(float g, float c, float cc) {
 }
 
 // Rayleigh (g = 0)
-// F = 3/16 × π × (1 + c²)
+// F = 3/16π × (1 + c²)
 float phase_ray(float cc) {
-	return (3.0/16.0 * PI) * (1.0 + cc);
+	return (3.0/(16.0 * PI)) * (1.0 + cc);
 }
 
 float compute_optical_depth_slow(vec3 ray_origin, vec3 ray_dir, float ray_len, float falloff) {
 	float step_len = ray_len / float(atmo.optical_depth_samples);
-	vec3 p = ray_origin; //  * step_len * 0.5;
+	vec3 p = ray_origin;
 
 	float sum = 0.0;
 	for (uint i = 0; i < atmo.optical_depth_samples; ++i, p += ray_dir * step_len) {
@@ -51,7 +51,8 @@ float compute_optical_depth_slow(vec3 ray_origin, vec3 ray_dir, float ray_len, f
 	return sum * step_len;
 }
 
-vec4 compute_atmo_params_baked(vec3 ray_origin, vec3 ray_dir, float ray_len) {
+vec4 compute_atmo_params_baked(vec3 ray_origin) {
+	vec3 ray_dir = global.sun.xyz;
 	vec3 local_ray_origin = ray_origin - atmo.planet.xyz;
 	float h = max(length(local_ray_origin) - atmo.planet.w, 0.0) / (atmo.radius - atmo.planet.w);
 	vec2 d = exp(-h * vec2(atmo.coefs_ray.w, atmo.coefs_mie.w)) * (1.0 - h);
@@ -59,156 +60,26 @@ vec4 compute_atmo_params_baked(vec3 ray_origin, vec3 ray_dir, float ray_len) {
 	return vec4(d, p.xy);
 }
 
-vec4 compute_atmo_params_slow(vec3 current, vec3 ray_dir, float ray_len) {
-	float d_ray = compute_density(current - atmo.planet.xyz, atmo.coefs_ray.w, atmo.planet.w, atmo.radius - atmo.planet.w);
-	float d_mie = compute_density(current - atmo.planet.xyz, atmo.coefs_mie.w, atmo.planet.w, atmo.radius - atmo.planet.w);
-	float n_ray = compute_optical_depth_slow(current, ray_dir, ray_len, atmo.coefs_ray.w);
-	float n_mie = compute_optical_depth_slow(current, ray_dir, ray_len, atmo.coefs_mie.w);
-	return vec4(d_ray, d_mie, n_ray, n_mie);
+vec4 compute_atmo_params_slow(vec3 ray_origin) {
+	vec3 ray_dir = global.sun.xyz;
+	float ray_len = intersect_ray_sphere(atmo.planet.xyz, atmo.radius, ray_origin, ray_dir).y;
+	vec3 local_ray_origin = ray_origin - atmo.planet.xyz;
+	float h = max(length(local_ray_origin) - atmo.planet.w, 0.0) / (atmo.radius - atmo.planet.w);
+	vec2 d = exp(-h * vec2(atmo.coefs_ray.w, atmo.coefs_mie.w)) * (1.0 - h);
+	float n_ray = compute_optical_depth_slow(ray_origin, ray_dir, ray_len, atmo.coefs_ray.w);
+	float n_mie = compute_optical_depth_slow(ray_origin, ray_dir, ray_len, atmo.coefs_mie.w);
+	return vec4(d, n_ray, n_mie);
 }
 
+#define ATMO_SLOW 0
 
-vec4 compute_atmo_params(vec3 current, vec3 ray_dir, float ray_len) {
-	return compute_atmo_params_baked(current, ray_dir, ray_len);
-}
-
-#if 0
-#define RAY_BETA vec3(5.5e0, 13.0e0, 22.4e0) /* rayleigh, affects the color of the sky */
-#define MIE_BETA vec3(21e0) /* mie, affects the color of the blob around the sun */
-#define AMBIENT_BETA vec3(0.0) /* ambient, affects the scattering color when there is no lighting from the sun */
-#define ABSORPTION_BETA vec3(2.04e-5, 4.97e-5, 1.95e-6) /* what color gets absorbed by the atmosphere (Due to things like ozone) */
-#define G 0.7 /* mie scattering direction, or how big the blob around the sun is */
-// and the heights (how far to go up before the scattering has no effect)
-#define HEIGHT_RAY 1.3333 /* rayleigh height */
-#define HEIGHT_MIE 0.2 /* and mie */
-#define HEIGHT_ABSORPTION 5.0 /* at what height the absorption is at it's maximum */
-#define ABSORPTION_FALLOFF 4e3 /* how much the absorption decreases the further away it gets from the maximum height */
-
-vec3 calculate_scattering(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
-	return vec3(0.0);
-	// bool allow_mie = false;
-	// // make sure the ray is no longer than allowed
-	// // get the step size of the ray
-	// float step_size_i = (ray_len) / float(atmo.scatter_point_samples);
-
-	// // next, set how far we are along the ray, so we can calculate the position of the sample
-	// // if the camera is outside the atmosphere, the ray should start at the edge of the atmosphere
-	// // if it's inside, it should start at the position of the camera
-	// // the min statement makes sure of that
-	// float ray_pos_i = 0;
-
-	// // these are the values we use to gather all the scattered light
-	// vec3 total_ray = vec3(0.0); // for rayleigh
-	// vec3 total_mie = vec3(0.0); // for mie
-
-	// // initialize the optical depth. This is used to calculate how much air was in the ray
-	// vec3 opt_i = vec3(0.0);
-
-	// // also init the scale height, avoids some vec2's later on
-	// float scale_height = HEIGHT_RAY;
-
-	// // Calculate the Rayleigh and Mie phases.
-	// // This is the color that will be scattered for this ray
-	// // mu, mumu and gg are used quite a lot in the calculation, so to speed it up, precalculate them
-	// float mu = dot(ray_dir, -global.sun.xyz);
-	// float mumu = mu * mu;
-	// float gg = G * G;
-	// float phase_ray = 3.0 / (50.2654824574 /* (16 * pi) */) * (1.0 + mumu);
-	// float phase_mie = allow_mie ? 3.0 / (25.1327412287 /* (8 * pi) */) * ((1.0 - gg) * (mumu + 1.0)) / (pow(1.0 + gg - 2.0 * mu * G, 1.5) * (2.0 + gg)) : 0.0;
-
-	// // now we need to sample the 'primary' ray. this ray gathers the light that gets scattered onto it
-	// for (int i = 0; i < atmo.scatter_point_samples; ++i) {
-			
-	// 		// calculate where we are along this ray
-	// 		vec3 pos_i = ray_origin + ray_dir * ray_pos_i;
-			
-	// 		// and how high we are above the surface
-	// 		float height_i = max(length(pos_i) - atmo.planet.w, 0.0) / (atmo.radius - atmo.planet.w);
-			
-	// 		// now calculate the density of the particles (both for rayleigh and mie)
-	// 		float density = exp(-height_i / scale_height);
-			
-	// 		// multiply it by the step size here
-	// 		// we are going to use the density later on as well
-	// 		density *= step_size_i;
-			
-	// 		// Add these densities to the optical depth, so that we know how many particles are on this ray.
-	// 		opt_i += density;
-			
-	// 		// Calculate the step size of the light ray.
-	// 		// again with a ray sphere intersect
-	// 		// a, b, c and d are already defined
-	// 		a = dot(global.sun.xyz, global.sun.xyz);
-	// 		b = 2.0 * dot(global.sun.xyz, pos_i);
-	// 		c = dot(pos_i, pos_i) - (atmo.radius * atmo.radius);
-	// 		d = (b * b) - 4.0 * a * c;
-
-	// 		// no early stopping, this one should always be inside the atmosphere
-	// 		// calculate the ray length
-	// 		float step_size_l = (-b + sqrt(d)) / (2.0 * a * float(atmo.optical_depth_samples));
-
-	// 		// and the position along this ray
-	// 		// this time we are sure the ray is in the atmosphere, so set it to 0
-	// 		float ray_pos_l = step_size_l * 0.5;
-
-	// 		// and the optical depth of this ray
-	// 		vec3 opt_l = vec3(0.0);
-					
-	// 		// now sample the light ray
-	// 		// this is similar to what we did before
-	// 		for (int l = 0; l < atmo.optical_depth_samples; ++l) {
-
-	// 				// calculate where we are along this ray
-	// 				vec3 pos_l = pos_i + global.sun.xyz * ray_pos_l;
-
-	// 				// the heigth of the position
-	// 				float height_l = length(pos_l) - atmo.planet.w;
-
-	// 				// calculate the particle density, and add it
-	// 				// this is a bit verbose
-	// 				// first, set the density for ray and mie
-	// 				vec3 density_l = vec3(exp(-height_l / scale_height), 0.0);
-					
-	// 				// then, the absorption
-	// 				float denom = (HEIGHT_ABSORPTION - height_l) / ABSORPTION_FALLOFF;
-	// 				density_l.z = (1.0 / (denom * denom + 1.0)) * density_l.x;
-					
-	// 				// multiply the density by the step size
-	// 				density_l *= step_size_l;
-					
-	// 				// and add it to the total optical depth
-	// 				opt_l += density_l;
-					
-	// 				// and increment where we are along the light ray.
-	// 				ray_pos_l += step_size_l;
-					
-	// 		}
-			
-	// 		// Now we need to calculate the attenuation
-	// 		// this is essentially how much light reaches the current sample point due to scattering
-	// 		vec3 attn = exp(-RAY_BETA * (opt_i.x + opt_l.x) - MIE_BETA * (opt_i.y + opt_l.y) - ABSORPTION_BETA * (opt_i.z + opt_l.z));
-
-	// 		// accumulate the scattered light (how much will be scattered towards the camera)
-	// 		total_ray += density.x * attn;
-	// 		total_mie += density.y * attn;
-
-	// 		// and increment the position on this ray
-	// 		ray_pos_i += step_size_i;
-		
-	// }
-
-	// // calculate how much light can pass through the atmosphere
-	// vec3 opacity = exp(-(MIE_BETA * opt_i.y + RAY_BETA * opt_i.x + ABSORPTION_BETA * opt_i.z));
-
-	// // calculate and return the final color
-	// return (
-	// 	phase_ray * RAY_BETA * total_ray // rayleigh color
-	// 	+ phase_mie * MIE_BETA * total_mie // mie
-	// 	+ opt_i.x * AMBIENT_BETA // and ambient
-	// ) * 40 + col * opacity; // now make sure the background is rendered correctly
-}
-
+vec4 compute_atmo_params(vec3 current) {
+#if defined(ATMO_SLOW) && ATMO_SLOW
+	return compute_atmo_params_slow(current);
+#else
+	return compute_atmo_params_baked(current);
 #endif
+}
 
 vec3 compute_light(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
 	vec3 sum_ray = vec3(0.0);
@@ -220,8 +91,7 @@ vec3 compute_light(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
 	vec3 p = ray_origin;
 
 	for (uint i = 0; i < atmo.scatter_point_samples; ++i) {
-		float sun_ray_len = intersect_ray_sphere(atmo.planet.xyz, atmo.radius, p, global.sun.xyz).y;
-		vec4 params = compute_atmo_params(p, global.sun.xyz, sun_ray_len);
+		vec4 params = compute_atmo_params(p);
 
 		opt += params.xy * step_len;
 
@@ -235,15 +105,13 @@ vec3 compute_light(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
 		p += ray_dir * step_len;
 	}
 
-	float c = dot(ray_dir, -global.sun.xyz);
-	// float mu = dot(ray_dir, -global.sun.xyz);
-	// float gg = 0.7 * 0.7;
-	float phase_ray = 3.0 / (50.2654824574 /* (16 * pi) */) * (1.0 + c * c);
+	float c = dot(ray_dir, global.sun.xyz);
+	float cc = c * c;
 	vec3 scatter
-		= phase_ray * atmo.coefs_ray.xyz * sum_ray; // sum_ray * atmo.coefs_ray.xyz * phase_ray(c * c)
-		+ sum_mie * atmo.coefs_mie.x * phase_mie(atmo.coefs_mie.z, c, c * c)
+		= sum_ray * atmo.coefs_ray.xyz * phase_ray(cc);
+		+ sum_mie * atmo.coefs_mie.x * phase_mie(atmo.coefs_mie.z, c, cc)
 		;
-	vec3 opacity = exp(-atmo.coefs_ray.xyz * opt.x);
+	vec3 opacity = exp(-(atmo.coefs_ray.xyz * opt.x + atmo.coefs_mie.x * opt.y));
 	return scatter * 10.0 + col * opacity;
 }
 

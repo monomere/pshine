@@ -1966,7 +1966,9 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			.camera = float4xyz3w(float3_double3(SCSd3_WCSp3(r->game->camera_position)), persp_info.znear),
 			.camera_right = float4xyz3w(cam_x, persp_info.plane.x),
 			.camera_up = float4xyz3w(cam_y, persp_info.plane.y),
-			.sun = float4xyz3w(float3norm(float3xyz(-1.0f, 0.0f, 0.0f)), 1.0f),
+			.sun = float4xyz3w(float3_double3(
+				double3norm(double3vs(r->game->sun_direction_.values))
+			), 1.0f),
 		};
 		char *data;
 		vmaMapMemory(r->allocator, r->data.global_uniform_buffer.allocation, (void**)&data);

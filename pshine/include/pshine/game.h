@@ -119,6 +119,7 @@ struct pshine_game {
 	pshine_vector3d camera_forward;
 	struct pshine_game_data *data_own;
 	float atmo_blend_factor;
+	pshine_vector3d sun_direction_;
 };
 
 void pshine_init_game(struct pshine_game *game);

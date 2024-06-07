@@ -24,12 +24,12 @@ layout (push_constant) uniform BUFFER(ShaderPushConstants, push_consts);
 
 vec2 compute_optical_depth(vec3 ray_origin, vec3 ray_dir, float ray_len) {
 	float step_len = ray_len / float(push_consts.samples);
-	vec3 p = ray_origin + ray_dir;
+	vec3 p = ray_origin;
 
 	vec2 sum = vec2(0.0);
 	for (uint i = 0; i < push_consts.samples; ++i, p += ray_dir * step_len) {
 		sum += vec2(
-			compute_density(p, push_consts.falloffs.x, push_consts.planet_radius, push_consts.atmo_height), // push_consts.falloffs.x
+			compute_density(p, push_consts.falloffs.x, push_consts.planet_radius, push_consts.atmo_height),
 			compute_density(p, push_consts.falloffs.y, push_consts.planet_radius, push_consts.atmo_height)
 		);
 	}
