@@ -21,6 +21,7 @@ struct AtmosphereUniforms {
 	float radius;
 	uint optical_depth_samples;
 	uint scatter_point_samples;
+	float intensity;
 };
 
 struct StaticMeshUniforms {

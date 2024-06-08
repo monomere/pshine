@@ -112,7 +112,7 @@ vec3 compute_light(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
 		+ sum_mie * atmo.coefs_mie.x * phase_mie(atmo.coefs_mie.z, c, cc)
 		;
 	vec3 opacity = exp(-(atmo.coefs_ray.xyz * opt.x + atmo.coefs_mie.x * opt.y));
-	return scatter * 10.0 + col * opacity;
+	return scatter * atmo.intensity + col * opacity;
 }
 
 vec4 compute_color(vec2 uv, vec4 col, float depth) {

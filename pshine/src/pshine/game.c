@@ -237,6 +237,7 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->atmosphere.mie_ext_coef = 1.1f;
 	planet->atmosphere.mie_g_coef = -0.87f;
 	planet->atmosphere.mie_falloff = 50.0f;
+	planet->atmosphere.intensity = 20.0f;
 }
 
 static void deinit_planet(struct pshine_planet *planet) {
@@ -416,21 +417,15 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 	ImGui_End();
 
 	if (ImGui_Begin("Atmosphere", NULL, 0)) {
-		struct pshine_atmosphere_info *atmo = &((struct pshine_planet*)game->celestial_bodies_own[0])->atmosphere;
-		// rayleigh_coefs[0] = 3.8f;
-		// rayleigh_coefs[1] = 13.5f;
-		// rayleigh_coefs[2] = 33.1f;
-		// rayleigh_falloff = 10.0f;
-		// mie_coef = 20.5f;
-		// mie_ext_coef = 1.1f;
-		// mie_g_coef = -0.87f;
-		// mie_falloff = 50.0f;
+		struct pshine_planet *planet =(struct pshine_planet*)game->celestial_bodies_own[0];
+		struct pshine_atmosphere_info *atmo = &planet->atmosphere;
 		ImGui_SliderFloat3("Rayleigh Coefs.", atmo->rayleigh_coefs, 0.001f, 50.0f);
 		ImGui_SliderFloat("Rayleigh Falloff.", &atmo->rayleigh_falloff, 0.0001f, 100.0f);
 		ImGui_SliderFloat("Mie Coef.", &atmo->mie_coef, 0.001f, 50.0f);
 		ImGui_SliderFloat("Mie Ext. Coef.", &atmo->mie_ext_coef, 0.001f, 5.0f);
 		ImGui_SliderFloat("Mie 'g' Coef.", &atmo->mie_g_coef, -0.9999f, 0.9999f);
 		ImGui_SliderFloat("Mie Falloff.", &atmo->mie_falloff, 0.0001f, 100.0f);
+		ImGui_SliderFloat("Intensity", &atmo->intensity, 0.0f, 50.0f);
 	}
 	ImGui_End();
 

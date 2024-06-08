@@ -64,6 +64,7 @@ struct pshine_atmosphere_info {
 	float mie_ext_coef;
 	float mie_g_coef;
 	float mie_falloff;
+	float intensity;
 };
 
 struct pshine_planet_graphics_data;
