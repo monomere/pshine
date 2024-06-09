@@ -228,7 +228,7 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->has_atmosphere = true;
 	// similar to Earth, the radius is 6371km
 	// and the atmosphere height is 100km
-	planet->atmosphere.height = 0.15696123 * radius;
+	planet->atmosphere.height = 0.015696123 * radius;
 	planet->atmosphere.rayleigh_coefs[0] = 3.8f;
 	planet->atmosphere.rayleigh_coefs[1] = 13.5f;
 	planet->atmosphere.rayleigh_coefs[2] = 33.1f;
@@ -272,7 +272,7 @@ void pshine_init_game(struct pshine_game *game) {
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0;
 	game->data_own->movement_mode = 1;
-	game->data_own->move_speed = 5'000'000.0; //PSHINE_SPEED_OF_LIGHT;
+	game->data_own->move_speed = 500'000.0; // PSHINE_SPEED_OF_LIGHT;
 	game->sun_direction_.xyz.x = -1.0;
 	game->sun_direction_.xyz.y =  0.0;
 	game->sun_direction_.xyz.z =  0.0;

@@ -688,7 +688,8 @@ static void key_cb_glfw_(GLFWwindow *window, int key, int scancode, int action, 
 static void init_glfw(struct vulkan_renderer *r) {
 	glfwInitVulkanLoader(vkGetInstanceProcAddr);
 	PSHINE_DEBUG("GLFW version: %s", glfwGetVersionString());
-	glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
+	glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+	// glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
 	glfwSetErrorCallback(&error_cb_glfw_);
 	if (!glfwInit()) PSHINE_PANIC("could not initialize GLFW");
 
@@ -1014,6 +1015,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 	enum : uint32_t {
 		geometry_subpass_index,
 		composite_subpass_index,
+		imgui_subpass_index,
 		subpass_count,
 	};
 
@@ -1024,20 +1026,19 @@ static void init_rpasses(struct vulkan_renderer *r) {
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
 			.dstSubpass = geometry_subpass_index,
 			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = 0,
+			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 		},
 		// synchronize previous geometry_subpass transient_depth_attachment write
-		// before current geometry_subpass transient_depth_attachment read.
+		// before current geometry_subpass transient_depth_attachment clear.
 		(VkSubpassDependency){
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
 			.dstSubpass = geometry_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-			.srcAccessMask = 0,
-			.dstStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-			.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-				| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+			.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // earlier write
+			.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+			.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // WRITE because loadOp is CLEAR
 		},
 		// synchronize previous composite_subpass output_attachment write
 		// before current composite_subpass output_attachment write.
@@ -1045,9 +1046,19 @@ static void init_rpasses(struct vulkan_renderer *r) {
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
 			.dstSubpass = composite_subpass_index,
 			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // earlier write
 			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // current write
+		},
+		// synchronize composite_subpass output_attachment write
+		// before imgui_subpass output_attachment write.
+		(VkSubpassDependency){
+			.srcSubpass = composite_subpass_index,
+			.dstSubpass = imgui_subpass_index,
+			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // earlier write
+			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // current write
 		},
 		// synchronize geometry_subpass transient_color_attachment write
 		// before composite_subpass transient_color_attachment (as input attachment) read.
@@ -1061,16 +1072,18 @@ static void init_rpasses(struct vulkan_renderer *r) {
 			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 		},
 		// synchronize geometry_subpass transient_depth_attachment write
-		// before composite_subpass transient_depth_attachment (as input attachment) read.
+		// before composite_subpass transient_depth_attachment (as input attachment) read
 		(VkSubpassDependency){
 			.srcSubpass = geometry_subpass_index,
 			.dstSubpass = composite_subpass_index,
-			.srcStageMask
-				= VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
-				| VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+			.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
 			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
+			.dstStageMask
+				= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+				| VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, // ???
+			.dstAccessMask
+				= VK_ACCESS_INPUT_ATTACHMENT_READ_BIT
+				| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // ???
 			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 		},
 	};
@@ -1102,7 +1115,6 @@ static void init_rpasses(struct vulkan_renderer *r) {
 						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 					},
 				},
-				.pDepthStencilAttachment = NULL,
 				.inputAttachmentCount = 2,
 				.pInputAttachments = (VkAttachmentReference[]) {
 					(VkAttachmentReference){
@@ -1114,6 +1126,16 @@ static void init_rpasses(struct vulkan_renderer *r) {
 						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 					},
 				}
+			},
+			[imgui_subpass_index] = (VkSubpassDescription){
+				.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+				.colorAttachmentCount = 1,
+				.pColorAttachments = (VkAttachmentReference[]) {
+					(VkAttachmentReference){
+						.attachment = output_attachment_index,
+						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+					},
+				},
 			}
 		},
 		.attachmentCount = attachment_count,
@@ -1151,7 +1173,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 		},
 		.dependencyCount = sizeof(subpass_dependencies) / sizeof(subpass_dependencies[0]),
 		.pDependencies = subpass_dependencies,
-	}, NULL, &r->render_passes.main_pass)); // TODO: 3rd subpass for imgui?
+	}, NULL, &r->render_passes.main_pass));
 	NAME_VK_OBJECT(r, r->render_passes.main_pass, VK_OBJECT_TYPE_RENDER_PASS, "main render pass");
 }
 
@@ -1397,7 +1419,7 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
 			.depthBoundsTestEnable = VK_FALSE,
 			.depthTestEnable = info->depth_test ? VK_TRUE : VK_FALSE,
-			.depthWriteEnable = VK_TRUE,
+			.depthWriteEnable = info->depth_test ? VK_TRUE : VK_FALSE,
 			.stencilTestEnable = VK_FALSE,
 			.depthCompareOp = VK_COMPARE_OP_GREATER,
 			.maxDepthBounds = 1.0f,
@@ -1917,7 +1939,7 @@ static void init_imgui(struct vulkan_renderer *r) {
 		.Queue = r->queues[QUEUE_GRAPHICS],
 		.PipelineCache = VK_NULL_HANDLE,
 		.DescriptorPool = r->descriptors.pool_imgui,
-		.Subpass = 1,
+		.Subpass = 2,
 		.MinImageCount = FRAMES_IN_FLIGHT,
 		.ImageCount = FRAMES_IN_FLIGHT,
 		.MSAASamples = VK_SAMPLE_COUNT_1_BIT,
@@ -2157,6 +2179,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	);
 	vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
 
+	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
 	cImGui_ImplVulkan_RenderDrawData(ImGui_GetDrawData(), f->command_buffer);
 
 	vkCmdEndRenderPass(f->command_buffer);

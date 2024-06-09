@@ -1,5 +1,7 @@
 # PlanetShine
 
+<img align="right" src="data/screenshots/atmo-2024-06-09.png" width="50%" />
+
 Atmosphere and meshing playground. WIP.
 
 TODO:
@@ -22,7 +24,8 @@ cd pshine
 >
 > `fatal: Fetched in submodule path 'vendor/owl', but it did not contain <...>. Direct fetching of that commit failed.`
 >
-> You can ignore it, it will be fixed later and doesn't impact anything right now.
+> You can ignore it; it's going to be fixed later and doesn't impact anything right now.
+
 
 ### Script
 
@@ -35,6 +38,8 @@ Make sure to check the contents of the script before running it.
 ```bash
 ./setup.sh
 ```
+
+<hr>
 
 ### Volk and VMA
 
@@ -106,13 +111,13 @@ ninja
 
 ## Running
 
-> requirements: vulkan ≥1.2
+> requirements: vulkan ≥1.2 (i don't really know which version tho uhh)
 
 ```bash
 build/pshine/main
 ```
 
-The planet has a radius of 6371km (Earth), the atmosphere has a height of 100km, and the camera moves at 5km/s by default.
+The planet has a radius of 6371km (Earth), the atmosphere has a height of 100km, and the camera moves at 500km/s by default.
 
 ### Controls
 
@@ -141,7 +146,8 @@ Key|Action
 - [x] Fake perspective for celestial bodies.
 - [x] Fixed point math?
 - [x] Bug: ~~mesh scale is wrong~~ forgot to remove `* 5.0f` when passing atmosphere height.
-- [x] ~~The bug is still there :(~~ ~~nevermind, it was correct all along.~~ no, its still a bug....
+- [x] ~~The bug is still there :(~~ ~~nevermind, it was correct all along.~~ ~~no, its still a bug....~~
+  - [X] THE BUG IS FIXED IT WORKSSS (precision errors)
 - [ ] Fix rotation matrices, and matrices in general.
 - [ ] Rewrite the math library generation, its so ugly.
 - [ ] Use near-origin coordinates for the "player".
