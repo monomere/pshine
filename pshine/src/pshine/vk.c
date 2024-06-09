@@ -87,6 +87,8 @@ struct pshine_planet_graphics_data {
 	struct vulkan_buffer uniform_buffer;
 	struct vulkan_image atmo_lut;
 	VkDescriptorSet descriptor_set;
+	VkCommandBuffer compute_cmdbuf;
+	bool should_submit_compute;
 };
 
 struct per_frame_data {
@@ -120,6 +122,8 @@ struct vulkan_renderer {
 	uint32_t swapchain_image_count;
 	VkImage *swapchain_images_own; // `*[.swapchain_image_count]`
 	VkImageView *swapchain_image_views_own; // `*[.swapchain_image_count]`
+
+	bool currently_recomputing_luts;
 
 	VkFormat depth_format;
 	struct vulkan_image depth_image;
@@ -170,6 +174,7 @@ struct vulkan_renderer {
 		VkDescriptorSet global_descriptor_set;
 		VkDescriptorSet material_descriptor_set; // TODO: move to material struct
 		VkDescriptorSet atmo_descriptor_set;
+		VkDescriptorSet atmo_lut_descriptor_set;
 	} data;
 
 	struct per_frame_data frames[FRAMES_IN_FLIGHT];
@@ -218,7 +223,8 @@ static void init_descriptors(struct vulkan_renderer *r); static void deinit_desc
 static void init_frames(struct vulkan_renderer *r); static void deinit_frames(struct vulkan_renderer *r);
 static void init_imgui(struct vulkan_renderer *r); static void deinit_imgui(struct vulkan_renderer *r);
 
-static struct vulkan_image generate_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *planet);
+static void init_atmo_lut_compute(struct vulkan_renderer *r, struct pshine_planet *planet);
+static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *planet, bool first_time);
 
 static void deallocate_buffer(
 	struct vulkan_renderer *r,
@@ -478,12 +484,21 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 		.maxLod = 0.0f,
 	}, NULL, &r->atmo_lut_sampler);
 
+	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = r->descriptors.pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &r->descriptors.atmo_lut_layout,
+	}, &r->data.atmo_lut_descriptor_set));
+
 	for (uint32_t i = 0; i < r->game->celestial_body_count; ++i) {
 		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			p->graphics_data = calloc(1, sizeof(struct pshine_planet_graphics_data));
-			p->graphics_data->atmo_lut = PSHINE_MEASURE("atmosphere LUT gen", generate_atmo_lut(r, p));
+			// PSHINE_MEASURE("atmosphere LUT gen", init_atmo_lut_compute(r, p));
+			init_atmo_lut_compute(r, p);
+			compute_atmo_lut(r, p, true);
 			p->graphics_data->mesh_ref = r->sphere_mesh;
 			p->graphics_data->uniform_buffer = allocate_buffer(
 				r,
@@ -538,7 +553,101 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 static const VkExtent2D atmo_lut_extent = { 1024, 1024 };
 static const VkFormat atmo_lut_format = VK_FORMAT_R32G32_SFLOAT;
 
-static struct vulkan_image generate_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *planet) {
+static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *planet, bool first_time) {
+	VkCommandBuffer cmdbuf = planet->graphics_data->compute_cmdbuf;
+
+	CHECKVK(vkResetCommandBuffer(cmdbuf, 0));
+	CHECKVK(vkBeginCommandBuffer(cmdbuf, &(VkCommandBufferBeginInfo){
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = 0,
+	}));
+
+	vkCmdPipelineBarrier(
+		cmdbuf,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // read in atmo shader
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		0, 0, NULL, 0, NULL, 1, &(VkImageMemoryBarrier){
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.image = planet->graphics_data->atmo_lut.image,
+			.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+			.srcAccessMask = 0, // VK_ACCESS_SHADER_READ_BIT,
+			.oldLayout = first_time
+				? VK_IMAGE_LAYOUT_UNDEFINED
+				: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.newLayout = VK_IMAGE_LAYOUT_GENERAL,
+			.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			.dstQueueFamilyIndex = r->queue_families[QUEUE_COMPUTE],
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.baseMipLevel = 0,
+				.layerCount = 1,
+				.levelCount = 1,
+			}
+		}
+	);
+
+
+	vkCmdBindDescriptorSets(
+		cmdbuf,
+		VK_PIPELINE_BIND_POINT_COMPUTE,
+		r->pipelines.atmo_lut_layout,
+		0, 1,
+		&r->data.atmo_lut_descriptor_set,
+		0, NULL
+	);
+	vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.atmo_lut_pipeline);
+	
+	double scs_atmo_h = SCSd_WCSd(planet->atmosphere.height);
+	double scs_body_r = SCSd_WCSd(planet->as_body.radius);
+	double scs_body_r_scaled = scs_body_r / (scs_body_r + scs_atmo_h);
+
+	struct atmo_lut_push_const_data data = {
+		.planet_radius = scs_body_r_scaled,
+		.atmo_height = 1.0f - scs_body_r_scaled,
+		.falloffs = float2xy(
+			planet->atmosphere.rayleigh_falloff,
+			planet->atmosphere.mie_falloff
+		),
+		.samples = 4096,
+	};
+
+	vkCmdPushConstants(cmdbuf, r->pipelines.atmo_lut_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(struct atmo_lut_push_const_data), &data);
+
+	vkCmdDispatch(cmdbuf, atmo_lut_extent.width / 16, atmo_lut_extent.height / 16, 1);
+
+	vkCmdPipelineBarrier(
+		cmdbuf,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // read in atmo shader
+		0, 0, NULL, 0, NULL, 1, &(VkImageMemoryBarrier){
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.image = planet->graphics_data->atmo_lut.image,
+			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+			.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.srcQueueFamilyIndex = r->queue_families[QUEUE_COMPUTE],
+			.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.baseMipLevel = 0,
+				.layerCount = 1,
+				.levelCount = 1,
+			}
+		}
+	);
+	CHECKVK(vkEndCommandBuffer(cmdbuf));
+
+	vkQueueSubmit(r->queues[QUEUE_COMPUTE], 1, &(VkSubmitInfo){
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		.commandBufferCount = 1,
+		.pCommandBuffers = &cmdbuf
+	}, VK_NULL_HANDLE);
+}
+
+static void init_atmo_lut_compute(struct vulkan_renderer *r, struct pshine_planet *planet) {
 	struct vulkan_image img = allocate_image(r, &(struct vulkan_image_alloc_info){
 		.allocation_flags = 0,
 		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
@@ -570,108 +679,28 @@ static struct vulkan_image generate_atmo_lut(struct vulkan_renderer *r, struct p
 	});
 	NAME_VK_OBJECT(r, img.image, VK_OBJECT_TYPE_IMAGE, "atmo lut image");
 	NAME_VK_OBJECT(r, img.view, VK_OBJECT_TYPE_IMAGE_VIEW, "atmo lut image view");
-	VkDescriptorSet dset;
-	vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		.descriptorPool = r->descriptors.pool,
-		.descriptorSetCount = 1,
-		.pSetLayouts = &r->descriptors.atmo_lut_layout
-	}, &dset);
+	planet->graphics_data->atmo_lut = img;
+
 	vkUpdateDescriptorSets(r->device, 1, &(VkWriteDescriptorSet){
 		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 		.descriptorCount = 1,
 		.dstArrayElement = 0,
 		.dstBinding = 0,
-		.dstSet = dset,
+		.dstSet = r->data.atmo_lut_descriptor_set, // TODO: cpu-side sync (thread-safety)
 		.pImageInfo = &(VkDescriptorImageInfo){
 			.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 			.imageView = img.view,
 			.sampler = VK_NULL_HANDLE
 		}
 	}, 0, NULL);
-	VkCommandBuffer command_buffer;
+
 	CHECKVK(vkAllocateCommandBuffers(r->device, &(VkCommandBufferAllocateInfo){
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		.commandBufferCount = 1,
 		.commandPool = r->command_pool_compute,
 		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-	}, &command_buffer));
-	CHECKVK(vkBeginCommandBuffer(command_buffer, &(VkCommandBufferBeginInfo){
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-	}));
-	vkCmdPipelineBarrier(
-		command_buffer,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		0, 0, NULL, 0, NULL, 1, &(VkImageMemoryBarrier){
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = img.image,
-			.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-			.srcAccessMask = 0,
-			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.subresourceRange = {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseArrayLayer = 0,
-				.baseMipLevel = 0,
-				.layerCount = 1,
-				.levelCount = 1,
-			}
-		}
-	);
-	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.atmo_lut_layout, 0, 1, &dset, 0, NULL);
-	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.atmo_lut_pipeline);
-	
-	double
-		scs_atmo_h = SCSd_WCSd(planet->atmosphere.height),
-		scs_body_r = SCSd_WCSd(planet->as_body.radius);
-	double scs_body_r_scaled = scs_body_r / (scs_body_r + scs_atmo_h);
-	struct atmo_lut_push_const_data data = {
-		.planet_radius = scs_body_r_scaled,
-		.atmo_height = 1.0f - scs_body_r_scaled,
-		.falloffs = float2xy(
-			planet->atmosphere.rayleigh_falloff,
-			planet->atmosphere.mie_falloff
-		),
-		.samples = 4096,
-	};
-	vkCmdPushConstants(command_buffer, r->pipelines.atmo_lut_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(struct atmo_lut_push_const_data), &data);
-	vkCmdDispatch(command_buffer, atmo_lut_extent.width / 16, atmo_lut_extent.height / 16, 1);
-	vkCmdPipelineBarrier(
-		command_buffer,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-		0, 0, NULL, 0, NULL, 1, &(VkImageMemoryBarrier){
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = img.image,
-			.dstAccessMask = 0,
-			.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.subresourceRange = {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseArrayLayer = 0,
-				.baseMipLevel = 0,
-				.layerCount = 1,
-				.levelCount = 1,
-			}
-		}
-	);
-	CHECKVK(vkEndCommandBuffer(command_buffer));
-	vkQueueSubmit(r->queues[QUEUE_COMPUTE], 1, &(VkSubmitInfo){
-		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.commandBufferCount = 1,
-		.pCommandBuffers = &command_buffer
-	}, VK_NULL_HANDLE);
-	vkQueueWaitIdle(r->queues[QUEUE_COMPUTE]);
-	vkFreeCommandBuffers(r->device, r->command_pool_compute, 1, &command_buffer);
-	return img;
+	}, &planet->graphics_data->compute_cmdbuf));
 }
 
 // Vulkan and GLFW
@@ -1572,7 +1601,7 @@ static void init_cmdbufs(struct vulkan_renderer *r) {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 		// TODO: make sure that this flag is removed if doing per frame compute
 		// maybe create another pool for transient compute?
-		.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, // | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
 		.queueFamilyIndex = r->queue_families[QUEUE_COMPUTE],
 	}, NULL, &r->command_pool_compute));
 }
@@ -1967,6 +1996,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 			struct pshine_planet *p = (void *)b;
 			deallocate_buffer(r, p->graphics_data->uniform_buffer);
 			deallocate_image(r, p->graphics_data->atmo_lut);
+			vkFreeCommandBuffers(r->device, r->command_pool_compute, 1, &p->graphics_data->compute_cmdbuf);
 			free(p->graphics_data);
 		}
 	}
@@ -2247,6 +2277,17 @@ static void show_stats_window(struct vulkan_renderer *r, const struct renderer_s
 	ImGui_End();
 }
 
+static void show_utils_window(struct vulkan_renderer *r) {
+	if (ImGui_Begin("Utils", NULL, 0)) {
+		ImGui_BeginDisabled(r->currently_recomputing_luts);
+		if (ImGui_Button("Recompute Atmo LUTs")) {
+			compute_atmo_lut(r, (void*)r->game->celestial_bodies_own[0], false);
+		}
+		ImGui_EndDisabled();
+	}
+	ImGui_End();
+}
+
 static void set_gpu_mem_usage(struct vulkan_renderer *r, struct renderer_stats *stats) {
 	VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
 	vmaGetHeapBudgets(r->allocator, budgets);
@@ -2285,6 +2326,7 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 			set_gpu_mem_usage(r, &stats);
 			show_stats_window(r, &stats);
 		}
+		show_utils_window(r);
 		ImGui_Render();
 		render(r, current_frame);
 		if (delta_time_sum >= 20.0f) {

@@ -104,13 +104,22 @@ void pshine_log_impl(
 		"check failed: %s ('" #e "' evaluated to 0)", m __VA_OPT__(,) __VA_ARGS__\
 	) : (void)0);
 
-#define PSHINE_MEASURE(LABEL, EXPR) ({ \
+#define PSHINE_MEASURE(LABEL, EXPR) do { \
 	struct pshine_timeval start = pshine_timeval_now(); \
-	typeof(EXPR) res = EXPR; \
+	(EXPR); \
 	struct pshine_timeval end = pshine_timeval_now(); \
 	struct pshine_timeval delta = pshine_timeval_delta(start, end); \
 	PSHINE_INFO(LABEL " took " PSHINE_TIMEVAL_FMTSTR, PSHINE_TIMEVAL_FMT(delta)); \
-	res; })
+} while(0)
+
+#define PSHINE_MEASURED(LABEL, EXPR) ({ \
+		struct pshine_timeval start = pshine_timeval_now(); \
+		typeof(EXPR) res = (EXPR); \
+		struct pshine_timeval end = pshine_timeval_now(); \
+		struct pshine_timeval delta = pshine_timeval_delta(start, end); \
+		PSHINE_INFO(LABEL " took " PSHINE_TIMEVAL_FMTSTR, PSHINE_TIMEVAL_FMT(delta)); \
+		res; \
+	})
 
 // NB: returns a malloc'd buffer
 char *pshine_read_file(const char *fname, size_t *size);

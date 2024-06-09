@@ -232,11 +232,11 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->atmosphere.rayleigh_coefs[0] = 3.8f;
 	planet->atmosphere.rayleigh_coefs[1] = 13.5f;
 	planet->atmosphere.rayleigh_coefs[2] = 33.1f;
-	planet->atmosphere.rayleigh_falloff = 20.0f;
-	planet->atmosphere.mie_coef = 20.5f;
+	planet->atmosphere.rayleigh_falloff = 13.5f;
+	planet->atmosphere.mie_coef = 20.1f;
 	planet->atmosphere.mie_ext_coef = 1.1f;
 	planet->atmosphere.mie_g_coef = -0.87f;
-	planet->atmosphere.mie_falloff = 50.0f;
+	planet->atmosphere.mie_falloff = 18.0f;
 	planet->atmosphere.intensity = 20.0f;
 }
 

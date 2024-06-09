@@ -118,10 +118,6 @@ vec3 compute_light(vec3 ray_origin, vec3 ray_dir, float ray_len, vec3 col) {
 vec4 compute_color(vec2 uv, vec4 col, float depth) {
 	vec3 ray_origin = atmo.camera.xyz;
 	vec2 ray_ndc = vec2(uv.x, 1.0 - uv.y) * 2.0 - 1.0;
-	// vec4 ray_clip = vec4(ray_ndc, 0.0, 1.0);
-	// vec4 ray_eye =  global.proj * ray_clip;
-	// vec4 ray_eye2 = vec4(ray_eye.xy, 1.0, 0.0);
-	// vec3 ray_dir = normalize((inverse(global.view) * ray_eye).xyz);
 	vec3 camera_forward = cross(global.camera_right.xyz, global.camera_up.xyz);
 	vec3 ray_dir
 		= camera_forward.xyz * global.camera.w
