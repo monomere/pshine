@@ -4,7 +4,7 @@
 
 Atmosphere and meshing playground. WIP.
 
-TODO:
+**TODO:**
 
 - [x] Actual atmosphere rendering.
 - [x] Move the backend to vulkan (shouldn't be super hard).
@@ -26,6 +26,15 @@ cd pshine
 >
 > You can ignore it; it's going to be fixed later and doesn't impact anything right now.
 
+<!--
+Do we need this??
+Change `pshine/build.ninja` to work based on your platform (will automate later..)
+```bash
+cflags2 = -DVK_USE_PLATFORM_MACOS_MVK=1    # macos
+cflags2 = -DVK_USE_PLATFORM_WAYLAND_KHR=1  # linux (change to X11)
+cflags2 = -DVK_USE_PLATFORM_WIN32_KHR=1    # 
+```
+-->
 
 ### Script
 
@@ -43,7 +52,7 @@ Make sure to check the contents of the script before running it.
 
 ### Volk and VMA
 
-The graphics backend uses [volk](https://github.com/zeux/volk) and
+The graphics backend uses [stb_image](https://github.com/nothings/stb), [volk](https://github.com/zeux/volk) and
 [VMA](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator),
 so after cloning (only once):
 
@@ -51,6 +60,7 @@ so after cloning (only once):
 wget -P pshine/include/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.h
 wget -P pshine/src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
 wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
+wget -P pshine/include/vendor https://raw.githubusercontent.com/nothings/stb/refs/heads/master/stb_image.h
 ```
 
 ### Patching owl
@@ -94,7 +104,7 @@ python vendor/dear_bindings/dear_bindings.py \
 
 ## Building
 
-> requirements: ninja, gcc-compatible c/c++ compiler, glfw, python (optional)
+> requirements: ninja modern gcc-compatible c/c++ compiler, glfw, python (optional)
 
 To build (incremental)
 ```bash
@@ -116,6 +126,8 @@ ninja
 ```bash
 build/pshine/main
 ```
+
+**Linux and X11:** By default pshine uses wayland, but you can pass `-x11` to use X11 instead.
 
 The planet has a radius of 6371km (Earth), the atmosphere has a height of 100km, and the camera moves at 500km/s by default.
 
@@ -150,6 +162,7 @@ Key|Action
   - [X] THE BUG IS FIXED IT WORKSSS (precision errors)
 - [ ] Fix rotation matrices, and matrices in general.
 - [ ] Rewrite the math library generation, its so ugly.
+- [ ] Stars
 - [ ] Use near-origin coordinates for the "player".
 - [ ] Velocty reference-frame.
 

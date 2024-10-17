@@ -1,7 +1,15 @@
 #include <pshine/util.h>
 #include <pshine/game.h>
 
-int main() {
+int pshine_argc;
+const char **pshine_argv;
+
+int main(int argc, char **argv) {
+	pshine_argc = argc;
+	pshine_argv = (void*)argv;
+	//            ^^^^^^^
+	//         C being dumb
+
 	FILE *log_fout = fopen("log.log", "wb");
 	pshine_log_sinks = (struct pshine_log_sink[]){
 		(struct pshine_log_sink){ stderr, true },

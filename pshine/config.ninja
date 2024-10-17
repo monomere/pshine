@@ -4,7 +4,7 @@ cwarns = -Wall
 
 opt = 1
 # TODO: fix generated header not to have #include "cimgui.h"
-incs = -I$mod/include/vendor -I$mod/src/vendor/cimgui -I$mod/src/vendor -I$mod/include -Ivendor -Ivendor/imgui
+incs = -I$mod/include/vendor -I/opt/homebrew/include -I$mod/src/vendor/cimgui -I$mod/src/vendor -I$mod/include -Ivendor -Ivendor/imgui
 cflags = -std=c2x $incs $cwarns
 cxxflags = $cxxstdlib -std=c++2b $incs $cxxwarns -DIMGUI_IMPL_VULKAN_NO_PROTOTYPES
 
@@ -12,4 +12,5 @@ debug = -g
 debugc =
 debugcxx =
 
-libs = -lglfw -lm -lvulkan
+libs = -lglfw -lm -Wl,-rpath,/opt/homebrew/lib
+# -lvulkan

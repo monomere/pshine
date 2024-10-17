@@ -1,5 +1,5 @@
 
-build $mod/src/pshine/math.h: python generate_math.py
+# build $mod/src/pshine/math.h: python generate_math.py
 
 build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        | $mod/src/pshine/math.h
 build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      | $mod/src/pshine/math.h
@@ -7,9 +7,11 @@ build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      | $mod/src
 build $builddir/pshine/$platform.c.o : cc $mod/src/pshine/$platform.c | $mod/src/pshine/math.h
 build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      | $mod/src/pshine/math.h
 
+build $builddir/pshine/stb.c.o           : cc $mod/src/pshine/stb.c
 build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/vk_mem_alloc.cc
 build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
-  cflags2 = -DVK_USE_PLATFORM_WAYLAND_KHR
+#  cflags2 = -DVK_USE_PLATFORM_MACOS_MVK=1
+#  cflags2 = -DVK_USE_PLATFORM_WAYLAND_KHR
 
 build $builddir/vendor/cimgui/backends/cimgui_impl_glfw.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_glfw.cpp
 build $builddir/vendor/cimgui/backends/cimgui_impl_vulkan.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_vulkan.cpp
@@ -36,8 +38,9 @@ build $builddir/main: ld $
   $builddir/pshine/main.c.o $
   $builddir/pshine/$platform.c.o $
   $builddir/pshine/util.c.o $
-  $builddir/pshine/vk_mem_alloc.cc.o $
   $builddir/vendor/volk.c.o $
+  $builddir/pshine/stb.c.o $
+  $builddir/pshine/vk_mem_alloc.cc.o $
   $builddir/vendor/cimgui/cimgui.cpp.o $
   $builddir/vendor/imgui/imgui.cpp.o $
   $builddir/vendor/imgui/imgui_demo.cpp.o $

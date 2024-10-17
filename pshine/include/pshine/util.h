@@ -5,7 +5,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 #include <time.h>
+
+// These are defined in `main.c`
+extern int pshine_argc;
+extern const char **pshine_argv;
+
+static inline bool pshine_check_has_option(const char *opt) {
+	for (int i = 1; i < pshine_argc; ++i)
+		if (strcmp(pshine_argv[i], opt) == 0)
+			return true;
+	return false;
+}
 
 struct pshine_timeval { int64_t sec; int64_t nsec; };
 

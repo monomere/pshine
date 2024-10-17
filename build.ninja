@@ -4,8 +4,8 @@ platform = unix
 ld = $cxx $cxxstdlib $cxxld
 
 opt = 1
-cflags = -std=c2x
-cxxflags = $cxxstdlib -std=c++2b -Wno-nullability-completeness
+cflags = -std=c2x -I/opt/homebrew/include
+cxxflags = $cxxstdlib -std=c++2b -Wno-nullability-completeness -I/opt/homebrew/include
 
 glslc = glslc
 glslflags =

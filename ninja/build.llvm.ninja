@@ -1,7 +1,8 @@
 # for a full llvm setup (libc++, clang, lld)
 
-cxxstdlib = -stdlib=libc++
-cxxld = -fuse-ld=lld
+cxxstdlib = -stdlib=libc++ -I/opt/homebrew/include
+cxxld = -L/opt/homebrew/lib -fuse-ld=lld
+
 
 cc = clang -fdiagnostics-color -D_DEFAULT_SOURCE
 cxx = clang++ -fdiagnostics-color

@@ -5,13 +5,14 @@
 
 #define VK_NO_PROTOTYPES
 #include <volk.h>
-// #include <vulkan/vulkan.h>
+#include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <vk_mem_alloc.h>
 
 #include <cimgui/cimgui.h>
 #include <cimgui/backends/cimgui_impl_glfw.h>
 #include <cimgui/backends/cimgui_impl_vulkan.h>
+#include "stb_image.h"
 
 #include "vk_util.h"
 #include "math.h"
@@ -86,6 +87,7 @@ struct pshine_planet_graphics_data {
 	struct vulkan_mesh *mesh_ref;
 	struct vulkan_buffer uniform_buffer;
 	struct vulkan_image atmo_lut;
+	struct vulkan_image surface;
 	VkDescriptorSet descriptor_set;
 	VkCommandBuffer compute_cmdbuf;
 	bool should_submit_compute;
@@ -183,6 +185,7 @@ struct vulkan_renderer {
 	struct vulkan_mesh *sphere_mesh;
 
 	VkSampler atmo_lut_sampler;
+	VkSampler material_texture_sampler;
 	// PSHINE_DYNA_(struct mesh) meshes;
 
 	uint8_t *key_states;
@@ -225,6 +228,7 @@ static void init_imgui(struct vulkan_renderer *r); static void deinit_imgui(stru
 
 static void init_atmo_lut_compute(struct vulkan_renderer *r, struct pshine_planet *planet);
 static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *planet, bool first_time);
+static void load_planet_texture(struct vulkan_renderer *r, struct pshine_planet *planet);
 
 static void deallocate_buffer(
 	struct vulkan_renderer *r,
@@ -364,6 +368,112 @@ static void write_to_buffer_staged(
 	deallocate_buffer(r, staging_buffer);
 }
 
+static void write_to_image_staged(
+	struct vulkan_renderer *r,
+	struct vulkan_image *target_image,
+	VkExtent3D extent,
+	VkFormat format,
+	VkDeviceSize size,
+	const void *data
+) {
+	VmaAllocationInfo staging_alloc_info = {};
+	struct vulkan_buffer staging_buffer = allocate_buffer(
+		r,
+		size,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		0,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+		VMA_MEMORY_USAGE_AUTO,
+		&staging_alloc_info
+	);
+	memcpy((char*)staging_alloc_info.pMappedData, data, size);
+
+	VkCommandBuffer command_buffer;
+	CHECKVK(vkAllocateCommandBuffers(r->device, &(VkCommandBufferAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		.commandBufferCount = 1,
+		.commandPool = r->command_pool_transfer,
+		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+	}, &command_buffer));
+	CHECKVK(vkBeginCommandBuffer(command_buffer, &(VkCommandBufferBeginInfo){
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+	}));
+	vkCmdPipelineBarrier(
+		command_buffer,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, NULL,
+		0, NULL,
+		1, &(VkImageMemoryBarrier){
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.image = target_image->image,
+			.srcAccessMask = 0,
+			.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.baseMipLevel = 0,
+				.layerCount = 1,
+				.levelCount = 1,
+			}
+		}
+	);
+	vkCmdCopyBufferToImage(
+		command_buffer,
+		staging_buffer.buffer,
+		target_image->image,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1,
+		&(VkBufferImageCopy){
+			.imageExtent = extent,
+			.imageOffset = { 0, 0, 0 },
+			.bufferOffset = 0,
+			.bufferRowLength = 0,
+			.bufferImageHeight = 0,
+			.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.imageSubresource.mipLevel = 0,
+			.imageSubresource.baseArrayLayer = 0,
+			.imageSubresource.layerCount = 1,
+		}
+	);
+	vkCmdPipelineBarrier(
+		command_buffer,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		0,
+		0, NULL,
+		0, NULL,
+		1, &(VkImageMemoryBarrier){
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.image = target_image->image,
+			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.baseMipLevel = 0,
+				.layerCount = 1,
+				.levelCount = 1,
+			}
+		}
+	);
+	CHECKVK(vkEndCommandBuffer(command_buffer));
+	vkQueueSubmit(r->queues[QUEUE_GRAPHICS], 1, &(VkSubmitInfo){
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		.commandBufferCount = 1,
+		.pCommandBuffers = &command_buffer
+	}, VK_NULL_HANDLE);
+	vkQueueWaitIdle(r->queues[QUEUE_GRAPHICS]);
+	vkFreeCommandBuffers(r->device, r->command_pool_transfer, 1, &command_buffer);
+	deallocate_buffer(r, staging_buffer);
+}
+
 static struct vulkan_mesh *create_mesh(
 	struct vulkan_renderer *r,
 	const struct pshine_mesh_data *mesh_data
@@ -483,6 +593,22 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 		.minLod = 0.0f,
 		.maxLod = 0.0f,
 	}, NULL, &r->atmo_lut_sampler);
+	
+	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.anisotropyEnable = VK_FALSE,
+		.maxAnisotropy = 1.0f,
+		.compareEnable = VK_FALSE,
+		.magFilter = VK_FILTER_LINEAR,
+		.minFilter = VK_FILTER_LINEAR,
+		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		.mipLodBias = 0.0f,
+		.minLod = 0.0f,
+		.maxLod = 0.0f,
+	}, NULL, &r->material_texture_sampler);
 
 	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -499,6 +625,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 			// PSHINE_MEASURE("atmosphere LUT gen", init_atmo_lut_compute(r, p));
 			init_atmo_lut_compute(r, p);
 			compute_atmo_lut(r, p, true);
+			load_planet_texture(r, p);
 			p->graphics_data->mesh_ref = r->sphere_mesh;
 			p->graphics_data->uniform_buffer = allocate_buffer(
 				r,
@@ -545,6 +672,19 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 				.imageView = ((struct pshine_planet*)r->game->celestial_bodies_own[0])->graphics_data->atmo_lut.view,
 				.sampler = r->atmo_lut_sampler
+			}
+		}, 0, NULL);
+		vkUpdateDescriptorSets(r->device, 1, &(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.dstSet = r->data.material_descriptor_set,
+			.dstBinding = 1,
+			.dstArrayElement = 0,
+			.pImageInfo = &(VkDescriptorImageInfo){
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageView = ((struct pshine_planet*)r->game->celestial_bodies_own[0])->graphics_data->surface.view,
+				.sampler = r->material_texture_sampler
 			}
 		}, 0, NULL);
 	}
@@ -647,6 +787,50 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 	}, VK_NULL_HANDLE);
 }
 
+static void load_planet_texture(struct vulkan_renderer *r, struct pshine_planet *planet) {
+	int width = 0, height = 0, channels = 0;
+	void *data = stbi_load("data/textures/earth_4k.jpg", &width, &height, &channels, STBI_rgb_alpha);
+	if (data == NULL) PSHINE_PANIC("failed to load plane surface texture");
+	struct vulkan_image img = allocate_image(r, &(struct vulkan_image_alloc_info){
+		.allocation_flags = 0,
+		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+		.preferred_memory_property_flags = 0,
+		.required_memory_property_flags = 0,
+		.out_allocation_info = NULL,
+		.image_info = &(VkImageCreateInfo){
+			.imageType = VK_IMAGE_TYPE_2D,
+			.arrayLayers = 1,
+			.mipLevels = 1,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.extent = (VkExtent3D){ .width = width, .height = height, .depth = 1 },
+			.format = VK_FORMAT_R8G8B8A8_SRGB,
+			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		},
+		.view_info = &(VkImageViewCreateInfo){
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = VK_FORMAT_R8G8B8A8_SRGB,
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.baseMipLevel = 0,
+				.layerCount = 1,
+				.levelCount = 1,
+			}
+		},
+	});
+	NAME_VK_OBJECT(r, img.image, VK_OBJECT_TYPE_IMAGE, "planet surface image");
+	NAME_VK_OBJECT(r, img.view, VK_OBJECT_TYPE_IMAGE_VIEW, "planet surface image view");
+	write_to_image_staged(r, &img, (VkExtent3D){
+		width,
+		height,
+		1
+	}, VK_FORMAT_R8G8B8A8_SRGB, width * height * 4, data);
+	stbi_image_free(data);
+	planet->graphics_data->surface = img;
+}
+
 static void init_atmo_lut_compute(struct vulkan_renderer *r, struct pshine_planet *planet) {
 	struct vulkan_image img = allocate_image(r, &(struct vulkan_image_alloc_info){
 		.allocation_flags = 0,
@@ -717,8 +901,12 @@ static void key_cb_glfw_(GLFWwindow *window, int key, int scancode, int action, 
 static void init_glfw(struct vulkan_renderer *r) {
 	glfwInitVulkanLoader(vkGetInstanceProcAddr);
 	PSHINE_DEBUG("GLFW version: %s", glfwGetVersionString());
-	glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
-	// glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
+#if !defined(_WIN32) && !defined(__APPLE__)
+	if (pshine_check_has_option("-x11"))
+		glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+	else
+		glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WAYLAND);
+#endif
 	glfwSetErrorCallback(&error_cb_glfw_);
 	if (!glfwInit()) PSHINE_PANIC("could not initialize GLFW");
 
@@ -764,6 +952,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 
 	CHECKVK(vkCreateInstance(&(VkInstanceCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+		.flags = have_portability_ext ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR : 0,
 		.pApplicationInfo = &(VkApplicationInfo){
 			.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 			.apiVersion = VK_MAKE_API_VERSION(0, 1, 2, 0),
@@ -853,9 +1042,10 @@ static void init_vulkan(struct vulkan_renderer *r) {
 			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 			.queueCreateInfoCount = queue_create_info_count,
 			.pQueueCreateInfos = queue_create_infos,
-			.enabledExtensionCount = 1,
+			.enabledExtensionCount = 1 + have_portability_ext,
 			.ppEnabledExtensionNames = (const char *[]){
 				VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+				"VK_KHR_portability_subset",
 				// VK_EXT_DEBUG_MARKER_EXTENSION_NAME,
 			},
 			.pEnabledFeatures = &(VkPhysicalDeviceFeatures){}
@@ -1069,13 +1259,13 @@ static void init_rpasses(struct vulkan_renderer *r) {
 			.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
 			.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // WRITE because loadOp is CLEAR
 		},
-		// synchronize previous composite_subpass output_attachment write
+		// synchronize previous composite_subpass output_attachment write and read
 		// before current composite_subpass output_attachment write.
 		(VkSubpassDependency){
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
 			.dstSubpass = composite_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // earlier write
+			.srcStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, //  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, // VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT, // earlier write/read
 			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // current write
 		},
@@ -1091,28 +1281,18 @@ static void init_rpasses(struct vulkan_renderer *r) {
 		},
 		// synchronize geometry_subpass transient_color_attachment write
 		// before composite_subpass transient_color_attachment (as input attachment) read.
-		(VkSubpassDependency){
-			.srcSubpass = geometry_subpass_index,
-			.dstSubpass = composite_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
-			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-		},
 		// synchronize geometry_subpass transient_depth_attachment write
 		// before composite_subpass transient_depth_attachment (as input attachment) read
 		(VkSubpassDependency){
 			.srcSubpass = geometry_subpass_index,
 			.dstSubpass = composite_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+			.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			.dstStageMask
 				= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-				| VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, // ???
-			.dstAccessMask
-				= VK_ACCESS_INPUT_ATTACHMENT_READ_BIT
-				| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // ???
+				| VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+				| VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+			.dstAccessMask = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
 			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 		},
 	};
@@ -1676,12 +1856,20 @@ static void init_descriptors(struct vulkan_renderer *r) {
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = 1,
-		.pBindings = &(VkDescriptorSetLayoutBinding){
-			.binding = 0,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+		.bindingCount = 2,
+		.pBindings = (VkDescriptorSetLayoutBinding[2]){
+			(VkDescriptorSetLayoutBinding){
+				.binding = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			(VkDescriptorSetLayoutBinding){
+				.binding = 1,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
 		}
 	}, NULL, &r->descriptors.material_layout);
 	NAME_VK_OBJECT(r, r->descriptors.material_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "material descriptor set layout");
@@ -1996,12 +2184,14 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 			struct pshine_planet *p = (void *)b;
 			deallocate_buffer(r, p->graphics_data->uniform_buffer);
 			deallocate_image(r, p->graphics_data->atmo_lut);
+			deallocate_image(r, p->graphics_data->surface);
 			vkFreeCommandBuffers(r->device, r->command_pool_compute, 1, &p->graphics_data->compute_cmdbuf);
 			free(p->graphics_data);
 		}
 	}
 
 	vkDestroySampler(r->device, r->atmo_lut_sampler, NULL);
+	vkDestroySampler(r->device, r->material_texture_sampler, NULL);
 
 	destroy_mesh(r, r->sphere_mesh);
 
@@ -2026,7 +2216,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	{
 		struct material_uniform_data new_data = {
-			.color = float4rgba(0.1f, 0.3f, 0.8f, 1.0f)
+			.color = float4rgba(0.8f, 0.3f, 0.1f, 1.0f)
 		};
 		struct material_uniform_data *data;
 		vmaMapMemory(r->allocator, r->data.material_uniform_buffer.allocation, (void**)&data);

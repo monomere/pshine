@@ -1,8 +1,0 @@
-pshine_shader {
-	modules {
-		fragment = "mesh.frag",
-		vertex = "mesh.vert"
-	},
-	vertex_format = "static_mesh",
-	descriptor_sets ["global", "material", "object"]
-}

@@ -273,9 +273,8 @@ void pshine_init_game(struct pshine_game *game) {
 	game->atmo_blend_factor = 0.0;
 	game->data_own->movement_mode = 1;
 	game->data_own->move_speed = 500'000.0; // PSHINE_SPEED_OF_LIGHT;
-	game->sun_direction_.xyz.x = -1.0;
-	game->sun_direction_.xyz.y =  0.0;
-	game->sun_direction_.xyz.z =  0.0;
+	double3 sun_dir = double3norm(double3xyz(-0.3, -0.1, -1.0));
+	*(double3*)game->sun_direction_.values = sun_dir;
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
