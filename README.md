@@ -38,8 +38,14 @@ cflags2 = -DVK_USE_PLATFORM_WIN32_KHR=1    #
 
 ### Script
 
+> requirements: wget, python, ply
+
+To install ply (needed for dear_bindings), do `python3 -m pip install --user ply` (or similar)
+
 You can do the steps below manually, but there's a bash script that does them for you.
 Make sure to check the contents of the script before running it.
+
+
 
 > **NB:** if the script is different from the README, trust the script because I might've
 > forgotten to update the README.
