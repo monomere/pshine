@@ -22,3 +22,5 @@ include/volk.h
 
 # temporary stuff, etc.
 .local
+
+**/.DS_Store
