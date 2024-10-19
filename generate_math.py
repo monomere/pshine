@@ -283,6 +283,7 @@ MATH_FN_ void set`B4x4lookat(`B4x4 *m, `B3 eye, `B3 center, `B3 up) {
 	m->vs[3][3] = 1.0f;
 }
 
+// NB: `res` cannot equal `m1` or `m2`.
 MATH_FN_ void `B4x4mul(`B4x4 *res, const `B4x4 *m1, const `B4x4 *m2) {
 	for (size_t i = 0; i < 4; ++i) {
 		for (size_t j = 0; j < 4; ++j) {

@@ -1,4 +1,5 @@
 #version 460
+#extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
 #include "common.glsli"
 #include "atmo_common.glsli"
@@ -158,6 +159,7 @@ float linearize_depth(float depth) {
 
 void main() {
 	vec4 color = subpassLoad(u_input_color).rgba;
+	// o_col = color;
 	float depth = subpassLoad(u_input_depth).r;
 	float linear_depth = linearize_depth(depth);
 	o_col = compute_color(i_uv, color, linear_depth);

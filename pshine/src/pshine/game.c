@@ -75,10 +75,10 @@ static double apply_si_prefix(enum si_prefix p, double value) {
 	return value;
 }
 
-typedef struct pshine_static_mesh_vertex planet_vertex;
+typedef struct pshine_planet_vertex planet_vertex;
 
 // requires: |a| = |b|
-float3 spheregen_float3lerp(float3 a, float3 b, float t) {
+static inline float3 spheregen_float3lerp(float3 a, float3 b, float t) {
 	float m2 = float3mag2(a);
 	if (fabsf(m2) < 0.00001f) return float3lerp(a, b, t);
 	float ϕ = acosf(float3dot(a, b) / m2);
@@ -89,18 +89,120 @@ float3 spheregen_float3lerp(float3 a, float3 b, float t) {
 	return float3add(float3mul(a, ca), float3mul(b, cb));
 }
 
-planet_vertex spheregen_vtxlerp(
+// The next couple of functions are from https://www.jeremyong.com/graphics/2023/01/09/tangent-spaces-and-diamond-encoding/
+
+static inline float encode_diamond(float2 p) {
+	// Project to the unit diamond, then to the x-axis.
+	float x = p.x / (fabs(p.x) + fabs(p.y));
+
+	// Contract the x coordinate by a factor of 4 to represent all 4 quadrants in
+	// the unit range and remap
+	float py_sign = copysign(1, p.y);
+	return -py_sign * 0.25f * x + 0.5f + py_sign * 0.25f;
+}
+
+static inline float2 decode_diamond(float p) {
+	float2 v;
+
+	// Remap p to the appropriate segment on the diamond
+	float p_sign = copysign(1, p - 0.5f);
+	v.x = -p_sign * 4.f * p + 1.f + p_sign * 2.f;
+	v.y = p_sign * (1.f - fabs(v.x));
+
+	// Normalization extends the point on the diamond back to the unit circle
+	return float2norm(v);
+}
+
+// Given a normal and tangent vector, encode the tangent as a single float that can be
+// subsequently quantized.
+static inline float encode_tangent(float3 normal, float3 tangent)
+{
+	// First, find a canonical direction in the tangent plane
+	float3 t1;
+	if (fabs(normal.y) > fabs(normal.z))
+	{
+		// Pick a canonical direction orthogonal to n with z = 0
+		t1 = float3xyz(normal.y, -normal.x, 0.f);
+	}
+	else
+	{
+		// Pick a canonical direction orthogonal to n with y = 0
+		t1 = float3xyz(normal.z, 0.f, -normal.x);
+	}
+	t1 = float3norm(t1);
+
+	// Construct t2 such that t1 and t2 span the plane
+	float3 t2 = float3cross(t1, normal);
+
+	// Decompose the tangent into two coordinates in the canonical basis
+	float2 packed_tangent = float2xy(float3dot(tangent, t1), float3dot(tangent, t2));
+
+	// Apply our diamond encoding to our two coordinates
+	return encode_diamond(packed_tangent);
+}
+
+static inline float3 decode_tangent(float3 normal, float diamond_tangent) {
+	// As in the encode step, find our canonical tangent basis span(t1, t2)
+	float3 t1;
+	if (fabs(normal.y) > fabs(normal.z))
+	{
+		t1 = float3xyz(normal.y, -normal.x, 0.f);
+	}
+	else
+	{
+		t1 = float3xyz(normal.z, 0.f, -normal.x);
+	}
+	t1 = float3norm(t1);
+
+	float3 t2 = float3cross(t1, normal);
+
+	// Recover the coordinates used with t1 and t2
+	float2 packed_tangent = decode_diamond(diamond_tangent);
+
+	return float3add(float3mul(t1, packed_tangent.x), float3mul(t2, packed_tangent.y));
+}
+
+// From the unit vector survey paper
+static inline float sign_not_zero(float v) {
+	return (v >= 0.0) ? +1.0 : -1.0;
+}
+// Assume normalized input. Output is on [-1, 1] for each component.
+static inline float2 float32x3_to_oct(float3 v) {
+	// Project the sphere onto the octahedron, and then onto the xy plane
+	float2 p = float2mul(float2vs(v.vs), (1.0 / (fabs(v.x) + fabs(v.y) + fabs(v.z))));
+	// Reflect the folds of the lower hemisphere over the diagonals
+	return (v.z <= 0.0) ? float2xy((1.0 - fabs(p.y)) * sign_not_zero(p.x), (1.0 - fabs(p.x)) * sign_not_zero(p.y)) : p;
+}
+
+static inline float3 oct_to_float32x3(float2 e) {
+	float3 v = float3xyz(e.x, e.y, 1.0 - fabs(e.x) - fabs(e.y));
+	if (v.z < 0) v = float3xyz((1.0 - fabs(v.y)) * sign_not_zero(v.x), (1.0 - fabs(v.x)) * sign_not_zero(v.y), v.z);
+	return float3norm(v);
+}
+
+static inline pshine_snorm32 snorm32_float(float v) { return (pshine_snorm32){ (int32_t)roundf(v * INT32_MAX) }; }
+static inline pshine_snorm32x2 snorm32x2_float2(float2 v) { return (pshine_snorm32x2){ snorm32_float(v.x), snorm32_float(v.y) }; }
+static inline float float_snorm32(pshine_snorm32 v) { return (float)v.x / INT32_MAX; }
+static inline float2 float2_snorm32x2(pshine_snorm32x2 v) { return float2xy(float_snorm32(v.x), float_snorm32(v.y)); }
+static inline pshine_unorm32 unorm32_float(float v) { return (pshine_unorm32){ (uint32_t)roundf(v * UINT32_MAX) }; }
+static inline pshine_unorm32x2 unorm32x2_float2(float2 v) { return (pshine_unorm32x2){ unorm32_float(v.x), unorm32_float(v.y) }; }
+static inline float float_unorm32(pshine_unorm32 v) { return (float)v.x / UINT32_MAX; }
+static inline float2 float2_unorm32x2(pshine_unorm32x2 v) { return float2xy(float_unorm32(v.x), float_unorm32(v.y)); }
+
+static inline planet_vertex spheregen_vtxlerp(
 	const planet_vertex *a,
 	const planet_vertex *b,
 	float t
 ) {
 	float3 pos = spheregen_float3lerp(float3vs(a->position), float3vs(b->position), t);
-	float3 nor = spheregen_float3lerp(float3vs(a->normal), float3vs(b->normal), t);
-	nor = float3norm(nor);
+	float3 nor = spheregen_float3lerp(oct_to_float32x3(float2vs(a->normal_oct)), oct_to_float32x3(float2vs(b->normal_oct)), t);
+	// float3 tng = spheregen_float3lerp(decode_tangent(nor, a->tangent_dia), decode_tangent(nor, b->tangent_dia), t);
+	float2 nor_oct = float32x3_to_oct(nor);
+	// float tng_dia = encode_tangent(nor, tng);
 	return (planet_vertex){
 		{ pos.x, pos.y, pos.z },
-		{ nor.x, nor.y, nor.z },
-		{ 0.0f, 0.0f },
+		{ nor_oct.x, nor_oct.y },
+		0.0f,
 	};
 }
 
@@ -116,13 +218,36 @@ void generate_sphere_mesh(size_t n, struct pshine_mesh_data *m) {
 	
 	{
 		planet_vertex vtxs[6] = {
-			{ { +1,  0,  0 }, { +1,  0,  0 } },
-			{ {  0,  0, +1 }, {  0,  0, +1 } },
-			{ { -1,  0,  0 }, { -1,  0,  0 } },
-			{ {  0,  0, -1 }, {  0,  0, -1 } },
-			{ {  0, +1,  0 }, {  0, +1,  0 } },
-			{ {  0, -1,  0 }, {  0, -1,  0 } },
+			{ { +1,  0,  0 } },
+			{ {  0,  0, +1 } },
+			{ { -1,  0,  0 } },
+			{ {  0,  0, -1 } },
+			{ {  0, +1,  0 } },
+			{ {  0, -1,  0 } },
 		};
+		// float3 tngs[6] = {
+		// 	float3xyz( 0,  0, +1),
+		// 	float3xyz(-1,  0,  0),
+		// 	float3xyz( 0,  0, -1),
+		// 	float3xyz(+1,  0,  0),
+		// 	float3xyz( 0,  0,  0),
+		// };
+		for (int i = 0; i < 6; ++i) {
+			float2 nor_oct = float32x3_to_oct(float3vs(vtxs[i].position));
+			vtxs[i].normal_oct[0] = nor_oct.x;
+			vtxs[i].normal_oct[1] = nor_oct.y;
+			// vtxs[i].tangent_dia = encode_tangent(float3vs(vtxs[i].position), float3 tangent);
+		}
+
+/*
+
+
+ o    o/  \o   \o/    o  .
+/O\  /O    O\   O   -'O`-|
+/ \  / \  / \  / \   / \ |
+
+*/
+
 		memcpy(vertices + nvtx, vtxs, sizeof(vtxs));
 		nvtx += 6;
 	}
@@ -224,6 +349,13 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->as_body.type = PSHINE_CELESTIAL_BODY_PLANET;
 	planet->as_body.radius = radius;
 	planet->as_body.parent_ref = NULL;
+	planet->as_body.rotation_speed = -0.026178;
+#define DEG2RAD π/180.0
+	*(double3*)planet->as_body.rotation_axis.values
+		= double3xyz(0.0, 1.0, 0.0)
+		;
+		// = double3norm(double3xyz(0.0, sin((90 - 23.44) * DEG2RAD), cos((90 - 23.44) * DEG2RAD)));
+	planet->as_body.rotation = 0.0;
 	*(double3*)planet->as_body.position.values = center;
 	planet->has_atmosphere = true;
 	// similar to Earth, the radius is 6371km
@@ -238,6 +370,10 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->atmosphere.mie_g_coef = -0.87f;
 	planet->atmosphere.mie_falloff = 18.0f;
 	planet->atmosphere.intensity = 20.0f;
+	planet->surface.albedo_texture_path = "data/textures/earth_5k.jpg";
+	planet->surface.lights_texture_path = "data/textures/earth_lights_2k.jpg";
+	planet->surface.bump_texture_path = "data/textures/earth_bump_2k.jpg";
+	planet->surface.spec_texture_path = "data/textures/earth_spec_2k.jpg";
 }
 
 static void deinit_planet(struct pshine_planet *planet) {
@@ -265,7 +401,7 @@ void pshine_init_game(struct pshine_game *game) {
 	init_planet((void*)game->celestial_bodies_own[0], 6'371'000.0, double3v0());
 	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
 	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
-	game->data_own->camera_dist = game->celestial_bodies_own[0]->radius + 15'000.0;
+	game->data_own->camera_dist = game->celestial_bodies_own[0]->radius + 10'000'000.0;
 	game->camera_position.xyz.z = -game->data_own->camera_dist;
 	game->data_own->camera_yaw = 0.0;
 	game->data_own->camera_pitch = 0.0;
@@ -273,7 +409,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->atmo_blend_factor = 0.0;
 	game->data_own->movement_mode = 1;
 	game->data_own->move_speed = 500'000.0; // PSHINE_SPEED_OF_LIGHT;
-	double3 sun_dir = double3norm(double3xyz(-0.3, -0.1, -1.0));
+	double3 sun_dir = double3norm(double3xyz(0, 0, -1.0));
 	*(double3*)game->sun_direction_.values = sun_dir;
 }
 
@@ -372,7 +508,15 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 	*(double3*)game->camera_forward.values = cam_forward;
 }
 
+static void update_celestial_body(struct pshine_game *game, float delta_time, struct pshine_celestial_body *body) {
+	body->rotation += body->rotation_speed * delta_time;
+}
+
 void pshine_update_game(struct pshine_game *game, float delta_time) {
+	for (size_t i = 0; i < game->celestial_body_count; ++i) {
+		update_celestial_body(game, delta_time, game->celestial_bodies_own[i]);
+	}
+
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_C)) game->atmo_blend_factor += 0.5 * delta_time;
 	else if (pshine_is_key_down(game->renderer, PSHINE_KEY_V)) game->atmo_blend_factor -= 0.5 * delta_time;
 	game->atmo_blend_factor = clampd(game->atmo_blend_factor, 0.0, 1.0);

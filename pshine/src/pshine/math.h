@@ -214,29 +214,49 @@ MATH_FN_ void setfloat3x3iden(float3x3 *m) {
 	m->vs[1][1] = 1.0;
 	m->vs[2][2] = 1.0;
 }
-MATH_FN_ void float3x3axisangle(float3x3 *m, float3 axis, float angle) {
+MATH_FN_ void float4x4axisangle(float4x4 *m, float3 axis, float angle) {
 	memset(m->vs, 0, sizeof(m->vs));
-	float a = angle, c = cosf(a), s = sinf(a);
-	axis = float3norm(axis);
-	float3 t = float3mul(axis, 1 - c);
+	// float a = angle, c = cosf(a), s = sinf(a);
+	// axis = float3norm(axis);
+	// float3 t = float3mul(axis, 1 - c);
 
-	float r00 = c + t.x * axis.x;
-	float r01 = t.x * axis.y + s * axis.z;
-	float r02 = t.x * axis.z - s * axis.y;
+	// float4x4 r;
 
-	float r10 = t.y * axis.x - s * axis.z;
-	float r11 = c + t.y * axis.y;
-	float r12 = t.y * axis.z + s * axis.x;
+	// r.vs[0][0] = c + (1.0f - c)      * axis.x     * axis.x;
+	// r.vs[0][1] = (1.0f - c) * axis.x * axis.y + s * axis.z;
+	// r.vs[0][2] = (1.0f - c) * axis.x * axis.z - s * axis.y;
+	// r.vs[0][3] = 0.0f;
 
-	float r20 = t.z * axis.x + s * axis.y;
-	float r21 = t.z * axis.y - s * axis.x;
-	float r22 = c + t.z * axis.z;
+	// r.vs[1][0] = (1.0f - c) * axis.y * axis.x - s * axis.z;
+	// r.vs[1][1] = c + (1.0f - c) * axis.y * axis.y;
+	// r.vs[1][2] = (1.0f - c) * axis.y * axis.z + s * axis.x;
+	// r.vs[1][3] = 0.0f;
 
-	float3x3 r;
-	r.v3s[0] = float3add(float3add(float3mul(m->v3s[0], r00), float3mul(m->v3s[1], r01)), float3mul(m->v3s[2], r02));
-	r.v3s[1] = float3add(float3add(float3mul(m->v3s[0], r10), float3mul(m->v3s[1], r11)), float3mul(m->v3s[2], r12));
-	r.v3s[2] = float3add(float3add(float3mul(m->v3s[0], r20), float3mul(m->v3s[1], r21)), float3mul(m->v3s[2], r22));
-	*m = r;
+	// r.vs[2][0] = (1.0f - c) * axis.z * axis.x + s * axis.y;
+	// r.vs[2][1] = (1.0f - c) * axis.z * axis.y - s * axis.x;
+	// r.vs[2][2] = c + (1.0f - c) * axis.z * axis.z;
+	// r.vs[2][3] = 0.0f;
+
+	// r.v4s[3] = float4xyzw(0, 0, 0, 1);
+
+	// float r00 = c + t.x * axis.x;
+	// float r01 = t.x * axis.y + s * axis.z;
+	// float r02 = t.x * axis.z - s * axis.y;
+
+	// float r10 = t.y * axis.x - s * axis.z;
+	// float r11 = c + t.y * axis.y;
+	// float r12 = t.y * axis.z + s * axis.x;
+
+	// float r20 = t.z * axis.x + s * axis.y;
+	// float r21 = t.z * axis.y - s * axis.x;
+	// float r22 = c + t.z * axis.z;
+
+	// float3x3 r;
+	// r.v3s[0] = float3add(float3add(float3mul(m->v3s[0], r00), float3mul(m->v3s[1], r01)), float3mul(m->v3s[2], r02));
+	// r.v3s[1] = float3add(float3add(float3mul(m->v3s[0], r10), float3mul(m->v3s[1], r11)), float3mul(m->v3s[2], r12));
+	// r.v3s[2] = float3add(float3add(float3mul(m->v3s[0], r20), float3mul(m->v3s[1], r21)), float3mul(m->v3s[2], r22));
+	// *m = r;
+	// float4x4mul(m, m, &r);
 }
 MATH_FN_ void setfloat3x3rotation(float3x3 *m, float yaw, float pitch, float roll) {
 	memset(m->vs, 0, sizeof(m->vs));
@@ -359,9 +379,9 @@ MATH_FN_ void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4 *m2)
 
 MATH_FN_ float3 float3x3mulv(const float3x3 *m, float3 v) {
 	return float3xyz(
-		m->vs[0][0] * v.x + m->vs[1][0] * v.y + m->vs[2][0] * v.z,
-		m->vs[0][1] * v.x + m->vs[1][1] * v.y + m->vs[2][1] * v.z,
-		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z
+		m->vs[0][0] * v.x + m->vs[0][1] * v.y + m->vs[0][2] * v.z,
+		m->vs[1][0] * v.x + m->vs[1][1] * v.y + m->vs[1][2] * v.z,
+		m->vs[2][0] * v.x + m->vs[2][1] * v.y + m->vs[2][2] * v.z
 	);
 }
 

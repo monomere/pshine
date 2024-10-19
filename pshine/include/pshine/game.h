@@ -51,9 +51,13 @@ struct pshine_celestial_body {
 	enum pshine_celestial_body_type type;
 	struct pshine_celestial_body *parent_ref;
 	struct pshine_orbit_info orbit;
+	/** In rad/h */
+	double rotation_speed;
 	double radius;
 	bool is_static;
+	pshine_vector3d rotation_axis;
 	pshine_point3d_world position;
+	double rotation;
 };
 
 struct pshine_atmosphere_info {
@@ -67,19 +71,41 @@ struct pshine_atmosphere_info {
 	float intensity;
 };
 
+struct pshine_surface_info {
+	const char *albedo_texture_path;
+	const char *bump_texture_path;
+	const char *lights_texture_path;
+	const char *spec_texture_path;
+};
+
 struct pshine_planet_graphics_data;
 
 struct pshine_planet {
 	struct pshine_celestial_body as_body;
 	bool has_atmosphere;
+	struct pshine_surface_info surface;
 	struct pshine_atmosphere_info atmosphere;
 	struct pshine_planet_graphics_data *graphics_data;
 };
 
+typedef struct { int32_t x; } pshine_snorm32;
+typedef struct { uint32_t x; } pshine_unorm32;
+typedef struct { pshine_snorm32 x, y, z; } pshine_snorm32x3;
+typedef struct { pshine_snorm32 x, y; } pshine_snorm32x2;
+typedef struct { pshine_unorm32 x, y, z; } pshine_unorm32x3;
+typedef struct { pshine_unorm32 x, y; } pshine_unorm32x2;
+
 struct pshine_static_mesh_vertex {
 	float position[3];
-	float normal[3];
+	float normal_oct[2];
+	float tangent_dia;
 	float texcoord[2];
+};
+
+struct pshine_planet_vertex {
+	float position[3];
+	float normal_oct[2];
+	float tangent_dia;
 };
 
 enum pshine_vertex_type {

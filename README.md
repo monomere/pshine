@@ -176,3 +176,20 @@ Key|Action
 
 - [Unite 2013 - Building a new universe in Kerbal Space Program](https://www.youtube.com/watch?v=mXTxQko-JH0)
   how ksp does stuff!
+
+# Resources
+
+This isn't the full set of resources used unfortunately.
+
+- [Survey of Efficient Representations for Independent Unit Vectors - Cigolle et al., 2014](https://jcgt.org/published/0003/02/01/)
+- [Tangent Spaces and Diamond Encoding](https://www.jeremyong.com/graphics/2023/01/09/tangent-spaces-and-diamond-encoding/)
+- https://stackoverflow.com/a/31662911/19776006
+- https://gist.github.com/pezcode/1609b61a1eedd207ec8c5acf6f94f53a
+- http://www.songho.ca/opengl/gl_projectionmatrix.html#perspective
+- https://computergraphics.stackexchange.com/a/12453
+- https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
+- https://playerunknownproductions.net/news/atmospheric-scattering
+- https://paminerva.github.io/docs/LearnVulkan/02.F-Compute-Shader.html
+- [Followup: Normal Mapping Without Precomputed Tangents](http://www.thetenthplanet.de/archives/1180)
+- https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader
+- Textures: https://planetpixelemporium.com/earth8081.html
