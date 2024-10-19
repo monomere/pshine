@@ -166,6 +166,8 @@ Key|Action
 - [x] Bug: ~~mesh scale is wrong~~ forgot to remove `* 5.0f` when passing atmosphere height.
 - [x] ~~The bug is still there :(~~ ~~nevermind, it was correct all along.~~ ~~no, its still a bug....~~
   - [X] THE BUG IS FIXED IT WORKSSS (precision errors)
+- [ ] Separate materials for planets and meshes.
+- [ ] Better API for materials? Maybe data-driven.
 - [ ] Fix rotation matrices, and matrices in general.
 - [ ] Rewrite the math library generation, its so ugly.
 - [ ] Stars
