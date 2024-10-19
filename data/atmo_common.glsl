@@ -1,6 +1,6 @@
 #ifndef ATMO_COMMON_GLSLI_
 #define ATMO_COMMON_GLSLI_
-#include "common.glsli"
+#include "common.glsl"
 
 vec2 intersect_ray_sphere(
 	vec3 sphere_center,

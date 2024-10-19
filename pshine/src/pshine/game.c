@@ -91,76 +91,76 @@ static inline float3 spheregen_float3lerp(float3 a, float3 b, float t) {
 
 // The next couple of functions are from https://www.jeremyong.com/graphics/2023/01/09/tangent-spaces-and-diamond-encoding/
 
-static inline float encode_diamond(float2 p) {
-	// Project to the unit diamond, then to the x-axis.
-	float x = p.x / (fabs(p.x) + fabs(p.y));
+// static inline float encode_diamond(float2 p) {
+// 	// Project to the unit diamond, then to the x-axis.
+// 	float x = p.x / (fabs(p.x) + fabs(p.y));
 
-	// Contract the x coordinate by a factor of 4 to represent all 4 quadrants in
-	// the unit range and remap
-	float py_sign = copysign(1, p.y);
-	return -py_sign * 0.25f * x + 0.5f + py_sign * 0.25f;
-}
+// 	// Contract the x coordinate by a factor of 4 to represent all 4 quadrants in
+// 	// the unit range and remap
+// 	float py_sign = copysign(1, p.y);
+// 	return -py_sign * 0.25f * x + 0.5f + py_sign * 0.25f;
+// }
 
-static inline float2 decode_diamond(float p) {
-	float2 v;
+// static inline float2 decode_diamond(float p) {
+// 	float2 v;
 
-	// Remap p to the appropriate segment on the diamond
-	float p_sign = copysign(1, p - 0.5f);
-	v.x = -p_sign * 4.f * p + 1.f + p_sign * 2.f;
-	v.y = p_sign * (1.f - fabs(v.x));
+// 	// Remap p to the appropriate segment on the diamond
+// 	float p_sign = copysign(1, p - 0.5f);
+// 	v.x = -p_sign * 4.f * p + 1.f + p_sign * 2.f;
+// 	v.y = p_sign * (1.f - fabs(v.x));
 
-	// Normalization extends the point on the diamond back to the unit circle
-	return float2norm(v);
-}
+// 	// Normalization extends the point on the diamond back to the unit circle
+// 	return float2norm(v);
+// }
 
-// Given a normal and tangent vector, encode the tangent as a single float that can be
-// subsequently quantized.
-static inline float encode_tangent(float3 normal, float3 tangent)
-{
-	// First, find a canonical direction in the tangent plane
-	float3 t1;
-	if (fabs(normal.y) > fabs(normal.z))
-	{
-		// Pick a canonical direction orthogonal to n with z = 0
-		t1 = float3xyz(normal.y, -normal.x, 0.f);
-	}
-	else
-	{
-		// Pick a canonical direction orthogonal to n with y = 0
-		t1 = float3xyz(normal.z, 0.f, -normal.x);
-	}
-	t1 = float3norm(t1);
+// // Given a normal and tangent vector, encode the tangent as a single float that can be
+// // subsequently quantized.
+// static inline float encode_tangent(float3 normal, float3 tangent)
+// {
+// 	// First, find a canonical direction in the tangent plane
+// 	float3 t1;
+// 	if (fabs(normal.y) > fabs(normal.z))
+// 	{
+// 		// Pick a canonical direction orthogonal to n with z = 0
+// 		t1 = float3xyz(normal.y, -normal.x, 0.f);
+// 	}
+// 	else
+// 	{
+// 		// Pick a canonical direction orthogonal to n with y = 0
+// 		t1 = float3xyz(normal.z, 0.f, -normal.x);
+// 	}
+// 	t1 = float3norm(t1);
 
-	// Construct t2 such that t1 and t2 span the plane
-	float3 t2 = float3cross(t1, normal);
+// 	// Construct t2 such that t1 and t2 span the plane
+// 	float3 t2 = float3cross(t1, normal);
 
-	// Decompose the tangent into two coordinates in the canonical basis
-	float2 packed_tangent = float2xy(float3dot(tangent, t1), float3dot(tangent, t2));
+// 	// Decompose the tangent into two coordinates in the canonical basis
+// 	float2 packed_tangent = float2xy(float3dot(tangent, t1), float3dot(tangent, t2));
 
-	// Apply our diamond encoding to our two coordinates
-	return encode_diamond(packed_tangent);
-}
+// 	// Apply our diamond encoding to our two coordinates
+// 	return encode_diamond(packed_tangent);
+// }
 
-static inline float3 decode_tangent(float3 normal, float diamond_tangent) {
-	// As in the encode step, find our canonical tangent basis span(t1, t2)
-	float3 t1;
-	if (fabs(normal.y) > fabs(normal.z))
-	{
-		t1 = float3xyz(normal.y, -normal.x, 0.f);
-	}
-	else
-	{
-		t1 = float3xyz(normal.z, 0.f, -normal.x);
-	}
-	t1 = float3norm(t1);
+// static inline float3 decode_tangent(float3 normal, float diamond_tangent) {
+// 	// As in the encode step, find our canonical tangent basis span(t1, t2)
+// 	float3 t1;
+// 	if (fabs(normal.y) > fabs(normal.z))
+// 	{
+// 		t1 = float3xyz(normal.y, -normal.x, 0.f);
+// 	}
+// 	else
+// 	{
+// 		t1 = float3xyz(normal.z, 0.f, -normal.x);
+// 	}
+// 	t1 = float3norm(t1);
 
-	float3 t2 = float3cross(t1, normal);
+// 	float3 t2 = float3cross(t1, normal);
 
-	// Recover the coordinates used with t1 and t2
-	float2 packed_tangent = decode_diamond(diamond_tangent);
+// 	// Recover the coordinates used with t1 and t2
+// 	float2 packed_tangent = decode_diamond(diamond_tangent);
 
-	return float3add(float3mul(t1, packed_tangent.x), float3mul(t2, packed_tangent.y));
-}
+// 	return float3add(float3mul(t1, packed_tangent.x), float3mul(t2, packed_tangent.y));
+// }
 
 // From the unit vector survey paper
 static inline float sign_not_zero(float v) {
@@ -180,14 +180,14 @@ static inline float3 oct_to_float32x3(float2 e) {
 	return float3norm(v);
 }
 
-static inline pshine_snorm32 snorm32_float(float v) { return (pshine_snorm32){ (int32_t)roundf(v * INT32_MAX) }; }
-static inline pshine_snorm32x2 snorm32x2_float2(float2 v) { return (pshine_snorm32x2){ snorm32_float(v.x), snorm32_float(v.y) }; }
-static inline float float_snorm32(pshine_snorm32 v) { return (float)v.x / INT32_MAX; }
-static inline float2 float2_snorm32x2(pshine_snorm32x2 v) { return float2xy(float_snorm32(v.x), float_snorm32(v.y)); }
-static inline pshine_unorm32 unorm32_float(float v) { return (pshine_unorm32){ (uint32_t)roundf(v * UINT32_MAX) }; }
-static inline pshine_unorm32x2 unorm32x2_float2(float2 v) { return (pshine_unorm32x2){ unorm32_float(v.x), unorm32_float(v.y) }; }
-static inline float float_unorm32(pshine_unorm32 v) { return (float)v.x / UINT32_MAX; }
-static inline float2 float2_unorm32x2(pshine_unorm32x2 v) { return float2xy(float_unorm32(v.x), float_unorm32(v.y)); }
+// static inline pshine_snorm32 snorm32_float(float v) { return (pshine_snorm32){ (int32_t)roundf(v * INT32_MAX) }; }
+// static inline pshine_snorm32x2 snorm32x2_float2(float2 v) { return (pshine_snorm32x2){ snorm32_float(v.x), snorm32_float(v.y) }; }
+// static inline float float_snorm32(pshine_snorm32 v) { return (float)v.x / INT32_MAX; }
+// static inline float2 float2_snorm32x2(pshine_snorm32x2 v) { return float2xy(float_snorm32(v.x), float_snorm32(v.y)); }
+// static inline pshine_unorm32 unorm32_float(float v) { return (pshine_unorm32){ (uint32_t)roundf(v * UINT32_MAX) }; }
+// static inline pshine_unorm32x2 unorm32x2_float2(float2 v) { return (pshine_unorm32x2){ unorm32_float(v.x), unorm32_float(v.y) }; }
+// static inline float float_unorm32(pshine_unorm32 v) { return (float)v.x / UINT32_MAX; }
+// static inline float2 float2_unorm32x2(pshine_unorm32x2 v) { return float2xy(float_unorm32(v.x), float_unorm32(v.y)); }
 
 static inline planet_vertex spheregen_vtxlerp(
 	const planet_vertex *a,
@@ -410,6 +410,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->data_own->movement_mode = 1;
 	game->data_own->move_speed = 500'000.0; // PSHINE_SPEED_OF_LIGHT;
 	double3 sun_dir = double3norm(double3xyz(0, 0, -1.0));
+	game->material_smoothness_ = 0.02;
 	*(double3*)game->sun_direction_.values = sun_dir;
 }
 
@@ -541,6 +542,11 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 	}
 	
 	memcpy(game->data_own->last_key_states, pshine_get_key_states(game->renderer), sizeof(uint8_t) * PSHINE_KEY_COUNT_);
+
+	if (ImGui_Begin("Material", NULL, 0)) {
+		ImGui_DragFloat("Bump scale", &game->material_smoothness_);
+	}
+	ImGui_End();
 
 	if (ImGui_Begin("Camera", NULL, 0)) {
 		double3 p = double3vs(game->camera_position.values);

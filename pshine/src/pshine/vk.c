@@ -51,6 +51,8 @@ struct atmo_uniform_data {
 
 struct material_uniform_data {
 	float4 color;
+	float3 view_dir;
+	float smoothness;
 };
 
 struct static_mesh_uniform_data {
@@ -659,7 +661,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	}
 
 	{
-		vkUpdateDescriptorSets(r->device, 3, (VkWriteDescriptorSet[]){
+		vkUpdateDescriptorSets(r->device, 4, (VkWriteDescriptorSet[4]){
 			(VkWriteDescriptorSet){
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 				.descriptorCount = 1,
@@ -2263,7 +2265,9 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	{
 		struct material_uniform_data new_data = {
-			.color = float4rgba(0.8f, 0.3f, 0.1f, 1.0f)
+			.color = float4rgba(0.8f, 0.3f, 0.1f, 1.0f),
+			.view_dir = float3_double3(double3vs(r->game->camera_forward.values)),
+			.smoothness = r->game->material_smoothness_,
 		};
 		struct material_uniform_data *data;
 		vmaMapMemory(r->allocator, r->data.material_uniform_buffer.allocation, (void**)&data);

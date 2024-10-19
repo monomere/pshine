@@ -32,6 +32,8 @@ struct StaticMeshUniforms {
 
 struct MaterialUniforms {
 	vec4 color;
+	vec3 view_dir;
+	float smoothness;
 };
 
 #endif // COMMON_GLSLI_

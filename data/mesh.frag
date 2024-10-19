@@ -1,7 +1,8 @@
 #version 450
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
-#include "common.glsli"
+#include "common.glsl"
+#include "noise.glsl"
 
 layout (location = 0) out vec4 o_color;
 
@@ -24,23 +25,31 @@ vec3 unit_position_from_latlon(float lat, float lon) {
 	);
 }
 
+vec2 compute_parallax_mapping(vec2 texcoord, vec3 local_view_dir) {
+	float height = texture(texture_bump, texcoord).r;
+	vec2 p = local_view_dir.xy / local_view_dir.z * (height * material.smoothness);
+	return texcoord - p;
+}
+
+float compute_specular_highlight(vec3 normal, float smoothness) {
+	float angle = acos(dot(normalize(normalize(global.sun.xyz) - material.view_dir), normal));
+	float exponent = angle / smoothness;
+	float highlight = exp(-exponent * exponent);
+	return highlight;
+}
+
 void main() {
+	vec3 local_view_dir = normalize(vec3(inverse(mesh.model) * vec4(material.view_dir, 0.0)));
 	float lon = atan(i_normal.z, i_normal.x) / (2.0 * PI);
 	float lat = acos(i_normal.y) / PI;
 	vec2 texcoord = vec2(lon, lat);
-	vec3 col = texture(texture_albedo, texcoord).rgb;
-
-	vec3 normal  = normalize(unit_position_from_latlon(lat, lon));
-	vec3 tangent = vec3(-sin(lon * 2.0 * PI), 0.0, cos(lon * 2.0 * PI));
-
-	vec3 N = normalize(vec3(mesh.model * vec4( normal, 0.0)));
-	vec3 T = normalize(vec3(mesh.model * vec4(tangent, 0.0)));
-	T = normalize(T - dot(T, N) * N);
-	vec3 B = cross(N, T);
-	mat3 TBN = (mat3(T, B, N));
-	vec3 world_normal = normalize(TBN * normal);
-
-	float shadow = dot(normalize(global.sun.xyz), N);
-	shadow = clamp(shadow, 0.0, 1.0);
-	o_color = vec4(col * mix(0.0, 1.0, shadow), 1.0);
+	vec3 col = texture(texture_albedo, (texcoord)).rgb;
+	vec3 world_normal = normalize(vec3(mesh.model * vec4(i_normal, 0.0)));
+	float shadow = clamp(dot(normalize(global.sun.xyz), world_normal), 0.0, 1.0);
+	vec3 halfway_dir = normalize(normalize(global.sun.xyz) + material.view_dir);
+	const float noise_strength = 0.001;
+	float spec = compute_specular_highlight(world_normal
+		* mix(1.0-noise_strength, 1.0+noise_strength, snoiseFractal(50.0 * i_normal)), material.smoothness);
+	float spec_mask = texture(texture_specular, texcoord).r;
+	o_color = vec4((col + spec * spec_mask) * shadow, 1.0);
 }

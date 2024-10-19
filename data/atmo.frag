@@ -1,8 +1,8 @@
 #version 460
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
-#include "common.glsli"
-#include "atmo_common.glsli"
+#include "common.glsl"
+#include "atmo_common.glsl"
 
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 2, binding = 0) uniform readonly BUFFER(AtmosphereUniforms, atmo);
