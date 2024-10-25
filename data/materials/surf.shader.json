@@ -1,0 +1,23 @@
+{
+	"version": 1,
+	"config": {
+		"stages": {
+			"vertex": {
+				"vertex_format": "planet",
+				"buffers": {"global": "", "static_mesh": "mesh"}
+			},
+			"fragment": {
+				"buffers": {"global": "", "material": "", "static_mesh": "mesh"},
+				"samplers": {
+					"albedo": "texture_albedo",
+					"bump": "texture_bump",
+					"specular": "texture_specular"
+				}
+			}
+		}
+	},
+	"code": {
+		"vertex": "data/shaders/surf.vert",
+		"fragment": "data/shader/surf.frag"
+	}
+}

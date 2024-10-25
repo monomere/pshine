@@ -6,12 +6,12 @@
 
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 2, binding = 0) uniform readonly BUFFER(AtmosphereUniforms, atmo);
-layout (set = 2, binding = 3) uniform sampler2D atmo_lut;
+layout (set = 2, binding = 3) uniform SAMPLER(_2D, atmo_lut);
 
 layout (location = 0) out vec4 o_col;
 layout (location = 0) in vec2 i_uv;
-layout (input_attachment_index = 0, set = 2, binding = 1) uniform subpassInput u_input_color;
-layout (input_attachment_index = 1, set = 2, binding = 2) uniform subpassInput u_input_depth;
+layout (input_attachment_index = 0, set = 2, binding = 1) uniform SUBPASS_INPUT(u_input_color);
+layout (input_attachment_index = 1, set = 2, binding = 2) uniform SUBPASS_INPUT(u_input_depth);
 
 // modified from https://www.shadertoy.com/view/lslXDr thank you GLtracy
 

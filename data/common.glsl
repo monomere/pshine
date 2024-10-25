@@ -5,6 +5,11 @@ const float MAX_FLOAT = 3.402823466e+38;
 const float PI = 3.14159265358979;
 
 #define BUFFER(S, name) _Uniform_##S { S name; }
+#define SAMPLER(T, name) T name
+#define _1D sampler1D
+#define _2D sampler2D
+#define _3D sampler3D
+#define SUBPASS_INPUT(name) subpassInput name
 
 struct GlobalUniforms {
 	vec4 sun;

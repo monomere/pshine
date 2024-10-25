@@ -11,9 +11,9 @@ layout (location = 0) in vec3 i_normal;
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 1, binding = 0) uniform readonly BUFFER(MaterialUniforms, material);
 layout (set = 2, binding = 0) uniform readonly BUFFER(StaticMeshUniforms, mesh);
-layout (set = 1, binding = 1) uniform sampler2D texture_albedo;
-layout (set = 1, binding = 2) uniform sampler2D texture_bump;
-layout (set = 1, binding = 3) uniform sampler2D texture_specular;
+layout (set = 1, binding = 1) uniform SAMPLER(_2D, texture_albedo);
+layout (set = 1, binding = 2) uniform SAMPLER(_2D, texture_bump);
+layout (set = 1, binding = 3) uniform SAMPLER(_2D, texture_specular);
 
 vec3 unit_position_from_latlon(float lat, float lon) {
 	lon *= 2.0 * PI;

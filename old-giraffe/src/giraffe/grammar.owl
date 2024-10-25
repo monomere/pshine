@@ -35,6 +35,8 @@ expr =
   literal : literal
 .operators postfix
   [ '(' (call-arg (',' call-arg)*)? ','? ')' ] : func-call
+.operators postfix
+  '.' identifier : access
 .operators prefix
   '-' : negative
 .operators infix left
@@ -48,5 +50,3 @@ expr =
 literal =
   string : string-literal
   number : int-literal
-path =
-  identifier ('.' identifier)* : path
