@@ -7,3 +7,5 @@ BreakBeforeBraces: Attach
 ColumnLimit: 100
 AlignAfterOpenBracket: BlockIndent
 UseTab: ForContinuationAndIndentation
+
+

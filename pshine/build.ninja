@@ -1,11 +1,11 @@
 
 # build $mod/src/pshine/math.h: python generate_math.py
 
-build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        | $mod/src/pshine/math.h
-build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      | $mod/src/pshine/math.h
-build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      | $mod/src/pshine/math.h
-build $builddir/pshine/$platform.c.o : cc $mod/src/pshine/$platform.c | $mod/src/pshine/math.h
-build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      | $mod/src/pshine/math.h
+build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
+build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
+build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
+build $builddir/pshine/$platform.c.o : cc $mod/src/pshine/$platform.c || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
+build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
 
 build $builddir/pshine/stb.c.o           : cc $mod/src/pshine/stb.c
 build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/vk_mem_alloc.cc
@@ -58,4 +58,6 @@ build $builddir/main: ld $
   $builddir/data/mesh.frag.spv $
   $builddir/data/atmo.vert.spv $
   $builddir/data/atmo.frag.spv $
-  $builddir/data/atmo_lut.comp.spv
+  $builddir/data/atmo_lut.comp.spv $
+  || $
+  build/giraffe/libgiraffe.a

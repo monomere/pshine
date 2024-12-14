@@ -1,0 +1,17 @@
+
+include ${ninja-dir}/ninja/release-${use-release}
+release-flag = $return
+
+rule cargo
+  command = cd $mod && cargo build ${release-flag}
+
+rule copy
+  command = cp $in $out
+
+# TODO: msvc windows
+build $
+  $mod/ffi/include/giraffe/giraffe.h $
+  $mod/target/release/libgiraffe.a : $
+  cargo | $mod
+
+build $builddir/libgiraffe.a: copy $mod/target/release/libgiraffe.a

@@ -1,6 +1,6 @@
-mod = ${import-modname}
+mod = ${import-extern-root}
 builddir = build/${import-modname}
-ninja-dir = $mod
+ninja-dir = ninja/extern-${import-modname}
 
 include ${ninja-dir}/config.ninja
 subninja ${ninja-dir}/build.ninja

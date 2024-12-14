@@ -14,6 +14,8 @@
 #include <cimgui/backends/cimgui_impl_vulkan.h>
 #include "stb_image.h"
 
+#include <giraffe/giraffe.h>
+
 #include "vk_util.h"
 #include "math.h"
 

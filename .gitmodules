@@ -8,3 +8,7 @@
 [submodule "vendor/imgui"]
 	path = vendor/imgui
 	url = https://github.com/ocornut/imgui
+	branch = v1.91.4-docking
+[submodule "giraffe"]
+	path = giraffe
+	url = https://codeberg.org/monomere/giraffe

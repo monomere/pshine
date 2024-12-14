@@ -10,7 +10,7 @@ struct pshine_orbit_info {
 		argument, // argument of periapsis (ω)
 		eccentricity, // eccentricity (e)
 		semimajor, // semimajor axis (a)
-		mean_anomaly; // mean anomaly at epoch (M₀)
+		true_anomaly; // true anomaly (ν)
 };
 
 enum pshine_celestial_body_type {
@@ -58,6 +58,7 @@ struct pshine_celestial_body {
 	pshine_vector3d rotation_axis;
 	pshine_point3d_world position;
 	double rotation;
+	double mass;
 };
 
 struct pshine_atmosphere_info {

@@ -408,7 +408,7 @@ void pshine_init_game(struct pshine_game *game) {
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0;
 	game->data_own->movement_mode = 1;
-	game->data_own->move_speed = 500'000.0; // PSHINE_SPEED_OF_LIGHT;
+	game->data_own->move_speed = 500'000.0;
 	double3 sun_dir = double3norm(double3xyz(0, 0, -1.0));
 	game->material_smoothness_ = 0.02;
 	*(double3*)game->sun_direction_.values = sun_dir;
@@ -507,6 +507,65 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 
 	*(double3*)game->camera_position.values = cam_pos;
 	*(double3*)game->camera_forward.values = cam_forward;
+}
+
+static void propagate_orbit(struct pshine_game *game, float delta_time, struct pshine_orbit_info *orbit) {
+
+}
+
+// returns only the position for now.
+static double3 kepler_orbit_to_state_vector(struct pshine_celestial_body *body) {
+	// https://orbital-mechanics.space/classical-orbital-elements/orbital-elements-and-the-state-vector.html#orbital-elements-state-vector
+	// but also
+	// https://orbital-mechanics.space/time-since-periapsis-and-keplers-equation/universal-variables.html#orbit-independent-solution-the-universal-anomaly
+	// for some reason we get the semimajor axis equation from there, which includes the angular momentum:
+	//      𝐡²     1
+	// a = ───╴ ───────╴.
+	//      μ    1 - e²
+	// 
+	//             𝐡² 
+	// Therefore, ───╴ = a(1 - e²).
+	//             μ  
+	//
+	// First, we get the position in the perifocal frame of reference (relative to the orbit basically):
+	//
+	//      ⎛ cos ν ⎞  𝐡²      1          ⎛ cos ν ⎞  a(1 - e²)      
+	// 𝐫ₚ = ⎜ sin ν ⎟ ───╴╶───────────╴ = ⎜ sin ν ⎟╶───────────╴.
+	//      ⎝   0   ⎠  μ   1 + e cos ν    ⎝   0   ⎠ 1 + e cos ν 
+	//
+	// Then we transform the perifocal frame to the "global" frame:
+	//
+	//      ⎛ cos -ω  -sin -ω  0 ⎞
+	// 𝐑₁ = ⎜ sin -ω   cos -ω  0 ⎟,
+	//      ⎝   0        0     1 ⎠
+	//
+	//      ⎛ 1    0        0    ⎞
+	// 𝐑₂ = ⎜ 0  cos -i  -sin -i ⎟,
+	//      ⎝ 0  sin -i   cos -i ⎠
+	//
+	//      ⎛ cos -Ω  -sin -Ω  0 ⎞
+	// 𝐑₃ = ⎜ sin -Ω   cos -Ω  0 ⎟;
+	//      ⎝   0        0     1 ⎠
+	// 
+	// 𝐑 = 𝐑₁𝐑₂𝐑₃.
+	//
+	// 𝐫 = 𝐫ₚ𝐑.
+	//
+
+	// Some variables to correspond with the math notation:
+	double µ = 1.0 * body->mass;
+	double ν = body->orbit.true_anomaly;
+	double e = body->orbit.eccentricity;
+	double a = body->orbit.semimajor;
+	double Ω = body->orbit.longitude;
+	double i = body->orbit.inclination;
+	double ω = body->orbit.argument;
+
+	double3 r_P = double3mul(double3xyz(cos(ν), sin(ν), 0.0), a * (1 - e*e) / (1 + e * cos(ν)));
+
+	// ....
+
+	return pos;
 }
 
 static void update_celestial_body(struct pshine_game *game, float delta_time, struct pshine_celestial_body *body) {

@@ -1,6 +1,27 @@
 #!/usr/bin/bash
 
-if [ -z "$NO_COLOR" ]; then
+NO_DOWNLOAD=0
+NO_COLOR=0
+
+while test $# -gt 0
+do
+	case "$1" in
+		--no-color) NO_COLOR=1
+			;;
+		--bindings-only) NO_DOWNLOAD=1
+			;;
+		--no-download) NO_DOWNLOAD=1
+			;;
+		--*) echo "bad option $1, ignoring"
+			;;
+		*)
+			;;
+	esac
+	shift
+done
+
+
+if [ "$NO_COLOR" -eq "0" ]; then
 	BOLD="\033[0;1m"
 	NORMAL="\033[m"
 else
@@ -8,15 +29,17 @@ else
 	NORMAL=""
 fi
 
-printf $BOLD'Downloading Volk\n'$NORMAL
-wget -P pshine/include/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.h
-wget -P pshine/src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
+if [ "$NO_DOWNLOAD" -eq "0" ]; then
+	printf $BOLD'Downloading Volk\n'$NORMAL
+	wget -P pshine/include/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.h
+	wget -P pshine/src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
 
-printf $BOLD'Downloading VMA\n'$NORMAL
-wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
+	printf $BOLD'Downloading VMA\n'$NORMAL
+	wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
 
-printf $BOLD'Downloading STB_image\n'$NORMAL
-wget -P pshine/include/vendor https://raw.githubusercontent.com/nothings/stb/refs/heads/master/stb_image.h
+	printf $BOLD'Downloading STB_image\n'$NORMAL
+	wget -P pshine/include/vendor https://raw.githubusercontent.com/nothings/stb/refs/heads/master/stb_image.h
+fi
 
 printf $BOLD'Generating ImGui Bindings\n'$NORMAL
 
