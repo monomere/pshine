@@ -20,12 +20,6 @@ git clone https://github.com/monomere/pshine --recurse-submodules --shallow-subm
 cd pshine
 ```
 
-> Note: when cloning, you might get an error that looks something like
->
-> `fatal: Fetched in submodule path 'vendor/owl', but it did not contain <...>. Direct fetching of that commit failed.`
->
-> You can ignore it; it's going to be fixed later and doesn't impact anything right now.
-
 <!--
 Do we need this??
 Change `pshine/build.ninja` to work based on your platform (will automate later..)
@@ -69,11 +63,6 @@ wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-Librarie
 wget -P pshine/include/vendor https://raw.githubusercontent.com/nothings/stb/refs/heads/master/stb_image.h
 ```
 
-### Patching owl
-
-TBD. The shader language compiler (giraffe) uses [owl](https://github.com/ianh/owl), but it doesn't have a gitignore and
-doesn't prefix some of the symbols in the generated header. Giraffe is currently in development so this doesn't matter.
-
 ### Generating the ImGui bindings
 
 The project uses [dear_bindings](https://github.com/dearimgui/dear_bindings) to generate c version of the c++ imgui headers.
@@ -111,6 +100,7 @@ python vendor/dear_bindings/dear_bindings.py \
 ## Building
 
 > requirements: ninja modern gcc-compatible c/c++ compiler, glfw, python (optional)
+> requirements: rust (for giraffe, but can be removed by tweaking ninja files, as its not needed *for now*). I might rewrite all of this in Rust.
 
 To build (incremental)
 ```bash
