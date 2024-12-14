@@ -1,7 +1,3 @@
-[submodule "vendor/owl"]
-	path = vendor/owl
-	url = https://github.com/ianh/owl.git
-	ignore = untracked
 [submodule "vendor/dear_bindings"]
 	path = vendor/dear_bindings
 	url = https://github.com/dearimgui/dear_bindings
