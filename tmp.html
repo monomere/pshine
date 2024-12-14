@@ -1,0 +1,94 @@
+<!doctype html>
+
+<head>
+	<meta encoding="utf-8" />
+	<style>
+		* { box-sizing: border-box; } /* should be in your css file */
+
+		html {
+			/* comment next line to see the horizontal stickiness in action */
+			overflow-x: hidden;
+		}
+
+		.ref-tip-wrap {
+			position: absolute;
+
+			left: -50vw;
+			width: 100vw;
+			bottom: -50vh;
+			height: 100vh;
+
+			display: flex;
+			/* put the .tip-wwrap in the middle */
+			align-items: center;
+			justify-content: center;
+
+			visibility: hidden;
+			pointer-events: visible;
+		}
+
+		.ref {
+			position: relative;
+			display: inline-flex;
+			flex-wrap: nowrap;
+			text-wrap: nowrap;
+		}
+
+		.ref-tip-slide-space {
+			display: grid;
+			grid-template-rows: 1fr 1fr;
+			grid-template-columns: 1fr 1fr 1fr;
+			gap: 4rem;
+		}
+
+		.ref-tip {
+			opacity: 0;
+			grid-column: 2;
+			visibility: hidden;
+			text-wrap: wrap;
+			position: sticky;
+			left: 1rem;
+			right: 1rem;
+			top: 1rem;
+			bottom: 1rem;
+			overflow-wrap: break-word;
+			max-width: 10rem;
+			z-index: 1;
+			background: aliceblue;
+			padding: 0.5rem;
+			border: 1px solid black;
+		}
+
+		.ref:hover .ref-tip {
+			visibility: visible;
+			opacity: 1;
+		}
+	</style>
+</head>
+
+<body>
+	Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some
+	lorem ipsum Some lorem ipsum Some lorem ipsum Some lorem ipsumSome lorem ipsum Some loremmm
+
+	<span class=ref>
+		<span class=ref-content>
+			<a href="#">my link</a>
+		</span>
+		<div class=ref-tip-wrap>
+			<div class=ref-tip-slide-space>
+				<div class=ref-tip>
+					Tooltip textttttttttttttttttttttttttttttttttttt
+					what help plese what the hel
+				</div>
+			</div>
+		</div>
+	</span>
+
+	Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>
+	Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>
+	Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>
+	Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>
+	Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>
+	Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>Some<br>Text<br>
+
+</body>

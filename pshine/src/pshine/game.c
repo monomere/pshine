@@ -565,7 +565,7 @@ static double3 kepler_orbit_to_state_vector(struct pshine_celestial_body *body) 
 
 	// ....
 
-	return pos;
+	// return pos;
 }
 
 static void update_celestial_body(struct pshine_game *game, float delta_time, struct pshine_celestial_body *body) {

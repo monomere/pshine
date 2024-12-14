@@ -14,7 +14,7 @@
 #include <cimgui/backends/cimgui_impl_vulkan.h>
 #include "stb_image.h"
 
-#include <giraffe/giraffe.h>
+// #include <giraffe/giraffe.h>
 
 #include "vk_util.h"
 #include "math.h"
@@ -294,32 +294,49 @@ static void deallocate_image(
 		vkDestroyImageView(r->device, image.view, NULL);
 }
 
+struct vulkan_buffer_alloc_info {
+	VkDeviceSize size;
+	VkBufferUsageFlags buffer_usage;
+	VkMemoryPropertyFlags required_memory_property_flags;
+	VmaAllocationCreateFlags allocation_flags;
+	VmaMemoryUsage memory_usage;
+	VmaAllocationInfo *out_allocation_info;
+	bool concurrent;
+	uint32_t used_in_queues[QUEUE_FAMILY_COUNT_];
+};
+
 static struct vulkan_buffer allocate_buffer(
 	struct vulkan_renderer *r,
-	VkDeviceSize size,
-	VkBufferUsageFlags buffer_usage,
-	VkMemoryPropertyFlags required_memory_property_flags,
-	VmaAllocationCreateFlags allocation_flags,
-	VmaMemoryUsage memory_usage,
-	VmaAllocationInfo *out_allocation_info
+	const struct vulkan_buffer_alloc_info *desc
 ) {
+	uint32_t queue_use_count = 0;
+	uint32_t used_queues[QUEUE_FAMILY_COUNT_] = {};
+	if (desc->concurrent) {
+		for (uint32_t i = 0; i < QUEUE_FAMILY_COUNT_; ++i) {
+			bool is_used = desc->used_in_queues[i] != VK_QUEUE_FAMILY_IGNORED;
+			if (is_used) used_queues[queue_use_count++] += desc->used_in_queues[i];
+		}
+	}
+
 	struct vulkan_buffer buf;
 	vmaCreateBuffer(
 		r->allocator,
 		&(VkBufferCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.size = size,
-			.usage = buffer_usage,
-			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+			.size = desc->size,
+			.usage = desc->buffer_usage,
+			.sharingMode = queue_use_count <= 1 ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,
+			.queueFamilyIndexCount = queue_use_count <= 1 ? 0 : queue_use_count,
+			.pQueueFamilyIndices = queue_use_count <= 1 ? nullptr : used_queues,
 		},
 		&(VmaAllocationCreateInfo){
-			.usage = memory_usage,
-			.requiredFlags = required_memory_property_flags,
-			.flags = allocation_flags
+			.usage = desc->memory_usage,
+			.requiredFlags = desc->required_memory_property_flags,
+			.flags = desc->allocation_flags
 		},
 		&buf.buffer,
 		&buf.allocation,
-		out_allocation_info
+		desc->out_allocation_info
 	);
 	return buf;
 }
@@ -336,15 +353,18 @@ static void write_to_buffer_staged(
 	VkDeviceSize size,
 	const void *data
 ) {
+	// TODO: Use separate transfer queue if available.
+
 	VmaAllocationInfo staging_alloc_info = {};
 	struct vulkan_buffer staging_buffer = allocate_buffer(
 		r,
-		size,
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		0,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
-		VMA_MEMORY_USAGE_AUTO,
-		&staging_alloc_info
+		&(struct vulkan_buffer_alloc_info){
+			.size = size,
+			.buffer_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			.allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+			.memory_usage = VMA_MEMORY_USAGE_AUTO,
+			.out_allocation_info = &staging_alloc_info,
+		}
 	);
 	memcpy((char*)staging_alloc_info.pMappedData, data, size);
 
@@ -386,12 +406,13 @@ static void write_to_image_staged(
 	VmaAllocationInfo staging_alloc_info = {};
 	struct vulkan_buffer staging_buffer = allocate_buffer(
 		r,
-		size,
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		0,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
-		VMA_MEMORY_USAGE_AUTO,
-		&staging_alloc_info
+		&(struct vulkan_buffer_alloc_info){
+			.size = size,
+			.buffer_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			.allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+			.memory_usage = VMA_MEMORY_USAGE_AUTO,
+			.out_allocation_info = &staging_alloc_info,
+		}
 	);
 	memcpy((char*)staging_alloc_info.pMappedData, data, size);
 
@@ -489,15 +510,19 @@ static struct vulkan_mesh *create_mesh(
 	PSHINE_DEBUG("mesh %zu vertices, %zu indices", mesh_data->index_count, mesh_data->vertex_count);
 	mesh->index_buffer = allocate_buffer(
 		r,
-		mesh_data->index_count * sizeof(uint32_t),
-		VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		0, 0, VMA_MEMORY_USAGE_AUTO, NULL
+		&(struct vulkan_buffer_alloc_info){
+			.size = mesh_data->index_count * sizeof(uint32_t),
+			.buffer_usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			.memory_usage = VMA_MEMORY_USAGE_AUTO,
+		}
 	);
 	mesh->vertex_buffer = allocate_buffer(
 		r,
-		mesh_data->vertex_count * sizeof(struct pshine_static_mesh_vertex),
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		0, 0, VMA_MEMORY_USAGE_AUTO, NULL
+		&(struct vulkan_buffer_alloc_info){
+			.size = mesh_data->vertex_count * sizeof(struct pshine_static_mesh_vertex),
+			.buffer_usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			.memory_usage = VMA_MEMORY_USAGE_AUTO,
+		}
 	);
 	write_to_buffer_staged(r, &mesh->index_buffer,
 		0, mesh_data->index_count * sizeof(uint32_t), mesh_data->indices);
@@ -631,12 +656,13 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 			p->graphics_data->mesh_ref = r->sphere_mesh;
 			p->graphics_data->uniform_buffer = allocate_buffer(
 				r,
-				get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * FRAMES_IN_FLIGHT,
-				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-				VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-				VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-				VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-				NULL
+				&(struct vulkan_buffer_alloc_info){
+					.size = get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * FRAMES_IN_FLIGHT,
+					.buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+					.required_memory_property_flags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+					.allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+					.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+				}
 			);
 			CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -726,26 +752,31 @@ static const VkFormat atmo_lut_format = VK_FORMAT_R32G32_SFLOAT;
 static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *planet, bool first_time) {
 	VkCommandBuffer cmdbuf = planet->graphics_data->compute_cmdbuf;
 
+	// We could do better sync here, but there's not much point in doing that since we only compute the LUTs once.
+	CHECKVK(vkQueueWaitIdle(r->queues[QUEUE_GRAPHICS]));
+	CHECKVK(vkQueueWaitIdle(r->queues[QUEUE_COMPUTE])); // handle multiple calls to this function, although we shouldn't get them.
+
 	CHECKVK(vkResetCommandBuffer(cmdbuf, 0));
 	CHECKVK(vkBeginCommandBuffer(cmdbuf, &(VkCommandBufferBeginInfo){
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 		.flags = 0,
 	}));
 
+	// if (r->queue_families[QUEUE_COMPUTE] == r->queue_families[QUEUE_GRAPHICS]) {
 	vkCmdPipelineBarrier(
 		cmdbuf,
-		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // read in atmo shader
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
 		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 		0, 0, NULL, 0, NULL, 1, &(VkImageMemoryBarrier){
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 			.image = planet->graphics_data->atmo_lut.image,
-			.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
 			.srcAccessMask = 0, // VK_ACCESS_SHADER_READ_BIT,
+			.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
 			.oldLayout = first_time
 				? VK_IMAGE_LAYOUT_UNDEFINED
 				: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-			.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			.srcQueueFamilyIndex = r->queue_families[QUEUE_COMPUTE],
 			.dstQueueFamilyIndex = r->queue_families[QUEUE_COMPUTE],
 			.subresourceRange = {
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -756,7 +787,7 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 			}
 		}
 	);
-
+	// }
 
 	vkCmdBindDescriptorSets(
 		cmdbuf,
@@ -789,16 +820,16 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 	vkCmdPipelineBarrier(
 		cmdbuf,
 		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // read in atmo shader
+		VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		0, 0, NULL, 0, NULL, 1, &(VkImageMemoryBarrier){
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 			.image = planet->graphics_data->atmo_lut.image,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
 			.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_NONE,
 			.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			.srcQueueFamilyIndex = r->queue_families[QUEUE_COMPUTE],
-			.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			.dstQueueFamilyIndex = r->queue_families[QUEUE_COMPUTE],
 			.subresourceRange = {
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 				.baseArrayLayer = 0,
@@ -815,6 +846,8 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 		.commandBufferCount = 1,
 		.pCommandBuffers = &cmdbuf
 	}, VK_NULL_HANDLE);
+
+	vkQueueWaitIdle(r->queues[QUEUE_COMPUTE]);
 }
 
 static struct vulkan_image load_texture_from_file(struct vulkan_renderer *r, const char *fpath, VkFormat format, int format_channels) {
@@ -836,7 +869,7 @@ static struct vulkan_image load_texture_from_file(struct vulkan_renderer *r, con
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.extent = (VkExtent3D){ .width = width, .height = height, .depth = 1 },
 			.format = format,
-			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -979,6 +1012,10 @@ static void init_vulkan(struct vulkan_renderer *r) {
 		}
 	}
 
+#ifdef __linux__
+		have_portability_ext = false;
+#endif
+
 	uint32_t ext_count = extension_count_glfw + 1 + have_portability_ext;
 	const char **extensions = calloc(ext_count, sizeof(const char *));
 	memcpy(extensions, extensions_glfw, sizeof(const char *) * extension_count_glfw);
@@ -1054,26 +1091,45 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	{
 		static_assert(QUEUE_FAMILY_COUNT_ == 3);
 		uint32_t queue_create_info_count = QUEUE_FAMILY_COUNT_;
+		uint32_t unique_queue_family_indices[3] = {
+			r->queue_families[0],
+			r->queue_families[1],
+			r->queue_families[3],
+		};
 		if (r->queue_families[0] == r->queue_families[1]) {
 			queue_create_info_count = 2;
+			unique_queue_family_indices[0] = r->queue_families[0];
+			unique_queue_family_indices[1] = r->queue_families[2];
 			if (r->queue_families[1] == r->queue_families[2])
 				queue_create_info_count = 1;
 		} else if (r->queue_families[0] == r->queue_families[2]) {
 			queue_create_info_count = 2;
+			unique_queue_family_indices[0] = r->queue_families[0];
+			unique_queue_family_indices[1] = r->queue_families[1];
 			if (r->queue_families[1] == r->queue_families[2])
+				queue_create_info_count = 1;
+		} else if (r->queue_families[1] == r->queue_families[2]) {
+			queue_create_info_count = 2;
+			unique_queue_family_indices[0] = r->queue_families[0];
+			unique_queue_family_indices[1] = r->queue_families[1];
+			if (r->queue_families[0] == r->queue_families[1])
 				queue_create_info_count = 1;
 		}
 		VkDeviceQueueCreateInfo queue_create_infos[queue_create_info_count];
 
 		float queuePriority = 1.0f;
 		for (uint32_t i = 0; i < queue_create_info_count; ++i) {
+			PSHINE_DEBUG("VkDeviceQueueCreateInfo[%d] -> %d", i, unique_queue_family_indices[i]);
 			queue_create_infos[i] = (VkDeviceQueueCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
 				.pQueuePriorities = &queuePriority,
 				.queueCount = 1,
-				.queueFamilyIndex = r->queue_families[i]
+				.queueFamilyIndex = unique_queue_family_indices[i]
 			};
 		}
+
+		PSHINE_INFO("have_portabiliy_ext: %d", have_portability_ext);
+		// TODO: Check if device actually supports VK_KHR_portability_subset!
 
 		CHECKVK(vkCreateDevice(r->physical_device, &(VkDeviceCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -1996,37 +2052,24 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 // Game data
 
 static void init_data(struct vulkan_renderer *r) {
-	r->data.global_uniform_buffer = allocate_buffer(
-		r,
-		get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * FRAMES_IN_FLIGHT,
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-		VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-		NULL
-	);
+	struct vulkan_buffer_alloc_info common_alloc_info = {
+		.size = 0,
+		.buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		.required_memory_property_flags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		.allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+		.memory_usage = VMA_MEMORY_USAGE_AUTO, // _PREFER_DEVICE
+	};
+
+	common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * FRAMES_IN_FLIGHT;
+	r->data.global_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 	NAME_VK_OBJECT(r, r->data.global_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "global ub");
 
-	r->data.material_uniform_buffer = allocate_buffer(
-		r,
-		sizeof(struct material_uniform_data),
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-		VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-		NULL
-	);
+	common_alloc_info.size = sizeof(struct material_uniform_data);
+	r->data.material_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 	NAME_VK_OBJECT(r, r->data.material_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "material ub");
 
-	r->data.atmo_uniform_buffer = allocate_buffer(
-		r,
-		get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * FRAMES_IN_FLIGHT,
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-		VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-		NULL
-	);
+	common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * FRAMES_IN_FLIGHT;
+	r->data.atmo_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 	NAME_VK_OBJECT(r, r->data.atmo_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "atmosphere ub");
 
 	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
