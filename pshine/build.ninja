@@ -1,5 +1,5 @@
 
-# build $mod/src/pshine/math.h: python generate_math.py
+build $mod/src/pshine/math.h: python generate_math.py
 
 build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
 build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h

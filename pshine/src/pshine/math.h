@@ -142,6 +142,25 @@ typedef union {
 	struct { float2 v2s[2]; };
 } float2x2;
 
+// float square matrix operations
+
+MATH_FN_ void setfloat2x2iden(float2x2 *m) {
+	memset(m->vs, 0, sizeof(m->vs));
+	m->vs[0][0] = 1.0; m->vs[1][1] = 1.0;
+}
+// NB: 'res' cannot equal 'm1' or 'm2'.
+// TODO: Inplace matrix multiplication.
+MATH_FN_ void float2x2mul(float2x2 *res, const float2x2 *m1, const float2x2 *m2) {
+	for (size_t i = 0; i < 2; ++i) {
+		for (size_t j = 0; j < 2; ++j) {
+			res->vs[j][i] = 0;
+			for (size_t k = 0; k < 2; ++k)
+				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
+		}
+	}
+}
+
+
 // float2x3 matrix
 typedef union {
 	struct { float vvs[6]; };
@@ -169,6 +188,36 @@ typedef union {
 	struct { float vs[3][3]; };
 	struct { float3 v3s[3]; };
 } float3x3;
+
+// float square matrix operations
+
+MATH_FN_ void setfloat3x3iden(float3x3 *m) {
+	memset(m->vs, 0, sizeof(m->vs));
+	m->vs[0][0] = 1.0; m->vs[1][1] = 1.0; m->vs[2][2] = 1.0;
+}
+// NB: 'res' cannot equal 'm1' or 'm2'.
+// TODO: Inplace matrix multiplication.
+MATH_FN_ void float3x3mul(float3x3 *res, const float3x3 *m1, const float3x3 *m2) {
+	for (size_t i = 0; i < 3; ++i) {
+		for (size_t j = 0; j < 3; ++j) {
+			res->vs[j][i] = 0;
+			for (size_t k = 0; k < 3; ++k)
+				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
+		}
+	}
+}
+
+
+// float 3x3 square matrix operations
+
+MATH_FN_ float3 float3x3mulv(const float3x3 *m, float3 v) {
+	return float3xyz(
+		m->vs[0][0] * v.x + m->vs[1][0] * v.y + m->vs[2][0] * v.z,
+		m->vs[0][1] * v.x + m->vs[1][1] * v.y + m->vs[2][1] * v.z,
+		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z
+	);
+}
+
 
 // float3x4 matrix
 typedef union {
@@ -198,65 +247,62 @@ typedef union {
 	struct { float4 v4s[4]; };
 } float4x4;
 
-// float matrix operations
+// float square matrix operations
 
 MATH_FN_ void setfloat4x4iden(float4x4 *m) {
 	memset(m->vs, 0, sizeof(m->vs));
-	m->vs[0][0] = 1.0;
-	m->vs[1][1] = 1.0;
-	m->vs[2][2] = 1.0;
-	m->vs[3][3] = 1.0;
+	m->vs[0][0] = 1.0; m->vs[1][1] = 1.0; m->vs[2][2] = 1.0; m->vs[3][3] = 1.0;
 }
-	
-MATH_FN_ void setfloat3x3iden(float3x3 *m) {
-	memset(m->vs, 0, sizeof(m->vs));
-	m->vs[0][0] = 1.0;
-	m->vs[1][1] = 1.0;
-	m->vs[2][2] = 1.0;
+// NB: 'res' cannot equal 'm1' or 'm2'.
+// TODO: Inplace matrix multiplication.
+MATH_FN_ void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4 *m2) {
+	for (size_t i = 0; i < 4; ++i) {
+		for (size_t j = 0; j < 4; ++j) {
+			res->vs[j][i] = 0;
+			for (size_t k = 0; k < 4; ++k)
+				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
+		}
+	}
 }
-MATH_FN_ void float4x4axisangle(float4x4 *m, float3 axis, float angle) {
+
+
+// float 4x4 square matrix operations
+
+MATH_FN_ float4 float4x4mulv(const float4x4 *m, float4 v) {
+	return float4xyzw(
+		m->vs[0][0] * v.x + m->vs[1][0] * v.y + m->vs[2][0] * v.z + m->vs[3][0] * v.w,
+		m->vs[0][1] * v.x + m->vs[1][1] * v.y + m->vs[2][1] * v.z + m->vs[3][1] * v.w,
+		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z + m->vs[3][2] * v.w,
+		m->vs[0][3] * v.x + m->vs[1][3] * v.y + m->vs[2][3] * v.z + m->vs[3][3] * v.w
+	);
+}
+
+
+// float matrix operations
+
+MATH_FN_ void float3x3axisangle(float3x3 *m, float3 axis, float angle) {
 	memset(m->vs, 0, sizeof(m->vs));
-	// float a = angle, c = cosf(a), s = sinf(a);
-	// axis = float3norm(axis);
-	// float3 t = float3mul(axis, 1 - c);
+	float a = angle, c = cosf(a), s = sinf(a);
+	axis = float3norm(axis);
+	float3 t = float3mul(axis, 1 - c);
 
-	// float4x4 r;
+	float r00 = c + t.x * axis.x;
+	float r01 = t.x * axis.y + s * axis.z;
+	float r02 = t.x * axis.z - s * axis.y;
 
-	// r.vs[0][0] = c + (1.0f - c)      * axis.x     * axis.x;
-	// r.vs[0][1] = (1.0f - c) * axis.x * axis.y + s * axis.z;
-	// r.vs[0][2] = (1.0f - c) * axis.x * axis.z - s * axis.y;
-	// r.vs[0][3] = 0.0f;
+	float r10 = t.y * axis.x - s * axis.z;
+	float r11 = c + t.y * axis.y;
+	float r12 = t.y * axis.z + s * axis.x;
 
-	// r.vs[1][0] = (1.0f - c) * axis.y * axis.x - s * axis.z;
-	// r.vs[1][1] = c + (1.0f - c) * axis.y * axis.y;
-	// r.vs[1][2] = (1.0f - c) * axis.y * axis.z + s * axis.x;
-	// r.vs[1][3] = 0.0f;
+	float r20 = t.z * axis.x + s * axis.y;
+	float r21 = t.z * axis.y - s * axis.x;
+	float r22 = c + t.z * axis.z;
 
-	// r.vs[2][0] = (1.0f - c) * axis.z * axis.x + s * axis.y;
-	// r.vs[2][1] = (1.0f - c) * axis.z * axis.y - s * axis.x;
-	// r.vs[2][2] = c + (1.0f - c) * axis.z * axis.z;
-	// r.vs[2][3] = 0.0f;
-
-	// r.v4s[3] = float4xyzw(0, 0, 0, 1);
-
-	// float r00 = c + t.x * axis.x;
-	// float r01 = t.x * axis.y + s * axis.z;
-	// float r02 = t.x * axis.z - s * axis.y;
-
-	// float r10 = t.y * axis.x - s * axis.z;
-	// float r11 = c + t.y * axis.y;
-	// float r12 = t.y * axis.z + s * axis.x;
-
-	// float r20 = t.z * axis.x + s * axis.y;
-	// float r21 = t.z * axis.y - s * axis.x;
-	// float r22 = c + t.z * axis.z;
-
-	// float3x3 r;
-	// r.v3s[0] = float3add(float3add(float3mul(m->v3s[0], r00), float3mul(m->v3s[1], r01)), float3mul(m->v3s[2], r02));
-	// r.v3s[1] = float3add(float3add(float3mul(m->v3s[0], r10), float3mul(m->v3s[1], r11)), float3mul(m->v3s[2], r12));
-	// r.v3s[2] = float3add(float3add(float3mul(m->v3s[0], r20), float3mul(m->v3s[1], r21)), float3mul(m->v3s[2], r22));
-	// *m = r;
-	// float4x4mul(m, m, &r);
+	float3x3 r;
+	r.v3s[0] = float3add(float3add(float3mul(m->v3s[0], r00), float3mul(m->v3s[1], r01)), float3mul(m->v3s[2], r02));
+	r.v3s[1] = float3add(float3add(float3mul(m->v3s[0], r10), float3mul(m->v3s[1], r11)), float3mul(m->v3s[2], r12));
+	r.v3s[2] = float3add(float3add(float3mul(m->v3s[0], r20), float3mul(m->v3s[1], r21)), float3mul(m->v3s[2], r22));
+	*m = r;
 }
 MATH_FN_ void setfloat3x3rotation(float3x3 *m, float yaw, float pitch, float roll) {
 	memset(m->vs, 0, sizeof(m->vs));
@@ -365,24 +411,6 @@ MATH_FN_ void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, float3 u
 	m->vs[3][1] = -float3dot(u, eye);
 	m->vs[3][2] = -float3dot(f, eye);
 	m->vs[3][3] = 1.0f;
-}
-
-MATH_FN_ void float4x4mul(float4x4 *res, const float4x4 *m1, const float4x4 *m2) {
-	for (size_t i = 0; i < 4; ++i) {
-		for (size_t j = 0; j < 4; ++j) {
-			res->vs[j][i] = 0;
-			for (size_t k = 0; k < 4; ++k)
-				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
-		}
-	}
-}
-
-MATH_FN_ float3 float3x3mulv(const float3x3 *m, float3 v) {
-	return float3xyz(
-		m->vs[0][0] * v.x + m->vs[0][1] * v.y + m->vs[0][2] * v.z,
-		m->vs[1][0] * v.x + m->vs[1][1] * v.y + m->vs[1][2] * v.z,
-		m->vs[2][0] * v.x + m->vs[2][1] * v.y + m->vs[2][2] * v.z
-	);
 }
 
 
@@ -514,6 +542,25 @@ typedef union {
 	struct { double2 v2s[2]; };
 } double2x2;
 
+// double square matrix operations
+
+MATH_FN_ void setdouble2x2iden(double2x2 *m) {
+	memset(m->vs, 0, sizeof(m->vs));
+	m->vs[0][0] = 1.0; m->vs[1][1] = 1.0;
+}
+// NB: 'res' cannot equal 'm1' or 'm2'.
+// TODO: Inplace matrix multiplication.
+MATH_FN_ void double2x2mul(double2x2 *res, const double2x2 *m1, const double2x2 *m2) {
+	for (size_t i = 0; i < 2; ++i) {
+		for (size_t j = 0; j < 2; ++j) {
+			res->vs[j][i] = 0;
+			for (size_t k = 0; k < 2; ++k)
+				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
+		}
+	}
+}
+
+
 // double2x3 matrix
 typedef union {
 	struct { double vvs[6]; };
@@ -541,6 +588,36 @@ typedef union {
 	struct { double vs[3][3]; };
 	struct { double3 v3s[3]; };
 } double3x3;
+
+// double square matrix operations
+
+MATH_FN_ void setdouble3x3iden(double3x3 *m) {
+	memset(m->vs, 0, sizeof(m->vs));
+	m->vs[0][0] = 1.0; m->vs[1][1] = 1.0; m->vs[2][2] = 1.0;
+}
+// NB: 'res' cannot equal 'm1' or 'm2'.
+// TODO: Inplace matrix multiplication.
+MATH_FN_ void double3x3mul(double3x3 *res, const double3x3 *m1, const double3x3 *m2) {
+	for (size_t i = 0; i < 3; ++i) {
+		for (size_t j = 0; j < 3; ++j) {
+			res->vs[j][i] = 0;
+			for (size_t k = 0; k < 3; ++k)
+				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
+		}
+	}
+}
+
+
+// double 3x3 square matrix operations
+
+MATH_FN_ double3 double3x3mulv(const double3x3 *m, double3 v) {
+	return double3xyz(
+		m->vs[0][0] * v.x + m->vs[1][0] * v.y + m->vs[2][0] * v.z,
+		m->vs[0][1] * v.x + m->vs[1][1] * v.y + m->vs[2][1] * v.z,
+		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z
+	);
+}
+
 
 // double3x4 matrix
 typedef union {
@@ -570,22 +647,39 @@ typedef union {
 	struct { double4 v4s[4]; };
 } double4x4;
 
-// double matrix operations
+// double square matrix operations
 
 MATH_FN_ void setdouble4x4iden(double4x4 *m) {
 	memset(m->vs, 0, sizeof(m->vs));
-	m->vs[0][0] = 1.0;
-	m->vs[1][1] = 1.0;
-	m->vs[2][2] = 1.0;
-	m->vs[3][3] = 1.0;
+	m->vs[0][0] = 1.0; m->vs[1][1] = 1.0; m->vs[2][2] = 1.0; m->vs[3][3] = 1.0;
 }
-	
-MATH_FN_ void setdouble3x3iden(double3x3 *m) {
-	memset(m->vs, 0, sizeof(m->vs));
-	m->vs[0][0] = 1.0;
-	m->vs[1][1] = 1.0;
-	m->vs[2][2] = 1.0;
+// NB: 'res' cannot equal 'm1' or 'm2'.
+// TODO: Inplace matrix multiplication.
+MATH_FN_ void double4x4mul(double4x4 *res, const double4x4 *m1, const double4x4 *m2) {
+	for (size_t i = 0; i < 4; ++i) {
+		for (size_t j = 0; j < 4; ++j) {
+			res->vs[j][i] = 0;
+			for (size_t k = 0; k < 4; ++k)
+				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
+		}
+	}
 }
+
+
+// double 4x4 square matrix operations
+
+MATH_FN_ double4 double4x4mulv(const double4x4 *m, double4 v) {
+	return double4xyzw(
+		m->vs[0][0] * v.x + m->vs[1][0] * v.y + m->vs[2][0] * v.z + m->vs[3][0] * v.w,
+		m->vs[0][1] * v.x + m->vs[1][1] * v.y + m->vs[2][1] * v.z + m->vs[3][1] * v.w,
+		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z + m->vs[3][2] * v.w,
+		m->vs[0][3] * v.x + m->vs[1][3] * v.y + m->vs[2][3] * v.z + m->vs[3][3] * v.w
+	);
+}
+
+
+// double matrix operations
+
 MATH_FN_ void double3x3axisangle(double3x3 *m, double3 axis, double angle) {
 	memset(m->vs, 0, sizeof(m->vs));
 	double a = angle, c = cos(a), s = sin(a);
@@ -717,24 +811,6 @@ MATH_FN_ void setdouble4x4lookat(double4x4 *m, double3 eye, double3 center, doub
 	m->vs[3][1] = -double3dot(u, eye);
 	m->vs[3][2] = -double3dot(f, eye);
 	m->vs[3][3] = 1.0f;
-}
-
-MATH_FN_ void double4x4mul(double4x4 *res, const double4x4 *m1, const double4x4 *m2) {
-	for (size_t i = 0; i < 4; ++i) {
-		for (size_t j = 0; j < 4; ++j) {
-			res->vs[j][i] = 0;
-			for (size_t k = 0; k < 4; ++k)
-				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
-		}
-	}
-}
-
-MATH_FN_ double3 double3x3mulv(const double3x3 *m, double3 v) {
-	return double3xyz(
-		m->vs[0][0] * v.x + m->vs[1][0] * v.y + m->vs[2][0] * v.z,
-		m->vs[0][1] * v.x + m->vs[1][1] * v.y + m->vs[2][1] * v.z,
-		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z
-	);
 }
 
 

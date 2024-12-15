@@ -510,66 +510,163 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 }
 
 static void propagate_orbit(struct pshine_game *game, float delta_time, struct pshine_orbit_info *orbit) {
+	// https://orbital-mechanics.space/time-since-periapsis-and-keplers-equation/time-since-periapsis.html
+	// Given (change in) time since periapsis, Find True Anomaly:
+	// 1. Use the time since periapsis to find the mean anomaly
+	// 2. Use the mean anomaly to find the eccentric anomaly
+	// 3. Use the eccentric anomaly to find the true anomaly
 
+	// We use the universal anomaly.
+	// https://orbital-mechanics.space/time-since-periapsis-and-keplers-equation/universal-variables.html
+
+	// Also stuff stolen from https://git.sr.ht/~thepuzzlemaker/KerbalToolkit/tree/the-big-port/item/lib/src/kepler/orbits.rs
+	// Thanks Wren :o)
+
+	double Δt = delta_time; // Change in time.
+	double μ = 0.001; // The gravitational parameter.
+	double a = orbit->semimajor; // The semimajor axis.
+	double e = orbit->eccentricity; // The eccentricity.
+
+	// Here's the semimajor axis equation:
+	// 
+	//             𝐡²     1
+	//        a = ───╴ ───────╴.
+	//             μ    1 - e²
+	// 
+	// We could extract just 𝐡², but we actually need the 𝐡²/μ term, so:
+	//
+	//         𝐡² 
+	//        ───╴ = a(1 - e²).
+	//         μ  
+
+	//     ⎧  _________
+	//     ⎪ √a(1 - e²) (tanν / 2)   parabola, e > 1
+	//     ⎪  _
+	// χ = ⎨ √a E                    ellipse, e < 1
+	//     ⎪  __
+	//     ⎪ √-a F                   hyperbola, e = 1
+	//     ⎩ 
+	
+	// double chi = 0.0;
+	// if (fabs(e - 1.0) < 1e-6) { // parabola
+	// 	chi = sqrt(a * (1 - e*e)) * tan(orbit->true_anomaly)
+	// }
+
+
+	// pub fn mean_motion(&self, mu: f64) -> f64 {
+	//     if (self.e - 1.0).abs() < 1e-6 {
+	//         // parabolic
+	//         2.0 * libm::sqrt(mu / self.p.powi(3))
+	//     } else if self.e < 1.0 {
+	//         // elliptic
+	//         libm::sqrt(mu / self.semimajor_axis().powi(3))
+	//     } else if self.e > 1.0 {
+	//         // hyperbolic
+	//         libm::sqrt(mu / (-self.semimajor_axis()).powi(3))
+	//     } else {
+	//         unreachable!("oops")
+	//     }
+	// }
+
+	// pub fn period(&self, mu: f64) -> f64 {
+	//     consts::TAU / self.mean_motion(mu)
+	// }
+
+
+	// Solving for χ using the Laguerre algorithm, which is supposedly better
+	{
+		double n = 5;
+		double χ = 0.0;
+		double αχ2 = χ*χ / a;
+		double t = .0, t0 = .0;
+		// sqrt(a * (1 - e*e)) * χ * C(αχ2) + (1.0 - r₀/a)*χ*χ*χ*S(αχ2) + r₀*χ - sqrt(μ)*(t - t₀)
+		// TODO: figure out what r₀ is, also (t - t₀) mod T.
+		// maybe we just need the change of true anomaly? who knows.
+	}
 }
 
 // returns only the position for now.
-static double3 kepler_orbit_to_state_vector(struct pshine_celestial_body *body) {
-	// https://orbital-mechanics.space/classical-orbital-elements/orbital-elements-and-the-state-vector.html#orbital-elements-state-vector
-	// but also
-	// https://orbital-mechanics.space/time-since-periapsis-and-keplers-equation/universal-variables.html#orbit-independent-solution-the-universal-anomaly
-	// for some reason we get the semimajor axis equation from there, which includes the angular momentum:
-	//      𝐡²     1
-	// a = ───╴ ───────╴.
-	//      μ    1 - e²
+static double3 kepler_orbit_to_state_vector(struct pshine_orbit_info *orbit) {
+	// Thank god https://orbital-mechanics.space exists!
+	// The conversion formulas are taken from
+	//   /classical-orbital-elements/orbital-elements-and-the-state-vector.html#orbital-elements-state-vector
+	// But for some reason we get the semimajor axis equation from here instead, which includes the angular momentum (that we need):
+	//   /time-since-periapsis-and-keplers-equation/universal-variables.html#orbit-independent-solution-the-universal-anomaly
+
+	// Here's the semimajor axis equation:
 	// 
-	//             𝐡² 
-	// Therefore, ───╴ = a(1 - e²).
-	//             μ  
+	//             𝐡²     1
+	//        a = ───╴ ───────╴.
+	//             μ    1 - e²
+	// 
+	// We could extract just 𝐡², but we actually need the 𝐡²/μ term, so:
+	//
+	//         𝐡² 
+	//        ───╴ = a(1 - e²).
+	//         μ  
 	//
 	// First, we get the position in the perifocal frame of reference (relative to the orbit basically):
 	//
-	//      ⎛ cos ν ⎞  𝐡²      1          ⎛ cos ν ⎞  a(1 - e²)      
-	// 𝐫ₚ = ⎜ sin ν ⎟ ───╴╶───────────╴ = ⎜ sin ν ⎟╶───────────╴.
-	//      ⎝   0   ⎠  μ   1 + e cos ν    ⎝   0   ⎠ 1 + e cos ν 
+	//             ⎛ cos ν ⎞  𝐡²      1          ⎛ cos ν ⎞  a(1 - e²)      
+	//        𝐫ₚ = ⎜ sin ν ⎟ ───╴╶───────────╴ = ⎜ sin ν ⎟╶───────────╴.
+	//             ⎝   0   ⎠  μ   1 + e cos ν    ⎝   0   ⎠ 1 + e cos ν 
 	//
-	// Then we transform the perifocal frame to the "global" frame:
+	// Then we transform the perifocal frame to the "global" frame, rotating along each axis with these matrices:
 	//
-	//      ⎛ cos -ω  -sin -ω  0 ⎞
-	// 𝐑₁ = ⎜ sin -ω   cos -ω  0 ⎟,
-	//      ⎝   0        0     1 ⎠
-	//
-	//      ⎛ 1    0        0    ⎞
-	// 𝐑₂ = ⎜ 0  cos -i  -sin -i ⎟,
-	//      ⎝ 0  sin -i   cos -i ⎠
-	//
-	//      ⎛ cos -Ω  -sin -Ω  0 ⎞
-	// 𝐑₃ = ⎜ sin -Ω   cos -Ω  0 ⎟;
-	//      ⎝   0        0     1 ⎠
+	//             ⎛ cos -ω  -sin -ω  0 ⎞
+	//        𝐑₁ = ⎜ sin -ω   cos -ω  0 ⎟,
+	//             ⎝   0        0     1 ⎠
+	//       
+	//             ⎛ 1    0        0    ⎞
+	//        𝐑₂ = ⎜ 0  cos -i  -sin -i ⎟,
+	//             ⎝ 0  sin -i   cos -i ⎠
+	//       
+	//             ⎛ cos -Ω  -sin -Ω  0 ⎞
+	//        𝐑₃ = ⎜ sin -Ω   cos -Ω  0 ⎟;
+	//             ⎝   0        0     1 ⎠
 	// 
-	// 𝐑 = 𝐑₁𝐑₂𝐑₃.
+	// Now we can finally get the global position:
 	//
-	// 𝐫 = 𝐫ₚ𝐑.
+	//        𝐫 = 𝐫ₚ𝐑, where 𝐑 = 𝐑₁𝐑₂𝐑₃.
 	//
 
 	// Some variables to correspond with the math notation:
-	double µ = 1.0 * body->mass;
-	double ν = body->orbit.true_anomaly;
-	double e = body->orbit.eccentricity;
-	double a = body->orbit.semimajor;
-	double Ω = body->orbit.longitude;
-	double i = body->orbit.inclination;
-	double ω = body->orbit.argument;
+	double ν = orbit->true_anomaly;
+	double e = orbit->eccentricity;
+	double a = orbit->semimajor;
+	double Ω = orbit->longitude;
+	double i = orbit->inclination;
+	double ω = orbit->argument;
 
-	double3 r_P = double3mul(double3xyz(cos(ν), sin(ν), 0.0), a * (1 - e*e) / (1 + e * cos(ν)));
+	double3 rₚ = double3mul(double3xyz(cos(ν), sin(ν), 0.0), a * (1 - e*e) / (1 + e * cos(ν)));
 
-	// ....
+	double3x3 R1;
+	R1.v3s[0] = double3xyz(cos(-ω), -sin(-ω), 0.0);
+	R1.v3s[1] = double3xyz(sin(-ω),  cos(-ω), 0.0);
+	R1.v3s[2] = double3xyz(    0.0,      0.0, 1.0);
+	double3x3 R2;
+	R2.v3s[0] = double3xyz(1,       0,        0);
+	R2.v3s[1] = double3xyz(0, cos(-i), -sin(-i));
+	R2.v3s[2] = double3xyz(0, sin(-i),  cos(-i));
+	double3x3 R3;
+	R3.v3s[0] = double3xyz(cos(-Ω), -sin(-Ω), 0.0);
+	R3.v3s[1] = double3xyz(sin(-Ω),  cos(-Ω), 0.0);
+	R3.v3s[2] = double3xyz(    0.0,      0.0, 1.0);
 
-	// return pos;
+	double3x3 R12, R;
+	double3x3mul(&R12, &R1, &R2);
+	double3x3mul(&R, &R12, &R3);
+
+	double3 r = double3x3mulv(&R, rₚ);
+
+	return r;
 }
 
 static void update_celestial_body(struct pshine_game *game, float delta_time, struct pshine_celestial_body *body) {
+	propagate_orbit(game, delta_time, &body->orbit);
 	body->rotation += body->rotation_speed * delta_time;
+	double3 position = kepler_orbit_to_state_vector(&body->orbit);
+	*(double3*)&body->position = position;
 }
 
 void pshine_update_game(struct pshine_game *game, float delta_time) {
