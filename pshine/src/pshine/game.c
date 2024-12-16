@@ -511,23 +511,61 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 
 static void propagate_orbit(struct pshine_game *game, float delta_time, struct pshine_orbit_info *orbit) {
 	// https://orbital-mechanics.space/time-since-periapsis-and-keplers-equation/time-since-periapsis.html
-	// Given (change in) time since periapsis, Find True Anomaly:
-	// 1. Use the time since periapsis to find the mean anomaly
-	// 2. Use the mean anomaly to find the eccentric anomaly
-	// 3. Use the eccentric anomaly to find the true anomaly
-
-	// We use the universal anomaly.
 	// https://orbital-mechanics.space/time-since-periapsis-and-keplers-equation/universal-variables.html
-
 	// Also stuff stolen from https://git.sr.ht/~thepuzzlemaker/KerbalToolkit/tree/the-big-port/item/lib/src/kepler/orbits.rs
 	// Thanks Wren :o)
 
-	double Δt = delta_time; // Change in time.
-	double μ = 0.001; // The gravitational parameter.
-	double a = orbit->semimajor; // The semimajor axis.
-	double e = orbit->eccentricity; // The eccentricity.
-
-	// Here's the semimajor axis equation:
+	// We need to change the orbit's true anomaly (ν) based on the other parameters and the elapsed time.
+	// The equations for the anomaly are different for different types of orbit, so we use a so-called
+	// Universal anomaly here.
+	//
+	// The relation of the universal anomaly χ to the other anomalies:
+	//
+	//            ⎧  _________
+	//            ⎪ √a(1 - e²) (tanν / 2)   for parabolas, e > 1
+	//            ⎪  ___
+	//        χ = ⎨ √ a   E                 for ellipses, e < 1
+	//            ⎪  ____
+	//            ⎪ √ -a  F                 for hyperbolas, e = 1
+	//            ⎩ 
+	//
+	// Let's define the Stumpff functions, useful in the Kepler equation:
+	//                         _
+	//              ⎧  1 - cos√z
+	//              ⎪ ──────────╴,    if z > 0
+	//              ⎪     z
+	//              ⎪       __
+	//              ⎪  cosh√-z - 1
+	//       C(z) = ⎨ ────────────╴,  if z < 0
+	//              ⎪      -z
+	//              ⎪ 
+	//              ⎪ 1
+	//              ⎪ ─,              if z = 0.
+	//              ⎩ 2
+	//                  _       _
+	//              ⎧  √z - sin√z
+	//              ⎪ ────────────╴,    if z > 0
+	//              ⎪     (√z)³
+	//              ⎪       __    __
+	//              ⎪  sinh√-z - √-z
+	//       S(z) = ⎨ ──────────────╴,  if z < 0
+	//              ⎪      (√-z)³
+	//              ⎪ 
+	//              ⎪ 1
+	//              ⎪ ─,                if z = 0.
+	//              ⎩ 6
+	//
+	// We can write the Kepler equation in terms of the universal anomaly (χ):
+	//
+	//         r₀v₀
+	//         ────╴ χ² C(αχ²) + (1 - αr₀)χ³ S(αχ²) + r₀χ = (t - t₀)√μ
+	//          √μ
+	//
+	// Where   α = a⁻¹, and (r₀, v₀) is the state vector at t₀,
+	//         C(x) and S(x) are the Stumpff functions, defined above.
+	//
+	// We don't have the values for r₀ and v₀, but we can derive them from the other
+	// orbital parameters. Here's the semimajor axis equation:
 	// 
 	//             𝐡²     1
 	//        a = ───╴ ───────╴.
@@ -539,16 +577,34 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//        p = ───╴ = a(1 - e²).
 	//             μ  
 	//
-	// The relation of the universal anomaly χ to the other anomalies:
+	// We can substitute r₀ and v₀ in terms of the other keplerian parameters
+	// (we don't actually need v₀ even, as r₀v₀/√μ is √p):
 	//
-	//            ⎧  _________
-	//            ⎪ √a(1 - e²) (tanν / 2)   parabola, e > 1
-	//            ⎪  ___
-	//        χ = ⎨ √ a   E                 ellipse, e < 1
-	//            ⎪  ____
-	//            ⎪ √ -a  F                 hyperbola, e = 1
-	//            ⎩ 
-	
+	//                   p                     a(1 - e²)
+	//         r₀ = ───────────╴ = [ν₀ = 0] = ──────────╴ = a(1 - e)
+	//              1 + e cosν₀                  1 + e
+	//
+	// Then, assuming t₀ = 0, the Kepler equation becomes:
+	//
+	//         a(1 - e²) χ² C(χ²/a) + e χ³ S(χ²/a) + a(1 - e)χ - t√μ = 0
+	//
+	// Unfrogtunately, this equation cannot be solved algebraically,
+	// (since it is the Kepler equation [M = E - esinE], but reworded a bit),
+	// so we need to use for example Newton's Method to find the roots.
+	// Turns out, Laguerre algorithm is a bit better for this problem,
+	// so we'll use it instead.
+	// 
+	// Once we find a good enough χ, we can figure out the anomalies that
+	// we need, and change our orbit.
+
+	double Δt = delta_time; // Change in time.
+	double μ = 0.001; // The gravitational parameter.
+	double a = orbit->semimajor; // The semimajor axis.
+	double e = orbit->eccentricity; // The eccentricity.
+
+	// sqrt(a(1 - e²)) χᵢ² C(αχᵢ²) + (1 - r₀/a) χᵢ³ S(αχᵢ2) + r₀χᵢ - sqrt(μ)(t - t₀)
+	// TODO: figure out what r₀ is, also (t - t₀) mod T.
+	// maybe we just need the change of true anomaly? who knows.
 	double p = a * (1 - e*e);
 
 	// double chi = 0.0;
@@ -568,6 +624,8 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 		unreachable();
 	}
 
+	// 
+
 	(void)u; 
 
 	double T = 2 * π / u; // Orbital period.
@@ -578,15 +636,11 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 		double χᵢ = 0.0;
 		double αχᵢ² = χᵢ*χᵢ / a;
 		double t = .0, t₀ = .0;
-
-		// sqrt(a(1 - e²)) χᵢ C(αχᵢ²) + (1 - r₀/a) χᵢ³ S(αχᵢ2) + r₀χᵢ - sqrt(μ)(t - t₀)
-		// TODO: figure out what r₀ is, also (t - t₀) mod T.
-		// maybe we just need the change of true anomaly? who knows.
 	}
 }
 
 // returns only the position for now.
-static double3 kepler_orbit_to_state_vector(struct pshine_orbit_info *orbit) {
+static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbit) {
 	// Thank god https://orbital-mechanics.space exists!
 	// The conversion formulas are taken from
 	//   /classical-orbital-elements/orbital-elements-and-the-state-vector.html#orbital-elements-state-vector
@@ -658,6 +712,7 @@ static double3 kepler_orbit_to_state_vector(struct pshine_orbit_info *orbit) {
 	double3x3mul(&R, &R12, &R3);
 
 	double3 r = double3x3mulv(&R, rₚ);
+
 
 	return r;
 }
