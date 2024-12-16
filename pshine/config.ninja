@@ -1,6 +1,6 @@
 
-cxxwarns = -Wall -Wno-unused-variable -Wno-unused-function -Wno-nullability-completeness
-cwarns = -Wall
+cxxwarns = -Wall -Wno-unused-variable -Wno-unused-function -Wno-nullability-completeness -Wno-mathematical-notation-identifier-extension
+cwarns = -Wall -Wno-mathematical-notation-identifier-extension
 
 opt = 1
 # TODO: fix generated header not to have #include "cimgui.h"

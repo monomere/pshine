@@ -533,53 +533,53 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//        a = ───╴ ───────╴.
 	//             μ    1 - e²
 	// 
-	// We could extract just 𝐡², but we actually need the 𝐡²/μ term, so:
+	// We could extract just 𝐡², but we actually need the 𝐡²/μ term (the semi-latus rectum), so:
 	//
-	//         𝐡² 
-	//        ───╴ = a(1 - e²).
-	//         μ  
-
-	//     ⎧  _________
-	//     ⎪ √a(1 - e²) (tanν / 2)   parabola, e > 1
-	//     ⎪  _
-	// χ = ⎨ √a E                    ellipse, e < 1
-	//     ⎪  __
-	//     ⎪ √-a F                   hyperbola, e = 1
-	//     ⎩ 
+	//             𝐡² 
+	//        p = ───╴ = a(1 - e²).
+	//             μ  
+	//
+	// The relation of the universal anomaly χ to the other anomalies:
+	//
+	//            ⎧  _________
+	//            ⎪ √a(1 - e²) (tanν / 2)   parabola, e > 1
+	//            ⎪  ___
+	//        χ = ⎨ √ a   E                 ellipse, e < 1
+	//            ⎪  ____
+	//            ⎪ √ -a  F                 hyperbola, e = 1
+	//            ⎩ 
 	
+	double p = a * (1 - e*e);
+
 	// double chi = 0.0;
 	// if (fabs(e - 1.0) < 1e-6) { // parabola
 	// 	chi = sqrt(a * (1 - e*e)) * tan(orbit->true_anomaly)
 	// }
 
+	double u = NAN; // Mean motion.
 
-	// pub fn mean_motion(&self, mu: f64) -> f64 {
-	//     if (self.e - 1.0).abs() < 1e-6 {
-	//         // parabolic
-	//         2.0 * libm::sqrt(mu / self.p.powi(3))
-	//     } else if self.e < 1.0 {
-	//         // elliptic
-	//         libm::sqrt(mu / self.semimajor_axis().powi(3))
-	//     } else if self.e > 1.0 {
-	//         // hyperbolic
-	//         libm::sqrt(mu / (-self.semimajor_axis()).powi(3))
-	//     } else {
-	//         unreachable!("oops")
-	//     }
-	// }
+	if (fabs(e - 1.0) < 1e-6) { // parabolic
+		u = 2.0 * sqrt(μ / (p*p*p));
+	} else if (e < 1.0) { // elliptic
+		u = sqrt(μ / (a*a*a));
+	} else if (e < 1.0) { // hyperbolic
+		u = sqrt(μ / -(a*a*a));
+	} else {
+		unreachable();
+	}
 
-	// pub fn period(&self, mu: f64) -> f64 {
-	//     consts::TAU / self.mean_motion(mu)
-	// }
+	(void)u; 
 
+	double T = 2 * π / u; // Orbital period.
 
 	// Solving for χ using the Laguerre algorithm, which is supposedly better
 	{
 		double n = 5;
-		double χ = 0.0;
-		double αχ2 = χ*χ / a;
-		double t = .0, t0 = .0;
-		// sqrt(a * (1 - e*e)) * χ * C(αχ2) + (1.0 - r₀/a)*χ*χ*χ*S(αχ2) + r₀*χ - sqrt(μ)*(t - t₀)
+		double χᵢ = 0.0;
+		double αχᵢ² = χᵢ*χᵢ / a;
+		double t = .0, t₀ = .0;
+
+		// sqrt(a(1 - e²)) χᵢ C(αχᵢ²) + (1 - r₀/a) χᵢ³ S(αχᵢ2) + r₀χᵢ - sqrt(μ)(t - t₀)
 		// TODO: figure out what r₀ is, also (t - t₀) mod T.
 		// maybe we just need the change of true anomaly? who knows.
 	}
@@ -599,17 +599,17 @@ static double3 kepler_orbit_to_state_vector(struct pshine_orbit_info *orbit) {
 	//        a = ───╴ ───────╴.
 	//             μ    1 - e²
 	// 
-	// We could extract just 𝐡², but we actually need the 𝐡²/μ term, so:
+	// We could extract just 𝐡², but we actually need the 𝐡²/μ term (the semi-latus rectum), so:
 	//
-	//         𝐡² 
-	//        ───╴ = a(1 - e²).
-	//         μ  
+	//             𝐡² 
+	//        p = ───╴ = a(1 - e²).
+	//             μ  
 	//
 	// First, we get the position in the perifocal frame of reference (relative to the orbit basically):
 	//
-	//             ⎛ cos ν ⎞  𝐡²      1          ⎛ cos ν ⎞  a(1 - e²)      
-	//        𝐫ₚ = ⎜ sin ν ⎟ ───╴╶───────────╴ = ⎜ sin ν ⎟╶───────────╴.
-	//             ⎝   0   ⎠  μ   1 + e cos ν    ⎝   0   ⎠ 1 + e cos ν 
+	//             ⎛ cos ν ⎞      p          ⎛ cos ν ⎞  a(1 - e²)      
+	//        𝐫ₚ = ⎜ sin ν ⎟ ╶───────────╴ = ⎜ sin ν ⎟╶───────────╴.
+	//             ⎝   0   ⎠  1 + e cos ν    ⎝   0   ⎠ 1 + e cos ν 
 	//
 	// Then we transform the perifocal frame to the "global" frame, rotating along each axis with these matrices:
 	//
