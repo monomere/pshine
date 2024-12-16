@@ -567,21 +567,21 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	// We don't have the values for r₀ and v₀, but we can derive them from the other
 	// orbital parameters. Here's the semimajor axis equation:
 	// 
-	//             𝐡²     1
-	//        a = ───╴ ───────╴.
-	//             μ    1 - e²
+	//             h²    1
+	//        a = ――― ――――――――.
+	//             μ   1 - e²
 	// 
-	// We could extract just 𝐡², but we actually need the 𝐡²/μ term (the semi-latus rectum), so:
+	// We could extract just h², but we actually need the 𝐡²/μ term (the semi-latus rectum), so:
 	//
-	//             𝐡² 
-	//        p = ───╴ = a(1 - e²).
+	//             h² 
+	//        p = ――― = a(1 - e²).
 	//             μ  
 	//
 	// We can substitute r₀ and v₀ in terms of the other keplerian parameters
 	// (we don't actually need v₀ even, as r₀v₀/√μ is √p):
 	//
 	//                   p                     a(1 - e²)
-	//         r₀ = ───────────╴ = [ν₀ = 0] = ──────────╴ = a(1 - e)
+	//         r₀ = ――――――――――― = [ν₀ = 0] = ―――――――――――― = a(1 - e)
 	//              1 + e cosν₀                  1 + e
 	//
 	// Then, assuming t₀ = 0, the Kepler equation becomes:
@@ -649,39 +649,39 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 
 	// Here's the semimajor axis equation:
 	// 
-	//             𝐡²     1
-	//        a = ───╴ ───────╴.
+	//             h²     1
+	//        a = --- ----------.
 	//             μ    1 - e²
 	// 
-	// We could extract just 𝐡², but we actually need the 𝐡²/μ term (the semi-latus rectum), so:
+	// We could extract just h², but we actually need the h²/μ term (the semi-latus rectum), so:
 	//
-	//             𝐡² 
-	//        p = ───╴ = a(1 - e²).
+	//             h² 
+	//        p = --- = a(1 - e²).
 	//             μ  
 	//
 	// First, we get the position in the perifocal frame of reference (relative to the orbit basically):
 	//
-	//             ⎛ cos ν ⎞      p          ⎛ cos ν ⎞  a(1 - e²)      
-	//        𝐫ₚ = ⎜ sin ν ⎟ ╶───────────╴ = ⎜ sin ν ⎟╶───────────╴.
-	//             ⎝   0   ⎠  1 + e cos ν    ⎝   0   ⎠ 1 + e cos ν 
+	//             ⎛ cos ν ⎞       p         ⎛ cos ν ⎞   a(1 - e²)
+	//        rₚ = ⎜ sin ν ⎟ ------------- = ⎜ sin ν ⎟ -------------.
+	//             ⎝   0   ⎠  1 + e cos ν    ⎝   0   ⎠  1 + e cos ν 
 	//
 	// Then we transform the perifocal frame to the "global" frame, rotating along each axis with these matrices:
 	//
 	//             ⎛ cos -ω  -sin -ω  0 ⎞
-	//        𝐑₁ = ⎜ sin -ω   cos -ω  0 ⎟,
+	//        R₁ = ⎜ sin -ω   cos -ω  0 ⎟,
 	//             ⎝   0        0     1 ⎠
 	//       
 	//             ⎛ 1    0        0    ⎞
-	//        𝐑₂ = ⎜ 0  cos -i  -sin -i ⎟,
+	//        R₂ = ⎜ 0  cos -i  -sin -i ⎟,
 	//             ⎝ 0  sin -i   cos -i ⎠
 	//       
 	//             ⎛ cos -Ω  -sin -Ω  0 ⎞
-	//        𝐑₃ = ⎜ sin -Ω   cos -Ω  0 ⎟;
+	//        R₃ = ⎜ sin -Ω   cos -Ω  0 ⎟;
 	//             ⎝   0        0     1 ⎠
 	// 
 	// Now we can finally get the global position:
 	//
-	//        𝐫 = 𝐫ₚ𝐑, where 𝐑 = 𝐑₁𝐑₂𝐑₃.
+	//        r = rₚR, where R = R₁R₂R₃.
 	//
 
 	// Some variables to correspond with the math notation:
