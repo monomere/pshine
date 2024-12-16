@@ -18,7 +18,7 @@ libs =
 
 owlprefix = owl
 owl = vendor/owl/owl
-python = python
+python = python3
 
 rule cc
   command = $cc -c $in -o $out $cflags $cflags2 -O$opt $debug $debugc -MD -MF $out.d
