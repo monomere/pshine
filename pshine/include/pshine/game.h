@@ -149,6 +149,7 @@ struct pshine_game {
 	float atmo_blend_factor;
 	pshine_vector3d sun_direction_;
 	float material_smoothness_;
+	float time_scale;
 };
 
 void pshine_init_game(struct pshine_game *game);

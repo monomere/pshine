@@ -374,6 +374,14 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->surface.lights_texture_path = "data/textures/earth_lights_2k.jpg";
 	planet->surface.bump_texture_path = "data/textures/earth_bump_2k.jpg";
 	planet->surface.spec_texture_path = "data/textures/earth_spec_2k.jpg";
+
+	struct pshine_orbit_info *orbit = &planet->as_body.orbit;
+	orbit->argument = 0.0;
+	orbit->eccentricity = 0.2;
+	orbit->inclination = 0.0;
+	orbit->longitude = 0.0;
+	orbit->semimajor = 100'000'000;
+	orbit->true_anomaly = 0.0;
 }
 
 static void deinit_planet(struct pshine_planet *planet) {
@@ -394,6 +402,7 @@ struct pshine_game_data {
 };
 
 void pshine_init_game(struct pshine_game *game) {
+	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
 	game->celestial_body_count = 1;
 	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
@@ -502,6 +511,8 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 		-cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
 	), game->data_own->camera_dist);
 
+	// cam_pos = double3add(cam_pos, double3vs(game->celestial_bodies_own[0]->position.values));
+
 	double3 cam_forward = double3norm(double3sub(double3vs(game->celestial_bodies_own[0]->position.values), cam_pos));
 	// double3 cam_forward = double3xyz(-1.0f, 0.0f, 0.0f);
 
@@ -604,13 +615,10 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	// we need, and change our orbit.
 
 	double Δt = delta_time; // Change in time.
-	double μ = 0.001; // The gravitational parameter.
+	double μ = 0.1; // The gravitational parameter.
 	double a = orbit->semimajor; // The semimajor axis.
 	double e = orbit->eccentricity; // The eccentricity.
 
-	// sqrt(a(1 - e²)) χᵢ² C(αχᵢ²) + (1 - r₀/a) χᵢ³ S(αχᵢ2) + r₀χᵢ - sqrt(μ)(t - t₀)
-	// TODO: figure out what r₀ is, also (t - t₀) mod T.
-	// maybe we just need the change of true anomaly? who knows.
 	double p = a * (1 - e*e);
 
 	// double chi = 0.0;
@@ -635,13 +643,13 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 
 	// a(1 - e²) χ² C(χ²/a) + e χ³ S(χ²/a) + a(1 - e)χ - t√μ = 0
 	// Solve for χ using Newton's Method:
-	double χ = 0.0;
 	static double t = 0.0;
-	double sqrtp = sqrt(a*(1.0 - e*e));
 	t += Δt; // TODO: figure out t from the orbital params.
+	double tsqrtμ = t * sqrt(μ);
+	double χ = tsqrtμ/fabs(a);
+	double sqrtp = sqrt(a*(1.0 - e*e));
 	{
-		double tsqrtμ = t * sqrt(μ);
-		for (int i = 0; i < 50; ++i) {
+		for (int i = 0; i < 10; ++i) {
 			double αχ2 = χ*χ/a;
 			double sqrtαχ2 = χ*sqrt(fabs(a));
 			double Cαχ2 = NAN;
@@ -669,6 +677,8 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	// 	double αχᵢ² = χᵢ*χᵢ / a;
 	// 	double t = .0, t₀ = .0;
 	// }
+
+	// PSHINE_DEBUG("chi = %f", χ);
 
 	if (fabs(e - 1) < 1e-6) { // parabolic
 		orbit->true_anomaly = 2 * atan(χ/sqrtp);
@@ -769,24 +779,11 @@ static void update_celestial_body(struct pshine_game *game, float delta_time, st
 
 void pshine_update_game(struct pshine_game *game, float delta_time) {
 	for (size_t i = 0; i < game->celestial_body_count; ++i) {
-		update_celestial_body(game, delta_time, game->celestial_bodies_own[i]);
+		update_celestial_body(game, delta_time * game->time_scale, game->celestial_bodies_own[i]);
 	}
-
-	if (pshine_is_key_down(game->renderer, PSHINE_KEY_C)) game->atmo_blend_factor += 0.5 * delta_time;
-	else if (pshine_is_key_down(game->renderer, PSHINE_KEY_V)) game->atmo_blend_factor -= 0.5 * delta_time;
-	game->atmo_blend_factor = clampd(game->atmo_blend_factor, 0.0, 1.0);
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F) && !game->data_own->last_key_states[PSHINE_KEY_F]) {
 		game->data_own->movement_mode = !game->data_own->movement_mode;
-	}
-
-	{
-		struct pshine_planet *p = (void*)game->celestial_bodies_own[0];
-
-		if (pshine_is_key_down(game->renderer, PSHINE_KEY_UP))
-			p->atmosphere.height += 0.2 * delta_time;
-		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_DOWN))
-			p->atmosphere.height -= 0.2 * delta_time;
 	}
 
 	if (game->data_own->movement_mode) {
@@ -799,6 +796,18 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 
 	if (ImGui_Begin("Material", NULL, 0)) {
 		ImGui_DragFloat("Bump scale", &game->material_smoothness_);
+	}
+	ImGui_End();
+
+
+#define SCSd3_WCSd3(wcs) (double3mul((wcs), PSHINE_SCS_FACTOR))
+#define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
+#define SCSd_WCSd(wcs) ((wcs) * PSHINE_SCS_FACTOR)
+
+	if (ImGui_Begin("Orbit", NULL, 0)) {
+		ImGui_Text("True anomaly: %.5f", game->celestial_bodies_own[0]->orbit.true_anomaly);
+		double3 pos = (SCSd3_WCSp3(game->celestial_bodies_own[0]->position));
+		ImGui_Text("Position (SCS): %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
 	}
 	ImGui_End();
 
@@ -837,6 +846,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		if (ImGui_SliderFloat3("Sun", p.vs, -1.0f, 1.0)) {
 			*(double3*)game->sun_direction_.values = double3_float3(p);
 		}
+		ImGui_SliderFloat("Time scale", &game->time_scale, 0.0, 1000.0);
 	}
 	ImGui_End();
 

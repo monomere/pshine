@@ -2360,7 +2360,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			struct static_mesh_uniform_data new_data = {};
 			double4x4 model_mat = {};
 			setdouble4x4iden(&model_mat);
-			// double4x4trans(&model_mat, SCSd3_WCSp3(p->as_body.position));
+
 			{
 				double a = p->as_body.rotation, c = cosf(a), s = sinf(a), C = 1 - c;
 				double3 axis = double3norm(double3vs(p->as_body.rotation_axis.values));
@@ -2393,8 +2393,10 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				double4x4mul(&model_mat, &model_mat_tmp, &r);
 			}
 
-			double4x4scale(&model_mat, double3v(SCSd_WCSd(p->as_body.radius)));
+			setdouble4x4iden(&model_mat);
 
+			double4x4scale(&model_mat, double3v(SCSd_WCSd(p->as_body.radius)));
+			double4x4trans(&model_mat, (SCSd3_WCSp3(p->as_body.position)));
 			new_data.proj = float4x4_double4x4(proj_mat);
 
 			double4x4 model_view_mat = {0};
