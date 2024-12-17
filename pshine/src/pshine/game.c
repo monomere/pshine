@@ -538,7 +538,7 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//              ⎪  cosh√-z - 1
 	//       C(z) = ⎨ ────────────╴,  if z < 0
 	//              ⎪      -z
-	//              ⎪ 
+	//              ⎪
 	//              ⎪ 1
 	//              ⎪ ─,              if z = 0.
 	//              ⎩ 2
@@ -550,7 +550,7 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//              ⎪  sinh√-z - √-z
 	//       S(z) = ⎨ ──────────────╴,  if z < 0
 	//              ⎪      (√-z)³
-	//              ⎪ 
+	//              ⎪
 	//              ⎪ 1
 	//              ⎪ ─,                if z = 0.
 	//              ⎩ 6
@@ -566,16 +566,16 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//
 	// We don't have the values for r₀ and v₀, but we can derive them from the other
 	// orbital parameters. Here's the semimajor axis equation:
-	// 
+	//
 	//             h²    1
 	//        a = ――― ――――――――.
 	//             μ   1 - e²
-	// 
-	// We could extract just h², but we actually need the 𝐡²/μ term (the semi-latus rectum), so:
 	//
-	//             h² 
+	// We could extract just h², but we actually need the h²/μ term (the semi-latus rectum), so:
+	//
+	//             h²
 	//        p = ――― = a(1 - e²).
-	//             μ  
+	//             μ
 	//
 	// We can substitute r₀ and v₀ in terms of the other keplerian parameters
 	// (we don't actually need v₀ even, as r₀v₀/√μ is √p):
@@ -585,15 +585,21 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//              1 + e cosν₀                  1 + e
 	//
 	// Then, assuming t₀ = 0, the Kepler equation becomes:
-	//
-	//         a(1 - e²) χ² C(χ²/a) + e χ³ S(χ²/a) + a(1 - e)χ - t√μ = 0
+	//          _________
+	//         √a(1 - e²) χ² C(χ²/a) + e χ³ S(χ²/a) + a(1 - e)χ - t√μ = 0 = f(χ)
 	//
 	// Unfrogtunately, this equation cannot be solved algebraically,
 	// (since it is the Kepler equation [M = E - esinE], but reworded a bit),
 	// so we need to use for example Newton's Method to find the roots.
 	// Turns out, Laguerre algorithm is a bit better for this problem,
 	// so we'll use it instead.
-	// 
+	//
+	// For these algorithms, we need the derivative of our function:
+	//
+	//         df(χ)    _________
+	//        ―――――― = √a(1 - e²) χ (1 - (χ²/a)S(χ²/a)) + e χ² C(χ²/a) + a(1 - e)
+	//          dχ
+	//
 	// Once we find a good enough χ, we can figure out the anomalies that
 	// we need, and change our orbit.
 
@@ -624,18 +630,54 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 		unreachable();
 	}
 
-	// 
-
-	(void)u; 
-
 	double T = 2 * π / u; // Orbital period.
 
-	// Solving for χ using the Laguerre algorithm, which is supposedly better
+
+	// a(1 - e²) χ² C(χ²/a) + e χ³ S(χ²/a) + a(1 - e)χ - t√μ = 0
+	// Solve for χ using Newton's Method:
+	double χ = 0.0;
+	static double t = 0.0;
+	double sqrtp = sqrt(a*(1.0 - e*e));
+	t += Δt; // TODO: figure out t from the orbital params.
 	{
-		double n = 5;
-		double χᵢ = 0.0;
-		double αχᵢ² = χᵢ*χᵢ / a;
-		double t = .0, t₀ = .0;
+		double tsqrtμ = t * sqrt(μ);
+		for (int i = 0; i < 50; ++i) {
+			double αχ2 = χ*χ/a;
+			double sqrtαχ2 = χ*sqrt(fabs(a));
+			double Cαχ2 = NAN;
+			{ // Stumpff's C(z)
+				if (fabs(αχ2) < 1e-6) Cαχ2 = 0.5;
+				else if (αχ2 > 0.0) Cαχ2 = (1 - cos(sqrtαχ2)) / αχ2;
+				else Cαχ2 = (cosh(sqrtαχ2) - 1) / -αχ2;
+			}
+			double Sαχ2 = NAN;
+			{ // Stumpff's S(z)
+				if (fabs(αχ2) < 1e-6) Sαχ2 = 1./6.;
+				else if (αχ2 > 0.0) Sαχ2 = (sqrtαχ2 - cos(sqrtαχ2)) / pow(sqrtαχ2, 3.0);
+				else Sαχ2 = (sinh(sqrtαχ2) - sqrtαχ2) / pow(sqrtαχ2, 3.0);
+			}
+	 		double f = sqrtp * χ * Cαχ2 + e * χ*χ*χ * Sαχ2 + a*(1-e) * χ - tsqrtμ;
+	 		double dfdχ = sqrtp * χ * (1.0 - αχ2*Sαχ2) + e * χ*χ * Cαχ2 + a*(1-e);
+	 		χ -= f/dfdχ;
+ 		}
+	}
+
+	// TODO: Solving for χ using the Laguerre algorithm, which is supposedly better
+	// {
+	// 	double n = 5;
+	// 	double χᵢ = 0.0;
+	// 	double αχᵢ² = χᵢ*χᵢ / a;
+	// 	double t = .0, t₀ = .0;
+	// }
+
+	if (fabs(e - 1) < 1e-6) { // parabolic
+		orbit->true_anomaly = 2 * atan(χ/sqrtp);
+	} else if (e < 1) {
+		double E = χ/sqrt(a);
+		orbit->true_anomaly = 2 * atan(tan(E/2)/sqrt((1-e)/(1+e)));
+	} else if (e > 1) {
+		double F = χ/sqrt(-a);
+		orbit->true_anomaly = 2 * atan(tanh(F/2)/sqrt((1-e)/(1+e)));
 	}
 }
 
@@ -647,38 +689,39 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 	// But for some reason we get the semimajor axis equation from here instead, which includes the angular momentum (that we need):
 	//   /time-since-periapsis-and-keplers-equation/universal-variables.html#orbit-independent-solution-the-universal-anomaly
 
+	// TODO: rewrite this to make more sense.
 	// Here's the semimajor axis equation:
-	// 
+	//
 	//             h²     1
 	//        a = --- ----------.
 	//             μ    1 - e²
-	// 
+	//
 	// We could extract just h², but we actually need the h²/μ term (the semi-latus rectum), so:
 	//
-	//             h² 
+	//             h²
 	//        p = --- = a(1 - e²).
-	//             μ  
+	//             μ
 	//
 	// First, we get the position in the perifocal frame of reference (relative to the orbit basically):
 	//
 	//             ⎛ cos ν ⎞       p         ⎛ cos ν ⎞   a(1 - e²)
 	//        rₚ = ⎜ sin ν ⎟ ------------- = ⎜ sin ν ⎟ -------------.
-	//             ⎝   0   ⎠  1 + e cos ν    ⎝   0   ⎠  1 + e cos ν 
+	//             ⎝   0   ⎠  1 + e cos ν    ⎝   0   ⎠  1 + e cos ν
 	//
 	// Then we transform the perifocal frame to the "global" frame, rotating along each axis with these matrices:
 	//
 	//             ⎛ cos -ω  -sin -ω  0 ⎞
 	//        R₁ = ⎜ sin -ω   cos -ω  0 ⎟,
 	//             ⎝   0        0     1 ⎠
-	//       
+	//
 	//             ⎛ 1    0        0    ⎞
 	//        R₂ = ⎜ 0  cos -i  -sin -i ⎟,
 	//             ⎝ 0  sin -i   cos -i ⎠
-	//       
+	//
 	//             ⎛ cos -Ω  -sin -Ω  0 ⎞
 	//        R₃ = ⎜ sin -Ω   cos -Ω  0 ⎟;
 	//             ⎝   0        0     1 ⎠
-	// 
+	//
 	// Now we can finally get the global position:
 	//
 	//        r = rₚR, where R = R₁R₂R₃.
@@ -751,7 +794,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 	} else {
 		update_camera_fly(game, delta_time);
 	}
-	
+
 	memcpy(game->data_own->last_key_states, pshine_get_key_states(game->renderer), sizeof(uint8_t) * PSHINE_KEY_COUNT_);
 
 	if (ImGui_Begin("Material", NULL, 0)) {
