@@ -134,21 +134,12 @@ typedef union {
 	struct { `B`[$Dim,0,$At,$Str] v`[$Dim,0,$At,$Str]s[`[$Dim,1,$At,$Str]]; };
 } `T;
 """.strip()),
-	({"mS"}, "{base} square matrix operations", R"""
-MATH_FN_ void set`$iden(`T *m) {
-	memset(m->vs, 0, sizeof(m->vs));
-	`[$Dim,0,$At,m->vs[{0}\][{0}\] = 1.0,$UpTo,$SeqS];
-}
-// NB: 'res' cannot equal 'm1' or 'm2'.
-// TODO: Inplace matrix multiplication.
-MATH_FN_ void `$mul(`T *res, const `T *m1, const `T *m2) {
-	for (size_t i = 0; i < `[$Dim,0,$At,$Str]; ++i) {
-		for (size_t j = 0; j < `[$Dim,0,$At,$Str]; ++j) {
-			res->vs[j][i] = 0;
-			for (size_t k = 0; k < `[$Dim,0,$At,$Str]; ++k)
-				res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
-		}
-	}
+	({"m2x2"}, "{base} 2x2 square matrix operations", R"""
+MATH_FN_ `B2 `$mulv(const `T *m, `B2 v) {
+	return `B2xy(
+		m->vs[0][0] * v.x + m->vs[1][0] * v.y,
+		m->vs[0][1] * v.x + m->vs[1][1] * v.y
+	);
 }
 """),
 	({"m3x3"}, "{base} 3x3 square matrix operations", R"""
@@ -168,6 +159,24 @@ MATH_FN_ `B4 `$mulv(const `T *m, `B4 v) {
 		m->vs[0][2] * v.x + m->vs[1][2] * v.y + m->vs[2][2] * v.z + m->vs[3][2] * v.w,
 		m->vs[0][3] * v.x + m->vs[1][3] * v.y + m->vs[2][3] * v.z + m->vs[3][3] * v.w
 	);
+}
+"""),
+	({"mS"}, "{base} square matrix operations", R"""
+MATH_FN_ void set`$iden(`T *m) {
+	memset(m->vs, 0, sizeof(m->vs));
+	`[$Dim,0,$At,m->vs[{0}\][{0}\] = 1.0,$UpTo,$SeqS];
+}
+MATH_FN_ void `$mul(`T *m1, const `T *m2) {
+	for (size_t i = 0; i < `[$Dim,0,$At,$Str]; ++i) {
+		m1->v`[$Dim,0,$At,$Str]s[i] = `$mulv(m2, m1->v`[$Dim,0,$At,$Str]s[i]);
+	}
+	//for (size_t i = 0; i < `[$Dim,0,$At,$Str]; ++i) {
+	//	for (size_t j = 0; j < `[$Dim,0,$At,$Str]; ++j) {
+	//		res->vs[j][i] = 0;
+	//		for (size_t k = 0; k < `[$Dim,0,$At,$Str]; ++k)
+	//			res->vs[j][i] += m1->vs[k][i] * m2->vs[j][k];
+	//	}
+	//}
 }
 """),
 	# TODO: matrix multiplication

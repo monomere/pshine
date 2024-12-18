@@ -2305,6 +2305,21 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	free(r->key_states);
 }
 
+
+MATH_FN_ void setdouble4x4trans(double4x4 *m, double3 s) {
+	setdouble4x4iden(m);
+	m->v4s[3] = double4xyz3w(s, 1);
+}
+
+MATH_FN_ void setdouble4x4scale(double4x4 *m, double3 s) {
+	memset(m->vs, 0, sizeof m->vs);
+	m->vs[0][0] = s.x;
+	m->vs[1][1] = s.y;
+	m->vs[1][1] = s.y;
+	m->vs[2][2] = s.z;
+	m->vs[3][3] = 1.0;
+}
+
 static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t image_index) {
 	struct per_frame_data *f = &r->frames[current_frame];
 
@@ -2360,47 +2375,59 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			struct static_mesh_uniform_data new_data = {};
 			double4x4 model_mat = {};
 			setdouble4x4iden(&model_mat);
+			double4x4 model_rot_mat = {0};
 
 			{
 				double a = p->as_body.rotation, c = cosf(a), s = sinf(a), C = 1 - c;
 				double3 axis = double3norm(double3vs(p->as_body.rotation_axis.values));
 
-				double4x4 r = {0};
-
-				r.vs[0][0] = c + C * axis.x * axis.x;
-				r.vs[0][1] = C * axis.x * axis.y + s * axis.z;
-				r.vs[0][2] = C * axis.x * axis.z - s * axis.y;
-				r.vs[0][3] = 0.0f;
-				r.vs[1][0] = C * axis.y * axis.x - s * axis.z;
-				r.vs[1][1] = c + C * axis.y * axis.y;
-				r.vs[1][2] = C * axis.y * axis.z + s * axis.x;
-				r.vs[1][3] = 0.0f;
-				r.vs[2][0] = C * axis.z * axis.x + s * axis.y;
-				r.vs[2][1] = C * axis.z * axis.y - s * axis.x;
-				r.vs[2][2] = c + C * axis.z * axis.z;
-				r.vs[2][3] = 0.0f;
-				r.vs[3][0] = 0.0f;
-				r.vs[3][1] = 0.0f;
-				r.vs[3][2] = 0.0f;
-				r.vs[3][3] = 1.0f;
-
-				// PSHINE_DEBUG("⎡ %f %f %f %f ⎤", r.vs[0][0], r.vs[0][1], r.vs[0][2], r.vs[0][3]);
-				// PSHINE_DEBUG("⎢ %f %f %f %f ⎥", r.vs[1][0], r.vs[1][1], r.vs[1][2], r.vs[1][3]);
-				// PSHINE_DEBUG("⎢ %f %f %f %f ⎥", r.vs[2][0], r.vs[2][1], r.vs[2][2], r.vs[2][3]);
-				// PSHINE_DEBUG("⎣ %f %f %f %f ⎦", r.vs[3][0], r.vs[3][1], r.vs[3][2], r.vs[3][3]);
-
-				double4x4 model_mat_tmp = model_mat;
-				double4x4mul(&model_mat, &model_mat_tmp, &r);
+				model_rot_mat.vs[0][0] = c + C * axis.x * axis.x;
+				model_rot_mat.vs[0][1] = C * axis.x * axis.y + s * axis.z;
+				model_rot_mat.vs[0][2] = C * axis.x * axis.z - s * axis.y;
+				model_rot_mat.vs[0][3] = 0.0f;
+				model_rot_mat.vs[1][0] = C * axis.y * axis.x - s * axis.z;
+				model_rot_mat.vs[1][1] = c + C * axis.y * axis.y;
+				model_rot_mat.vs[1][2] = C * axis.y * axis.z + s * axis.x;
+				model_rot_mat.vs[1][3] = 0.0f;
+				model_rot_mat.vs[2][0] = C * axis.z * axis.x + s * axis.y;
+				model_rot_mat.vs[2][1] = C * axis.z * axis.y - s * axis.x;
+				model_rot_mat.vs[2][2] = c + C * axis.z * axis.z;
+				model_rot_mat.vs[2][3] = 0.0f;
+				model_rot_mat.vs[3][0] = 0.0f;
+				model_rot_mat.vs[3][1] = 0.0f;
+				model_rot_mat.vs[3][2] = 0.0f;
+				model_rot_mat.vs[3][3] = 1.0f;
+				// double4x4mul(&model_mat, &r);
 			}
 
-			setdouble4x4iden(&model_mat);
+			// double3 pos = SCSd3_WCSp3(p->as_body.position);
+			// PSHINE_DEBUG("%.2f %.2f %.2f",
+			// 	pos.x,
+			// 	pos.y,
+			// 	pos.z);
+			// setdouble4x4scale
 
-			double4x4scale(&model_mat, double3v(SCSd_WCSd(p->as_body.radius)));
-			double4x4trans(&model_mat, (SCSd3_WCSp3(p->as_body.position)));
+			double4x4 model_scale_mat;
+			setdouble4x4scale(&model_scale_mat, double3v(SCSd_WCSd(p->as_body.radius)));
+
+			double4x4 model_trans_mat;
+			setdouble4x4trans(&model_trans_mat, SCSd3_WCSp3(p->as_body.position));
+
+			double4x4mul(&model_mat, &model_rot_mat);
+			double4x4mul(&model_mat, &model_scale_mat);
+			double4x4mul(&model_mat, &model_trans_mat);
+
+			// double4x4trans(&model_mat, (SCSd3_WCSp3(p->as_body.position)));
+
+			// PSHINE_DEBUG("⎡ %f %f %f %f ⎤", model_mat.vs[0][0], model_mat.vs[1][0], model_mat.vs[2][0], model_mat.vs[3][0]);
+			// PSHINE_DEBUG("⎢ %f %f %f %f ⎥", model_mat.vs[0][1], model_mat.vs[1][1], model_mat.vs[2][1], model_mat.vs[3][1]);
+			// PSHINE_DEBUG("⎢ %f %f %f %f ⎥", model_mat.vs[0][2], model_mat.vs[1][2], model_mat.vs[2][2], model_mat.vs[3][2]);
+			// PSHINE_DEBUG("⎣ %f %f %f %f ⎦", model_mat.vs[0][3], model_mat.vs[1][3], model_mat.vs[2][3], model_mat.vs[3][3]);
+
 			new_data.proj = float4x4_double4x4(proj_mat);
 
-			double4x4 model_view_mat = {0};
-			double4x4mul(&model_view_mat, &view_mat, &model_mat);
+			double4x4 model_view_mat = model_mat;
+			double4x4mul(&model_view_mat, &view_mat);
 			new_data.model_view = float4x4_double4x4(model_view_mat);
 			new_data.model = float4x4_double4x4(model_mat);
 

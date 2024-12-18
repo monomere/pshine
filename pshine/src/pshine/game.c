@@ -380,7 +380,7 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	orbit->eccentricity = 0.2;
 	orbit->inclination = 0.0;
 	orbit->longitude = 0.0;
-	orbit->semimajor = 100'000'000;
+	orbit->semimajor = 100'000'000.0;
 	orbit->true_anomaly = 0.0;
 }
 
@@ -511,7 +511,7 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 		-cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
 	), game->data_own->camera_dist);
 
-	// cam_pos = double3add(cam_pos, double3vs(game->celestial_bodies_own[0]->position.values));
+	cam_pos = double3add(cam_pos, double3vs(game->celestial_bodies_own[0]->position.values));
 
 	double3 cam_forward = double3norm(double3sub(double3vs(game->celestial_bodies_own[0]->position.values), cam_pos));
 	// double3 cam_forward = double3xyz(-1.0f, 0.0f, 0.0f);
@@ -615,19 +615,13 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	// we need, and change our orbit.
 
 	double Δt = delta_time; // Change in time.
-	double μ = 0.1; // The gravitational parameter.
+	double μ = 1'000'000'000; // The gravitational parameter.
 	double a = orbit->semimajor; // The semimajor axis.
 	double e = orbit->eccentricity; // The eccentricity.
 
 	double p = a * (1 - e*e);
 
-	// double chi = 0.0;
-	// if (fabs(e - 1.0) < 1e-6) { // parabola
-	// 	chi = sqrt(a * (1 - e*e)) * tan(orbit->true_anomaly)
-	// }
-
 	double u = NAN; // Mean motion.
-
 	if (fabs(e - 1.0) < 1e-6) { // parabolic
 		u = 2.0 * sqrt(μ / (p*p*p));
 	} else if (e < 1.0) { // elliptic
@@ -639,9 +633,8 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	}
 
 	double T = 2 * π / u; // Orbital period.
+	(void)T;
 
-
-	// a(1 - e²) χ² C(χ²/a) + e χ³ S(χ²/a) + a(1 - e)χ - t√μ = 0
 	// Solve for χ using Newton's Method:
 	static double t = 0.0;
 	t += Δt; // TODO: figure out t from the orbital params.
@@ -760,9 +753,9 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 	R3.v3s[1] = double3xyz(sin(-Ω),  cos(-Ω), 0.0);
 	R3.v3s[2] = double3xyz(    0.0,      0.0, 1.0);
 
-	double3x3 R12, R;
-	double3x3mul(&R12, &R1, &R2);
-	double3x3mul(&R, &R12, &R3);
+	double3x3 R = R1;
+	double3x3mul(&R, &R2);
+	double3x3mul(&R, &R3);
 
 	double3 r = double3x3mulv(&R, rₚ);
 
