@@ -150,6 +150,7 @@ struct pshine_game {
 	pshine_vector3d sun_direction_;
 	float material_smoothness_;
 	float time_scale;
+	double time;
 };
 
 void pshine_init_game(struct pshine_game *game);

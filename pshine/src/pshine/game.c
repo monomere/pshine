@@ -380,7 +380,7 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	orbit->eccentricity = 0.2;
 	orbit->inclination = 0.0;
 	orbit->longitude = 0.0;
-	orbit->semimajor = 100'000'000.0;
+	orbit->semimajor = 100'000.0;
 	orbit->true_anomaly = 0.0;
 }
 
@@ -633,31 +633,30 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	}
 
 	double T = 2 * π / u; // Orbital period.
-	(void)T;
 
 	// Solve for χ using Newton's Method:
-	static double t = 0.0;
-	t += Δt; // TODO: figure out t from the orbital params.
-	double tsqrtμ = t * sqrt(μ);
+	game->time += Δt; // TODO: figure out t from the orbital params.
+	game->time = fmod(game->time, T);
+	double tsqrtμ = game->time * sqrt(μ);
 	double χ = tsqrtμ/fabs(a);
 	double sqrtp = sqrt(a*(1.0 - e*e));
 	{
-		for (int i = 0; i < 10; ++i) {
+		for (int i = 0; i < 50; ++i) {
 			double αχ2 = χ*χ/a;
 			double sqrtαχ2 = χ*sqrt(fabs(a));
 			double Cαχ2 = NAN;
-			{ // Stumpff's C(z)
+			{ // Stumpff's C(αχ²)
 				if (fabs(αχ2) < 1e-6) Cαχ2 = 0.5;
 				else if (αχ2 > 0.0) Cαχ2 = (1 - cos(sqrtαχ2)) / αχ2;
 				else Cαχ2 = (cosh(sqrtαχ2) - 1) / -αχ2;
 			}
 			double Sαχ2 = NAN;
-			{ // Stumpff's S(z)
+			{ // Stumpff's S(αχ²)
 				if (fabs(αχ2) < 1e-6) Sαχ2 = 1./6.;
-				else if (αχ2 > 0.0) Sαχ2 = (sqrtαχ2 - cos(sqrtαχ2)) / pow(sqrtαχ2, 3.0);
+				else if (αχ2 > 0.0) Sαχ2 = (sqrtαχ2 - sin(sqrtαχ2)) / pow(sqrtαχ2, 3.0);
 				else Sαχ2 = (sinh(sqrtαχ2) - sqrtαχ2) / pow(sqrtαχ2, 3.0);
 			}
-	 		double f = sqrtp * χ * Cαχ2 + e * χ*χ*χ * Sαχ2 + a*(1-e) * χ - tsqrtμ;
+	 		double f = sqrtp * χ * χ * Cαχ2 + e * χ*χ*χ * Sαχ2 + a*(1-e) * χ - tsqrtμ;
 	 		double dfdχ = sqrtp * χ * (1.0 - αχ2*Sαχ2) + e * χ*χ * Cαχ2 + a*(1-e);
 	 		χ -= f/dfdχ;
  		}
@@ -801,6 +800,25 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		ImGui_Text("True anomaly: %.5f", game->celestial_bodies_own[0]->orbit.true_anomaly);
 		double3 pos = (SCSd3_WCSp3(game->celestial_bodies_own[0]->position));
 		ImGui_Text("Position (SCS): %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
+		double μ = 1'000'000'000; // The gravitational parameter.
+		double a = game->celestial_bodies_own[0]->orbit.semimajor; // The semimajor axis.
+		double e = game->celestial_bodies_own[0]->orbit.eccentricity; // The eccentricity.
+
+		double p = a * (1 - e*e);
+
+		double u = NAN; // Mean motion.
+		if (fabs(e - 1.0) < 1e-6) { // parabolic
+			u = 2.0 * sqrt(μ / (p*p*p));
+		} else if (e < 1.0) { // elliptic
+			u = sqrt(μ / (a*a*a));
+		} else if (e < 1.0) { // hyperbolic
+			u = sqrt(μ / -(a*a*a));
+		} else {
+			unreachable();
+		}
+
+		double T = 2 * π / u; // Orbital period.
+		ImGui_Text("Period: %.2f", T);
 	}
 	ImGui_End();
 
@@ -840,6 +858,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 			*(double3*)game->sun_direction_.values = double3_float3(p);
 		}
 		ImGui_SliderFloat("Time scale", &game->time_scale, 0.0, 1000.0);
+		ImGui_Text("Time: %.8f", game->time);
 	}
 	ImGui_End();
 
