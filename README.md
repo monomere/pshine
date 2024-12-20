@@ -8,6 +8,7 @@ Atmosphere and meshing playground. WIP.
 
 - [x] Actual atmosphere rendering.
 - [x] Move the backend to vulkan (shouldn't be super hard).
+- [ ] Orbits (almost done now)
 - [ ] Terrain generation, textures.
 - [ ] Mesh LOD.
 
@@ -162,7 +163,7 @@ Key|Action
 - [ ] Rewrite the math library generation, its so ugly.
 - [ ] Stars
 - [ ] Use near-origin coordinates for the "player".
-- [ ] Velocty reference-frame.
+- [ ] Velocity reference-frame.
 
 ### Useful stuff
 
@@ -185,3 +186,5 @@ This isn't the full set of resources used unfortunately.
 - [Followup: Normal Mapping Without Precomputed Tangents](http://www.thetenthplanet.de/archives/1180)
 - https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader
 - Textures: https://planetpixelemporium.com/earth8081.html
+
+- Amazing resource for orbital mechanics: [orbital-mechanics.space](https://orbital-mechanics.space/)
