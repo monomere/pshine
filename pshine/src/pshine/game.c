@@ -4,6 +4,12 @@
 #include <pshine/util.h>
 #include <cimgui/cimgui.h>
 
+// Note: the math in this file is best viewed
+//       with the Julia Mono font, or with UnifontEx.
+//       Other fonts just don't support the unicode used,
+//       or dont have it as a monospaced character, so
+//       the alignment becomes wonky :(
+
 enum si_prefix {
 	SI_ONE,
 	SI_KILO,
@@ -380,7 +386,7 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	orbit->eccentricity = 0.2;
 	orbit->inclination = 0.0;
 	orbit->longitude = 0.0;
-	orbit->semimajor = 100'000.0;
+	orbit->semimajor = 100'000'0;
 	orbit->true_anomaly = 0.0;
 }
 
@@ -532,12 +538,12 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//
 	// The relation of the universal anomaly χ to the other anomalies:
 	//
-	//            ⎧  _________
-	//            ⎪ √a(1 - e²) (tanν / 2)   for parabolas, e > 1
+	//            ⎧ 
+	//            ⎪ [TODO(tanν / 2)]        for parabolas, e = 1
 	//            ⎪  ___
 	//        χ = ⎨ √ a   E                 for ellipses, e < 1
 	//            ⎪  ____
-	//            ⎪ √ -a  F                 for hyperbolas, e = 1
+	//            ⎪ √ -a  F                 for hyperbolas, e > 1
 	//            ⎩ 
 	//
 	// Let's define the Stumpff functions, useful in the Kepler equation:
@@ -566,38 +572,26 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//              ⎪ ─,                if z = 0.
 	//              ⎩ 6
 	//
-	// We can write the Kepler equation in terms of the universal anomaly (χ):
+	// With some complicated maths, we can write the Kepler equation in terms of
+	// the universal anomaly (χ):
 	//
-	//         r₀v₀
+	//         r₀vᵣ₀
 	//         ────╴ χ² C(αχ²) + (1 - αr₀)χ³ S(αχ²) + r₀χ = (t - t₀)√μ
 	//          √μ
 	//
-	// Where   α = a⁻¹, and (r₀, v₀) is the state vector at t₀,
+	// Where   α = a⁻¹, t₀ is the initial time, r₀ is the initial position,
+	//         vᵣ₀ is the initial projection of the velocity on the position vector,
 	//         C(x) and S(x) are the Stumpff functions, defined above.
 	//
-	// We don't have the values for r₀ and v₀, but we can derive them from the other
-	// orbital parameters. Here's the semimajor axis equation:
+	// We don't have the values for r₀ and v₀, but we know that at the apses
+	// v ⟂ r => vᵣ₀ = 0. At the periapsis, r₀ is the distance from the vertex
+	// to the focus, or semimajor axis minus the focal distance:
 	//
-	//             h²    1
-	//        a = ――― ――――――――.
-	//             μ   1 - e²
+	//        r₀ = a - ea = a(1 - e)
 	//
-	// We could extract just h², but we actually need the h²/μ term (the semi-latus rectum), so:
+	// Then, using t₀ = 0 at the periapsis, the equation becomes:
 	//
-	//             h²
-	//        p = ――― = a(1 - e²).
-	//             μ
-	//
-	// We can substitute r₀ and v₀ in terms of the other keplerian parameters
-	// (we don't actually need v₀ even, as r₀v₀/√μ is √p):
-	//
-	//                   p                     a(1 - e²)
-	//         r₀ = ――――――――――― = [ν₀ = 0] = ―――――――――――― = a(1 - e)
-	//              1 + e cosν₀                  1 + e
-	//
-	// Then, assuming t₀ = 0, the Kepler equation becomes:
-	//          _________
-	//         √a(1 - e²) χ² C(χ²/a) + e χ³ S(χ²/a) + a(1 - e)χ - t√μ = 0 = f(χ)
+	//        e χ³ S(χ²/a) + a(1 - e)χ - t√μ = 0 = f(χ)
 	//
 	// Unfrogtunately, this equation cannot be solved algebraically,
 	// (since it is the Kepler equation [M = E - esinE], but reworded a bit),
@@ -607,15 +601,15 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//
 	// For these algorithms, we need the derivative of our function:
 	//
-	//         df(χ)    _________
-	//        ―――――― = √a(1 - e²) χ (1 - (χ²/a)S(χ²/a)) + e χ² C(χ²/a) + a(1 - e)
+	//         df(χ)
+	//        ──────╴ = e χ² C(χ²/a) + a(1 - e)
 	//          dχ
 	//
 	// Once we find a good enough χ, we can figure out the anomalies that
 	// we need, and change our orbit.
 
 	double Δt = delta_time; // Change in time.
-	double μ = 1'000'000'000; // The gravitational parameter.
+	double μ = 1'000'000'000'000; // The gravitational parameter.
 	double a = orbit->semimajor; // The semimajor axis.
 	double e = orbit->eccentricity; // The eccentricity.
 
@@ -633,10 +627,11 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	}
 
 	double T = 2 * π / u; // Orbital period.
+	(void)T;
 
 	// Solve for χ using Newton's Method:
 	game->time += Δt; // TODO: figure out t from the orbital params.
-	game->time = fmod(game->time, T);
+	// game->time = fmod(game->time, T);
 	double tsqrtμ = game->time * sqrt(μ);
 	double χ = tsqrtμ/fabs(a);
 	double sqrtp = sqrt(a*(1.0 - e*e));
@@ -656,8 +651,9 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 				else if (αχ2 > 0.0) Sαχ2 = (sqrtαχ2 - sin(sqrtαχ2)) / pow(sqrtαχ2, 3.0);
 				else Sαχ2 = (sinh(sqrtαχ2) - sqrtαχ2) / pow(sqrtαχ2, 3.0);
 			}
-	 		double f = sqrtp * χ * χ * Cαχ2 + e * χ*χ*χ * Sαχ2 + a*(1-e) * χ - tsqrtμ;
-	 		double dfdχ = sqrtp * χ * (1.0 - αχ2*Sαχ2) + e * χ*χ * Cαχ2 + a*(1-e);
+	 		double f = e * χ*χ*χ * Sαχ2 + a*(1-e) * χ - tsqrtμ;
+			if (fabs(f) < 1e-3) break;
+	 		double dfdχ = e * χ*χ * Cαχ2 + a*(1-e);
 	 		χ -= f/dfdχ;
  		}
 	}
@@ -676,10 +672,10 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 		orbit->true_anomaly = 2 * atan(χ/sqrtp);
 	} else if (e < 1) {
 		double E = χ/sqrt(a);
-		orbit->true_anomaly = 2 * atan(tan(E/2)/sqrt((1-e)/(1+e)));
+		orbit->true_anomaly = 2 * atan(tan(E/2)*sqrt((1+e)/(1-e)));
 	} else if (e > 1) {
 		double F = χ/sqrt(-a);
-		orbit->true_anomaly = 2 * atan(tanh(F/2)/sqrt((1-e)/(1+e)));
+		orbit->true_anomaly = 2 * atan(tanh(F/2)*sqrt((e+1)/(e-1)));
 	}
 }
 
@@ -698,7 +694,7 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 	//        a = --- ----------.
 	//             μ    1 - e²
 	//
-	// We could extract just h², but we actually need the h²/μ term (the semi-latus rectum), so:
+	// We could extract just h², but we actually need the h²/μ term, so:
 	//
 	//             h²
 	//        p = --- = a(1 - e²).
@@ -707,8 +703,8 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 	// First, we get the position in the perifocal frame of reference (relative to the orbit basically):
 	//
 	//             ⎛ cos ν ⎞       p         ⎛ cos ν ⎞   a(1 - e²)
-	//        rₚ = ⎜ sin ν ⎟ ------------- = ⎜ sin ν ⎟ -------------.
-	//             ⎝   0   ⎠  1 + e cos ν    ⎝   0   ⎠  1 + e cos ν
+	//        rₚ = ⎜   0   ⎟ ------------- = ⎜   0   ⎟ -------------.
+	//             ⎝ sin ν ⎠  1 + e cos ν    ⎝ sin ν ⎠  1 + e cos ν
 	//
 	// Then we transform the perifocal frame to the "global" frame, rotating along each axis with these matrices:
 	//
@@ -737,7 +733,7 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 	double i = orbit->inclination;
 	double ω = orbit->argument;
 
-	double3 rₚ = double3mul(double3xyz(cos(ν), sin(ν), 0.0), a * (1 - e*e) / (1 + e * cos(ν)));
+	double3 rₚ = double3mul(double3xyz(cos(ν), 0.0, sin(ν)), 1000 * a * (1 - e*e) / (1 + e * cos(ν)));
 
 	double3x3 R1;
 	R1.v3s[0] = double3xyz(cos(-ω), -sin(-ω), 0.0);

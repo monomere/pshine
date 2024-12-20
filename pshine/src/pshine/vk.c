@@ -2462,11 +2462,11 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 		struct atmo_uniform_data new_data = {
 			.planet = float4xyz3w(
-				float3_double3(scs_body_pos_scaled),
+				float3v(0.0f),
 				scs_body_r_scaled
 			),
 			.radius = 1.0f,
-			.camera = float4xyz3w(float3_double3(scs_cam_scaled), 0.0f),
+			.camera = float4xyz3w(float3_double3(double3sub(scs_cam_scaled, scs_body_pos_scaled)), 0.0f),
 			.coefs_ray = float4xyz3w(
 				float3vs(p->atmosphere.rayleigh_coefs),
 				p->atmosphere.rayleigh_falloff
