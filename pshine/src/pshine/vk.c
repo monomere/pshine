@@ -2353,12 +2353,13 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		float3 cam_z = float3_double3(double3norm(double3vs(r->game->camera_forward.values)));
 		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
 		cam_y = float3norm(float3cross(cam_z, cam_x));
+		double3 cam_pos = SCSd3_WCSp3(r->game->camera_position);
+		double3 sun_pos = SCSd3_WCSp3(r->game->sun_position);
 		struct global_uniform_data new_data = {
-			.camera = float4xyz3w(float3_double3(SCSd3_WCSp3(r->game->camera_position)), persp_info.znear),
+			.camera = float4xyz3w(float3_double3(cam_pos), persp_info.znear),
 			.camera_right = float4xyz3w(cam_x, persp_info.plane.x),
 			.camera_up = float4xyz3w(cam_y, persp_info.plane.y),
-			.sun = float4xyz3w(float3_double3(
-				double3norm(double3vs(r->game->sun_direction_.values))
+			.sun = float4xyz3w(float3_double3(double3norm(double3sub(sun_pos, cam_pos))
 			), 1.0f),
 		};
 		char *data;

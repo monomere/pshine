@@ -5,17 +5,18 @@
 
 struct pshine_orbit_info {
 	float
-		inclination, // inclination (i)
-		longitude, // longitude of the ascending node (Ω)
-		argument, // argument of periapsis (ω)
-		eccentricity, // eccentricity (e)
-		semimajor, // semimajor axis (a)
-		true_anomaly; // true anomaly (ν)
+		inclination, // inclination, rad (i)
+		longitude, // longitude of the ascending node, rad (Ω)
+		argument, // argument of periapsis, rad (ω)
+		eccentricity, // eccentricity, 1 (e)
+		semimajor, // semimajor axis, Mm (megameters) (a)
+		true_anomaly; // true anomaly, rad (ν)
 };
 
 enum pshine_celestial_body_type {
 	PSHINE_CELESTIAL_BODY_UNINITIALIZED,
 	PSHINE_CELESTIAL_BODY_PLANET,
+	PSHINE_CELESTIAL_BODY_STAR,
 };
 
 typedef union pshine_point3d_ {
@@ -51,17 +52,44 @@ struct pshine_celestial_body {
 	enum pshine_celestial_body_type type;
 	struct pshine_celestial_body *parent_ref;
 	struct pshine_orbit_info orbit;
-	/** In rad/h */
-	double rotation_speed;
+
+	/// Average radius, in m.
+	/// Some values:
+	/// - Earth: `6'371'000.0`
+	/// - Sun: `695'700'000.0`
 	double radius;
+
+	/// Planet-ish
 	bool is_static;
-	pshine_vector3d rotation_axis;
+
+	/// Position relative to the origin (usually the Sun)
 	pshine_point3d_world position;
+
+	/// In rad/h
+	double rotation_speed;
+
+	/// Axis of rotation (should be normalized)
+	pshine_vector3d rotation_axis;
+
+	/// Current rotation around `rotation_axis`, in radians.
 	double rotation;
+
+	/// Mass of the body, in Earth masses (5.9742×10²⁴ kg)
+	/// Some values:
+	/// - Sun: `332950.0`
+	/// - Jupiter: `317.8`
+	/// - Earth: `1.0` (crazy)
 	double mass;
+
+	/// The standard gravitational parameter, in Mm³s⁻² (Mm = megameter).
+	/// Some values:
+	/// - Sun: `132.71244`
+	/// - Earth: `3.98600436e-4`
+	double gravitational_parameter;
 };
 
 struct pshine_atmosphere_info {
+	/// In m
 	double height;
 	float rayleigh_coefs[3];
 	float rayleigh_falloff;
@@ -80,6 +108,7 @@ struct pshine_surface_info {
 };
 
 struct pshine_planet_graphics_data;
+struct pshine_star_graphics_data;
 
 struct pshine_planet {
 	struct pshine_celestial_body as_body;
@@ -87,6 +116,12 @@ struct pshine_planet {
 	struct pshine_surface_info surface;
 	struct pshine_atmosphere_info atmosphere;
 	struct pshine_planet_graphics_data *graphics_data;
+};
+
+struct pshine_star {
+	struct pshine_celestial_body as_body;
+	struct pshine_star_graphics_data *graphics_data;
+
 };
 
 typedef struct { int32_t x; } pshine_snorm32;
@@ -147,7 +182,7 @@ struct pshine_game {
 	pshine_vector3d camera_forward;
 	struct pshine_game_data *data_own;
 	float atmo_blend_factor;
-	pshine_vector3d sun_direction_;
+	pshine_vector3d sun_position;
 	float material_smoothness_;
 	float time_scale;
 	double time;

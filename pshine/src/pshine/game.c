@@ -383,10 +383,10 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 
 	struct pshine_orbit_info *orbit = &planet->as_body.orbit;
 	orbit->argument = 0.0;
-	orbit->eccentricity = 0.2;
+	orbit->eccentricity = 0.0167086;
 	orbit->inclination = 0.0;
 	orbit->longitude = 0.0;
-	orbit->semimajor = 100'000'0;
+	orbit->semimajor = 1.0000010178;
 	orbit->true_anomaly = 0.0;
 }
 
@@ -424,9 +424,8 @@ void pshine_init_game(struct pshine_game *game) {
 	game->atmo_blend_factor = 0.0;
 	game->data_own->movement_mode = 1;
 	game->data_own->move_speed = 500'000.0;
-	double3 sun_dir = double3norm(double3xyz(0, 0, -1.0));
 	game->material_smoothness_ = 0.02;
-	*(double3*)game->sun_direction_.values = sun_dir;
+	*(double3*)game->sun_position.values = double3xyz(0, 0, 0);
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
@@ -638,7 +637,7 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	{
 		for (int i = 0; i < 50; ++i) {
 			double αχ2 = χ*χ/a;
-			double sqrtαχ2 = χ*sqrt(fabs(a));
+			double sqrtαχ2 = sqrt(fabs(αχ2));
 			double Cαχ2 = NAN;
 			{ // Stumpff's C(αχ²)
 				if (fabs(αχ2) < 1e-6) Cαχ2 = 0.5;
@@ -849,10 +848,10 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 	ImGui_End();
 
 	if (ImGui_Begin("System", NULL, 0)) {
-		float3 p = float3_double3(double3vs(game->sun_direction_.values));
-		if (ImGui_SliderFloat3("Sun", p.vs, -1.0f, 1.0)) {
-			*(double3*)game->sun_direction_.values = double3_float3(p);
-		}
+		// float3 p = float3_double3(double3vs(game->sun_direction_.values));
+		// if (ImGui_SliderFloat3("Sun", p.vs, -1.0f, 1.0)) {
+		// 	*(double3*)game->sun_direction_.values = double3_float3(p);
+		// }
 		ImGui_SliderFloat("Time scale", &game->time_scale, 0.0, 1000.0);
 		ImGui_Text("Time: %.8f", game->time);
 	}
