@@ -53,7 +53,7 @@ float compute_optical_depth_slow(vec3 ray_origin, vec3 ray_dir, float ray_len, f
 }
 
 vec4 compute_atmo_params_baked(vec3 ray_origin) {
-	vec3 ray_dir = global.sun.xyz;
+	vec3 ray_dir = atmo.sun.xyz;
 	vec3 local_ray_origin = ray_origin - atmo.planet.xyz;
 	float h = max(length(local_ray_origin) - atmo.planet.w, 0.0) / (atmo.radius - atmo.planet.w);
 	vec2 d = exp(-h * vec2(atmo.coefs_ray.w, atmo.coefs_mie.w)) * (1.0 - h);
@@ -62,7 +62,7 @@ vec4 compute_atmo_params_baked(vec3 ray_origin) {
 }
 
 vec4 compute_atmo_params_slow(vec3 ray_origin) {
-	vec3 ray_dir = global.sun.xyz;
+	vec3 ray_dir = atmo.sun.xyz;
 	float ray_len = intersect_ray_sphere(atmo.planet.xyz, atmo.radius, ray_origin, ray_dir).y;
 	vec3 local_ray_origin = ray_origin - atmo.planet.xyz;
 	float h = max(length(local_ray_origin) - atmo.planet.w, 0.0) / (atmo.radius - atmo.planet.w);

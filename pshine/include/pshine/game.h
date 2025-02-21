@@ -48,10 +48,18 @@ typedef union pshine_point3d_world_ {
 	double values[3];
 } pshine_point3d_world;
 
+struct pshine_surface_info {
+	const char *albedo_texture_path;
+	const char *bump_texture_path;
+	const char *lights_texture_path;
+	const char *spec_texture_path;
+};
+
 struct pshine_celestial_body {
 	enum pshine_celestial_body_type type;
 	struct pshine_celestial_body *parent_ref;
 	struct pshine_orbit_info orbit;
+	struct pshine_surface_info surface;
 
 	/// Average radius, in m.
 	/// Some values:
@@ -76,7 +84,7 @@ struct pshine_celestial_body {
 
 	/// Mass of the body, in Earth masses (5.9742×10²⁴ kg)
 	/// Some values:
-	/// - Sun: `332950.0`
+	/// - Sun: `332'950.0`
 	/// - Jupiter: `317.8`
 	/// - Earth: `1.0` (crazy)
 	double mass;
@@ -86,6 +94,12 @@ struct pshine_celestial_body {
 	/// - Sun: `132.71244`
 	/// - Earth: `3.98600436e-4`
 	double gravitational_parameter;
+
+	/// 0xBBGGRR
+	uint32_t gizmo_color;
+
+	/// e.g. "Sun", "Earth".
+	const char *name;
 };
 
 struct pshine_atmosphere_info {
@@ -100,20 +114,12 @@ struct pshine_atmosphere_info {
 	float intensity;
 };
 
-struct pshine_surface_info {
-	const char *albedo_texture_path;
-	const char *bump_texture_path;
-	const char *lights_texture_path;
-	const char *spec_texture_path;
-};
-
 struct pshine_planet_graphics_data;
 struct pshine_star_graphics_data;
 
 struct pshine_planet {
 	struct pshine_celestial_body as_body;
 	bool has_atmosphere;
-	struct pshine_surface_info surface;
 	struct pshine_atmosphere_info atmosphere;
 	struct pshine_planet_graphics_data *graphics_data;
 };
@@ -186,6 +192,8 @@ struct pshine_game {
 	float material_smoothness_;
 	float time_scale;
 	double time;
+	bool ui_dont_render_gizmos;
+	bool ui_dont_render_windows;
 };
 
 void pshine_init_game(struct pshine_game *game);

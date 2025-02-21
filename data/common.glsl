@@ -27,12 +27,14 @@ struct AtmosphereUniforms {
 	uint optical_depth_samples;
 	uint scatter_point_samples;
 	float intensity;
+	vec3 sun;
 };
 
 struct StaticMeshUniforms {
 	mat4 proj;
 	mat4 model_view;
 	mat4 model;
+	vec4 sun;
 };
 
 struct MaterialUniforms {

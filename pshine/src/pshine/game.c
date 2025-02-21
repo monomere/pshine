@@ -81,6 +81,27 @@ static double apply_si_prefix(enum si_prefix p, double value) {
 	return value;
 }
 
+#define TIME_FORMAT "%.0fy %.0fmo %.0fd %.0fh:%.0fm:%.3fs"
+struct time_format_params {
+	double years;
+	double months;
+	double days;
+	double hours;
+	double minutes;
+	double seconds;
+};
+#define TIME_FORMAT_ARGS(P) ((P).years), ((P).months), ((P).days), ((P).hours), ((P).minutes), ((P).seconds)
+static struct time_format_params compute_time_format_params(double secs) {
+	struct time_format_params r = {0};
+	r.seconds = secs;
+	r.minutes = trunc(fabs(r.seconds)) / 60.0; r.seconds -= r.minutes * 60.0;
+	r.hours = trunc(r.minutes / 60.0); r.minutes = fmod(r.minutes, 60.0);
+	r.days = trunc(r.hours / 24.0); r.hours = fmod(r.hours, 24.0);
+	r.months = trunc(r.days * 12.0 / 365.0); r.days = fmod(r.days, 365.0 / 12.0);
+	r.years = trunc(r.months / 12.0); r.months = fmod(r.months, 12.0);
+	return r;
+}
+
 typedef struct pshine_planet_vertex planet_vertex;
 
 // requires: |a| = |b|
@@ -351,11 +372,30 @@ void pshine_generate_planet_mesh(const struct pshine_planet *planet, struct pshi
 	generate_sphere_mesh(48, out_mesh);
 }
 
-static void init_planet(struct pshine_planet *planet, double radius, double3 center) {
+[[maybe_unused]]
+static void init_star(struct pshine_star *star) {
+	star->as_body.type = PSHINE_CELESTIAL_BODY_STAR;
+	star->as_body.is_static = true;
+	star->as_body.radius = 695'700'000.0;
+	star->as_body.parent_ref = NULL;
+	star->as_body.gravitational_parameter = 132.71244;
+	star->as_body.name = "Sol";
+	star->as_body.gizmo_color = 0x97e6fc;
+}
+
+static void init_planet(
+	struct pshine_planet *planet,
+	struct pshine_celestial_body *parent,
+	double radius,
+	double3 center
+) {
 	planet->as_body.type = PSHINE_CELESTIAL_BODY_PLANET;
 	planet->as_body.radius = radius;
-	planet->as_body.parent_ref = NULL;
+	planet->as_body.mass = 1.0;
+	planet->as_body.parent_ref = parent;
 	planet->as_body.rotation_speed = -0.026178;
+	planet->as_body.name = "Earth";
+	planet->as_body.gizmo_color = 0xf9bf2c;
 #define DEG2RAD π/180.0
 	*(double3*)planet->as_body.rotation_axis.values
 		= double3xyz(0.0, 1.0, 0.0)
@@ -376,18 +416,22 @@ static void init_planet(struct pshine_planet *planet, double radius, double3 cen
 	planet->atmosphere.mie_g_coef = -0.87f;
 	planet->atmosphere.mie_falloff = 18.0f;
 	planet->atmosphere.intensity = 20.0f;
-	planet->surface.albedo_texture_path = "data/textures/earth_5k.jpg";
-	planet->surface.lights_texture_path = "data/textures/earth_lights_2k.jpg";
-	planet->surface.bump_texture_path = "data/textures/earth_bump_2k.jpg";
-	planet->surface.spec_texture_path = "data/textures/earth_spec_2k.jpg";
+	planet->as_body.surface.albedo_texture_path = "data/textures/earth_5k.jpg";
+	planet->as_body.surface.lights_texture_path = "data/textures/earth_lights_2k.jpg";
+	planet->as_body.surface.bump_texture_path = "data/textures/earth_bump_2k.jpg";
+	planet->as_body.surface.spec_texture_path = "data/textures/earth_spec_2k.jpg";
 
 	struct pshine_orbit_info *orbit = &planet->as_body.orbit;
 	orbit->argument = 0.0;
 	orbit->eccentricity = 0.0167086;
 	orbit->inclination = 0.0;
 	orbit->longitude = 0.0;
-	orbit->semimajor = 1.0000010178;
+	orbit->semimajor = 149598.023;
 	orbit->true_anomaly = 0.0;
+}
+
+static void deinit_star(struct pshine_star *star) {
+	(void)star;
 }
 
 static void deinit_planet(struct pshine_planet *planet) {
@@ -410,10 +454,12 @@ struct pshine_game_data {
 void pshine_init_game(struct pshine_game *game) {
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
-	game->celestial_body_count = 1;
+	game->celestial_body_count = 2;
 	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
+	game->celestial_bodies_own[1] = calloc(1, sizeof(struct pshine_star));
+	init_star((void*)game->celestial_bodies_own[1]);
 	game->celestial_bodies_own[0] = calloc(1, sizeof(struct pshine_planet));
-	init_planet((void*)game->celestial_bodies_own[0], 6'371'000.0, double3v0());
+	init_planet((void*)game->celestial_bodies_own[0], game->celestial_bodies_own[1], 6'371'000.0, double3v0());
 	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
 	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
 	game->data_own->camera_dist = game->celestial_bodies_own[0]->radius + 10'000'000.0;
@@ -437,6 +483,7 @@ void pshine_deinit_game(struct pshine_game *game) {
 		}
 		switch (b->type) {
 			case PSHINE_CELESTIAL_BODY_PLANET: deinit_planet((void*)b); break;
+			case PSHINE_CELESTIAL_BODY_STAR: deinit_star((void*)b); break;
 			default: PSHINE_PANIC("bad b->type: %d", (int)b->type); break;
 		}
 		free(b);
@@ -608,7 +655,7 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	// we need, and change our orbit.
 
 	double Δt = delta_time; // Change in time.
-	double μ = 1'000'000'000'000; // The gravitational parameter.
+	double μ = 132.712344; // The gravitational parameter.
 	double a = orbit->semimajor; // The semimajor axis.
 	double e = orbit->eccentricity; // The eccentricity.
 
@@ -732,7 +779,8 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 	double i = orbit->inclination;
 	double ω = orbit->argument;
 
-	double3 rₚ = double3mul(double3xyz(cos(ν), 0.0, sin(ν)), 1000 * a * (1 - e*e) / (1 + e * cos(ν)));
+	double3 rₚ = double3mul(double3xyz(cos(ν), 0.0, sin(ν)),
+		1'000'000 * a * (1 - e*e) / (1 + e * cos(ν)));
 
 	double3x3 R1;
 	R1.v3s[0] = double3xyz(cos(-ω), -sin(-ω), 0.0);
@@ -753,15 +801,22 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 
 	double3 r = double3x3mulv(&R, rₚ);
 
-
 	return r;
 }
 
 static void update_celestial_body(struct pshine_game *game, float delta_time, struct pshine_celestial_body *body) {
-	propagate_orbit(game, delta_time, &body->orbit);
-	body->rotation += body->rotation_speed * delta_time;
-	double3 position = kepler_orbit_to_state_vector(&body->orbit);
-	*(double3*)&body->position = position;
+	if (!body->is_static) {
+		propagate_orbit(game, delta_time, &body->orbit);
+		body->rotation += body->rotation_speed * delta_time;
+		double3 position = kepler_orbit_to_state_vector(&body->orbit);
+		*(double3*)&body->position = position;
+	}
+}
+
+static bool eximgui_input_double3(const char *label, double *vs, double step, const char *format) {
+	double3 step3 = double3v(step);
+	double3 faststep3 = double3v(step * 100.0);
+	return ImGui_InputScalarNEx(label, ImGuiDataType_Double, vs, 3, step3.vs, faststep3.vs, format, ImGuiInputTextFlags_None);
 }
 
 void pshine_update_game(struct pshine_game *game, float delta_time) {
@@ -773,6 +828,14 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		game->data_own->movement_mode = !game->data_own->movement_mode;
 	}
 
+	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F2) && !game->data_own->last_key_states[PSHINE_KEY_F2]) {
+		if (pshine_is_key_down(game->renderer, PSHINE_KEY_LEFT_SHIFT)) {
+			game->ui_dont_render_windows = !game->ui_dont_render_windows;
+		} else {
+			game->ui_dont_render_windows = game->ui_dont_render_gizmos = !game->ui_dont_render_gizmos;
+		}
+	}
+
 	if (game->data_own->movement_mode) {
 		update_camera_arc(game, delta_time);
 	} else {
@@ -781,81 +844,97 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 
 	memcpy(game->data_own->last_key_states, pshine_get_key_states(game->renderer), sizeof(uint8_t) * PSHINE_KEY_COUNT_);
 
-	if (ImGui_Begin("Material", NULL, 0)) {
-		ImGui_DragFloat("Bump scale", &game->material_smoothness_);
-	}
-	ImGui_End();
-
-
 #define SCSd3_WCSd3(wcs) (double3mul((wcs), PSHINE_SCS_FACTOR))
 #define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
 #define SCSd_WCSd(wcs) ((wcs) * PSHINE_SCS_FACTOR)
 
-	if (ImGui_Begin("Orbit", NULL, 0)) {
-		ImGui_Text("True anomaly: %.5f", game->celestial_bodies_own[0]->orbit.true_anomaly);
-		double3 pos = (SCSd3_WCSp3(game->celestial_bodies_own[0]->position));
-		ImGui_Text("Position (SCS): %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
-		double μ = 1'000'000'000; // The gravitational parameter.
-		double a = game->celestial_bodies_own[0]->orbit.semimajor; // The semimajor axis.
-		double e = game->celestial_bodies_own[0]->orbit.eccentricity; // The eccentricity.
+	if (!game->ui_dont_render_windows) {
 
-		double p = a * (1 - e*e);
-
-		double u = NAN; // Mean motion.
-		if (fabs(e - 1.0) < 1e-6) { // parabolic
-			u = 2.0 * sqrt(μ / (p*p*p));
-		} else if (e < 1.0) { // elliptic
-			u = sqrt(μ / (a*a*a));
-		} else if (e < 1.0) { // hyperbolic
-			u = sqrt(μ / -(a*a*a));
-		} else {
-			unreachable();
+		if (ImGui_Begin("Material", NULL, 0)) {
+			ImGui_DragFloat("Bump scale", &game->material_smoothness_);
 		}
+		ImGui_End();
 
-		double T = 2 * π / u; // Orbital period.
-		ImGui_Text("Period: %.2f", T);
-	}
-	ImGui_End();
+		if (ImGui_Begin("Orbit", NULL, 0)) {
+			ImGui_Text("True anomaly: %.5f", game->celestial_bodies_own[0]->orbit.true_anomaly);
+			double3 pos = (SCSd3_WCSp3(game->celestial_bodies_own[0]->position));
+			ImGui_Text("Position (SCS): %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
+			double μ = game->celestial_bodies_own[0]->parent_ref->gravitational_parameter;
+			double a = game->celestial_bodies_own[0]->orbit.semimajor; // The semimajor axis.
+			double e = game->celestial_bodies_own[0]->orbit.eccentricity; // The eccentricity.
 
-	if (ImGui_Begin("Camera", NULL, 0)) {
-		double3 p = double3vs(game->camera_position.values);
-		double d = double3mag(double3sub(p, double3vs(game->celestial_bodies_own[0]->position.values))) - game->celestial_bodies_own[0]->radius;
-		enum si_prefix d_prefix = find_optimal_si_prefix(d);
-		double d_scaled = apply_si_prefix(d_prefix, d);
-		ImGui_Text("WCS Position: %.3fm %.3fm %.3fm", p.x, p.y, p.z);
-		ImGui_Text("SCS Position: %.3fu %.3fu %.3fu", p.x * PSHINE_SCS_FACTOR, p.y * PSHINE_SCS_FACTOR, p.z * PSHINE_SCS_FACTOR);
-		ImGui_Text("Distance from planet surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
-		{
-			float v = game->data_own->move_speed;
-			ImGui_DragFloatEx("movement speed, m/s", &v, 100.0f, 0.0f, PSHINE_SPEED_OF_LIGHT * 0.01f, "%.3f", 0);
-			game->data_own->move_speed = v;
+			double p = a * (1 - e*e);
+
+			double u = NAN; // Mean motion.
+			if (fabs(e - 1.0) < 1e-6) { // parabolic
+				u = 2.0 * sqrt(μ / (p*p*p));
+			} else if (e < 1.0) { // elliptic
+				u = sqrt(μ / (a*a*a));
+			} else if (e < 1.0) { // hyperbolic
+				u = sqrt(μ / -(a*a*a));
+			} else {
+				unreachable();
+			}
+
+			double T = 2 * π / u; // Orbital period.
+			struct time_format_params time_fmt = compute_time_format_params(T);
+			ImGui_Text("Period: " TIME_FORMAT, TIME_FORMAT_ARGS(time_fmt));
 		}
-		ImGui_Text("yaw: %.3frad, pitch: %.3frad", game->data_own->camera_yaw, game->data_own->camera_pitch);
-	}
-	ImGui_End();
+		ImGui_End();
 
-	if (ImGui_Begin("Atmosphere", NULL, 0)) {
-		struct pshine_planet *planet =(struct pshine_planet*)game->celestial_bodies_own[0];
-		struct pshine_atmosphere_info *atmo = &planet->atmosphere;
-		ImGui_SliderFloat3("Rayleigh Coefs.", atmo->rayleigh_coefs, 0.001f, 50.0f);
-		ImGui_SliderFloat("Rayleigh Falloff.", &atmo->rayleigh_falloff, 0.0001f, 100.0f);
-		ImGui_SliderFloat("Mie Coef.", &atmo->mie_coef, 0.001f, 50.0f);
-		ImGui_SliderFloat("Mie Ext. Coef.", &atmo->mie_ext_coef, 0.001f, 5.0f);
-		ImGui_SliderFloat("Mie 'g' Coef.", &atmo->mie_g_coef, -0.9999f, 0.9999f);
-		ImGui_SliderFloat("Mie Falloff.", &atmo->mie_falloff, 0.0001f, 100.0f);
-		ImGui_SliderFloat("Intensity", &atmo->intensity, 0.0f, 50.0f);
-	}
-	ImGui_End();
+		if (ImGui_Begin("Camera", NULL, 0)) {
+			double3 p = double3vs(game->camera_position.values);
+			double3 p_scs = double3mul(p, PSHINE_SCS_FACTOR);
+			double d = double3mag(double3sub(p, double3vs(game->celestial_bodies_own[0]->position.values))) - game->celestial_bodies_own[0]->radius;
+			enum si_prefix d_prefix = find_optimal_si_prefix(d);
+			double d_scaled = apply_si_prefix(d_prefix, d);
+			eximgui_input_double3("WCS Pos.", game->camera_position.values, 1000.0, "%.3fm");
+			if (eximgui_input_double3("SCS Pos.", p_scs.vs, 100.0, "%.3fu")) {
+				*(double3*)&game->camera_position.values = double3mul(p_scs, PSHINE_SCS_SCALE);
+			}
+			// ImGui_Text("WCS Position: %.3fm %.3fm %.3fm", p.x, p.y, p.z);
+			// ImGui_Text("SCS Position: %.3fu %.3fu %.3fu", p.x * PSHINE_SCS_FACTOR, p.y * PSHINE_SCS_FACTOR, p.z * PSHINE_SCS_FACTOR);
+			ImGui_Text("Distance from planet surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
+			{
+				float v = game->data_own->move_speed;
+				ImGui_DragFloatEx("movement speed, m/s", &v, 100.0f, 0.0f, PSHINE_SPEED_OF_LIGHT * 0.01f, "%.3f", 0);
+				game->data_own->move_speed = v;
+			}
+			ImGui_Text("Yaw: %.3frad, Pitch: %.3frad", game->data_own->camera_yaw, game->data_own->camera_pitch);
+			if (ImGui_Button("Reset rotation")) {
+				game->data_own->camera_yaw = 0.0;
+				game->data_own->camera_pitch = 0.0;
+			}
+			ImGui_SameLine();
+			if (ImGui_Button("Reset position")) {
+				game->data_own->camera_yaw = 0.0;
+				game->data_own->camera_pitch = 0.0;
+			}
+		}
+		ImGui_End();
 
-	if (ImGui_Begin("System", NULL, 0)) {
-		// float3 p = float3_double3(double3vs(game->sun_direction_.values));
-		// if (ImGui_SliderFloat3("Sun", p.vs, -1.0f, 1.0)) {
-		// 	*(double3*)game->sun_direction_.values = double3_float3(p);
-		// }
-		ImGui_SliderFloat("Time scale", &game->time_scale, 0.0, 1000.0);
-		ImGui_Text("Time: %.8f", game->time);
-	}
-	ImGui_End();
+		if (ImGui_Begin("Atmosphere", NULL, 0)) {
+			struct pshine_planet *planet =(struct pshine_planet*)game->celestial_bodies_own[0];
+			struct pshine_atmosphere_info *atmo = &planet->atmosphere;
+			ImGui_SliderFloat3("Rayleigh Coefs.", atmo->rayleigh_coefs, 0.001f, 50.0f);
+			ImGui_SliderFloat("Rayleigh Falloff.", &atmo->rayleigh_falloff, 0.0001f, 100.0f);
+			ImGui_SliderFloat("Mie Coef.", &atmo->mie_coef, 0.001f, 50.0f);
+			ImGui_SliderFloat("Mie Ext. Coef.", &atmo->mie_ext_coef, 0.001f, 5.0f);
+			ImGui_SliderFloat("Mie 'g' Coef.", &atmo->mie_g_coef, -0.9999f, 0.9999f);
+			ImGui_SliderFloat("Mie Falloff.", &atmo->mie_falloff, 0.0001f, 100.0f);
+			ImGui_SliderFloat("Intensity", &atmo->intensity, 0.0f, 50.0f);
+		}
+		ImGui_End();
 
-	// PSHINE_DEBUG("cam pitch: %.2f yaw: %.2f", game->data_own->camera_pitch, game->data_own->camera_yaw);
+		if (ImGui_Begin("System", NULL, 0)) {
+			// float3 p = float3_double3(double3vs(game->sun_direction_.values));
+			// if (ImGui_SliderFloat3("Sun", p.vs, -1.0f, 1.0)) {
+			// 	*(double3*)game->sun_direction_.values = double3_float3(p);
+			// }
+			ImGui_SliderFloat("Time scale", &game->time_scale, 0.0, 1000.0);
+			struct time_format_params time_fmt = compute_time_format_params(game->time);
+			ImGui_Text("Time: " TIME_FORMAT, TIME_FORMAT_ARGS(time_fmt));
+		}
+		ImGui_End();
+	}
 }

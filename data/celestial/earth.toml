@@ -1,0 +1,35 @@
+[planet]
+name = "Earth"
+radius = 6_371_000.0
+parent = "Sun"
+is_static = false
+mass = 1.0
+mu = 3.98600436e-4
+
+[rotation]
+speed = -0.026178
+axis = [0.0, 1.0, 0.0]
+
+[orbit]
+argument = 0.0
+eccentricity = 0.0167086
+inclination = 0.0
+longitude = 0.0
+semimajor = 149598.023
+true_anomaly = 0.0
+
+[planet.atmosphere]
+height = 100_000.0
+rayleigh_coefs = [3.8, 13.5, 33.1]
+rayleigh_fallof = 13.5
+mie_coef = 20.1
+mie_ext_coef = 1.1
+mie_g_coef = -0.87
+mie_fallof = 18.0
+intensity = 20.0
+
+[surface]
+albedo_texture_path = "data/textures/earth_5k.jpg"
+lights_texture_path = "data/textures/earth_lights_2k.jpg"
+bump_texture_path = "data/textures/earth_bump_2k.jpg"
+spec_texture_path = "data/textures/earth_spec_2k.jpg"

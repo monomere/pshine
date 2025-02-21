@@ -1,0 +1,13 @@
+[star]
+name = "Sun"
+radius = 695_700_000.0
+is_static = true
+position = [0.0, 0.0, 0.0]
+mass = 332_950.0
+mu = 132.71244
+
+surface_temperature = 5772
+
+[rotation]
+speed = 0.0
+axis = [0.0, 1.0, 0.0]
