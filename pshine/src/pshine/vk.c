@@ -2845,15 +2845,45 @@ static void show_gizmos(struct vulkan_renderer *r) {
 				(pos_screen4.x / pos_screen4.w * 0.5 + 0.5) * screen_size.x,
 				(pos_screen4.y / pos_screen4.w * 0.5 + 0.5) * screen_size.y
 			);
-			size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
-			char *str = pshine_format_string("%s [%zu]", b->name, lod);
+			// size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
+			// char *str = pshine_format_string("%s [%zu]", b->name, lod);
 			ImDrawList_AddText(
 				ImGui_GetBackgroundDrawList(),
 				(ImVec2){ pos_screen.x, pos_screen.y },
 				0xff000000 | b->gizmo_color,
-				str
+				b->name
 			);
-			free(str);
+			// free(str);
+			ImVec2 prev = { 0.0f, 0.0f };
+			{
+				double3 pos_scs = double3vs(
+					b->orbit.cached_points_own[b->orbit.cached_point_count - 1].values
+				);
+				double4 pos_screen4 = double4x4mulv(&screen_mat, double4xyz3w(pos_scs, 1.0));
+				double2 pos_screen = double2xy(
+					(pos_screen4.x / pos_screen4.w * 0.5 + 0.5) * screen_size.x,
+					(pos_screen4.y / pos_screen4.w * 0.5 + 0.5) * screen_size.y
+				);
+				prev = (ImVec2){ pos_screen.x, pos_screen.y };
+			}
+			for (size_t i = 0; i < b->orbit.cached_point_count; ++i) {
+				double3 pos_scs = double3vs(b->orbit.cached_points_own[i].values);
+				double4 pos_screen4 = double4x4mulv(&screen_mat, double4xyz3w(pos_scs, 1.0));
+				if (pos_screen4.w < 0.0) continue;
+				double2 pos_screen = double2xy(
+					(pos_screen4.x / pos_screen4.w * 0.5 + 0.5) * screen_size.x,
+					(pos_screen4.y / pos_screen4.w * 0.5 + 0.5) * screen_size.y
+				);
+				ImVec2 cur = { pos_screen.x, pos_screen.y };
+				ImDrawList_AddLineEx(
+					ImGui_GetBackgroundDrawList(),
+					prev,
+					cur,
+					0x7F000000 | b->gizmo_color,
+					1.0
+				);
+				prev = cur;
+			}
 		}
 	}
 }

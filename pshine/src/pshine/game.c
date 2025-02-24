@@ -388,6 +388,48 @@ static void init_star(struct pshine_star *star) {
 	star->as_body.gizmo_color = 0x97e6fc;
 }
 
+static void propagate_orbit(double time, double gravitational_parameter, struct pshine_orbit_info *body);
+static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbit);
+
+static void create_orbit_points(
+	struct pshine_celestial_body *body,
+	size_t count
+) {
+	body->orbit.cached_point_count = count;
+	body->orbit.cached_points_own = calloc(count, sizeof(pshine_point3d_scaled));
+	
+	// Copy the orbit info because the true anomaly is changed
+	// by the propagator.
+	struct pshine_orbit_info o2 = body->orbit;
+
+	double e = body->orbit.eccentricity;
+	double a = body->orbit.semimajor;
+	double μ = body->parent_ref->gravitational_parameter;
+	double p = a * (1 - e*e);
+
+	double u = NAN; // Mean motion.
+	if (fabs(e - 1.0) < 1e-6) { // parabolic
+		u = 2.0 * sqrt(μ / (p*p*p));
+	} else if (e < 1.0) { // elliptic
+		u = sqrt(μ / (a*a*a));
+	} else if (e < 1.0) { // hyperbolic
+		u = sqrt(μ / -(a*a*a));
+	} else {
+		unreachable();
+	}
+
+	double T = 2 * π / u; // Orbital period.
+	double ti = T / (double)body->orbit.cached_point_count;
+
+	double time = 0.0;
+	for (size_t i = 0; i < body->orbit.cached_point_count; ++i) {
+		propagate_orbit(time, μ, &o2);
+		double3 pos = double3mul(kepler_orbit_to_state_vector(&o2), PSHINE_SCS_FACTOR);
+		*(double3*)&body->orbit.cached_points_own[i] = pos;
+		time += ti;
+	}
+}
+
 static void init_planet(
 	struct pshine_planet *planet,
 	struct pshine_celestial_body *parent,
@@ -433,6 +475,7 @@ static void init_planet(
 	orbit->longitude = 0.0;
 	orbit->semimajor = 149598.023;
 	orbit->true_anomaly = 0.0;
+	create_orbit_points(&planet->as_body, 100);
 }
 
 static void deinit_star(struct pshine_star *star) {
@@ -592,7 +635,11 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 	*(double3*)game->camera_forward.values = cam_forward;
 }
 
-static void propagate_orbit(struct pshine_game *game, float delta_time, struct pshine_orbit_info *orbit) {
+static void propagate_orbit(
+	double time,
+	double gravitational_parameter,
+	struct pshine_orbit_info *orbit
+) {
 	// https://orbital-mechanics.space/time-since-periapsis-and-keplers-equation/time-since-periapsis.html
 	// https://orbital-mechanics.space/time-since-periapsis-and-keplers-equation/universal-variables.html
 	// Also stuff stolen from https://git.sr.ht/~thepuzzlemaker/KerbalToolkit/tree/the-big-port/item/lib/src/kepler/orbits.rs
@@ -674,31 +721,15 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	// Once we find a good enough χ, we can figure out the anomalies that
 	// we need, and change our orbit.
 
-	double Δt = delta_time; // Change in time.
-	double μ = 132.712344; // The gravitational parameter.
+	// double Δt = delta_time; // Change in time.
+	double μ = gravitational_parameter;
 	double a = orbit->semimajor; // The semimajor axis.
 	double e = orbit->eccentricity; // The eccentricity.
 
-	double p = a * (1 - e*e);
-
-	double u = NAN; // Mean motion.
-	if (fabs(e - 1.0) < 1e-6) { // parabolic
-		u = 2.0 * sqrt(μ / (p*p*p));
-	} else if (e < 1.0) { // elliptic
-		u = sqrt(μ / (a*a*a));
-	} else if (e < 1.0) { // hyperbolic
-		u = sqrt(μ / -(a*a*a));
-	} else {
-		unreachable();
-	}
-
-	double T = 2 * π / u; // Orbital period.
-	(void)T;
-
 	// Solve for χ using Newton's Method:
-	game->time += Δt; // TODO: figure out t from the orbital params.
+	// game->time += Δt; // TODO: figure out t from the orbital params.
 	// game->time = fmod(game->time, T);
-	double tsqrtμ = game->time * sqrt(μ);
+	double tsqrtμ = time * sqrt(μ);
 	double χ = tsqrtμ/fabs(a);
 	double sqrtp = sqrt(a*(1.0 - e*e));
 	{
@@ -717,11 +748,11 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 				else if (αχ2 > 0.0) Sαχ2 = (sqrtαχ2 - sin(sqrtαχ2)) / pow(sqrtαχ2, 3.0);
 				else Sαχ2 = (sinh(sqrtαχ2) - sqrtαχ2) / pow(sqrtαχ2, 3.0);
 			}
-	 		double f = e * χ*χ*χ * Sαχ2 + a*(1-e) * χ - tsqrtμ;
+			double f = e * χ*χ*χ * Sαχ2 + a*(1-e) * χ - tsqrtμ;
 			if (fabs(f) < 1e-3) break;
-	 		double dfdχ = e * χ*χ * Cαχ2 + a*(1-e);
-	 		χ -= f/dfdχ;
- 		}
+			double dfdχ = e * χ*χ * Cαχ2 + a*(1-e);
+			χ -= f/dfdχ;
+		}
 	}
 
 	// TODO: Solving for χ using the Laguerre algorithm, which is supposedly better
@@ -826,7 +857,7 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 
 static void update_celestial_body(struct pshine_game *game, float delta_time, struct pshine_celestial_body *body) {
 	if (!body->is_static) {
-		propagate_orbit(game, delta_time, &body->orbit);
+		propagate_orbit(game->time, body->parent_ref->gravitational_parameter, &body->orbit);
 		body->rotation += body->rotation_speed * delta_time;
 		double3 position = kepler_orbit_to_state_vector(&body->orbit);
 		*(double3*)&body->position = position;
@@ -840,6 +871,7 @@ static bool eximgui_input_double3(const char *label, double *vs, double step, co
 }
 
 void pshine_update_game(struct pshine_game *game, float delta_time) {
+	game->time += delta_time * game->time_scale;
 	for (size_t i = 0; i < game->celestial_body_count; ++i) {
 		update_celestial_body(game, delta_time * game->time_scale, game->celestial_bodies_own[i]);
 	}

@@ -3,22 +3,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-struct pshine_orbit_info {
-	float
-		inclination, // inclination, rad (i)
-		longitude, // longitude of the ascending node, rad (Ω)
-		argument, // argument of periapsis, rad (ω)
-		eccentricity, // eccentricity, 1 (e)
-		semimajor, // semimajor axis, Mm (megameters) (a)
-		true_anomaly; // true anomaly, rad (ν)
-};
-
-enum pshine_celestial_body_type {
-	PSHINE_CELESTIAL_BODY_UNINITIALIZED,
-	PSHINE_CELESTIAL_BODY_PLANET,
-	PSHINE_CELESTIAL_BODY_STAR,
-};
-
 typedef union pshine_point3d_ {
 	struct { double x, y, z; } xyz;
 	double values[3];
@@ -48,6 +32,30 @@ typedef union pshine_point3d_world_ {
 	double values[3];
 } pshine_point3d_world;
 
+/// Defines a Keplerian orbit. Also contains the cached
+/// points along the orbit path, for rendering the trajectory.
+struct pshine_orbit_info {
+	float
+		inclination, // inclination, rad (i)
+		longitude, // longitude of the ascending node, rad (Ω)
+		argument, // argument of periapsis, rad (ω)
+		eccentricity, // eccentricity, 1 (e)
+		semimajor, // semimajor axis, Mm (megameters) (a)
+		true_anomaly; // true anomaly, rad (ν)
+
+	/// Count of `this->cached_points_own`.
+	size_t cached_point_count;
+
+	/// Cached points spaced along the trajectory (for hyperbolic trajectories, TODO)
+	pshine_point3d_scaled *cached_points_own;
+};
+
+enum pshine_celestial_body_type {
+	PSHINE_CELESTIAL_BODY_UNINITIALIZED,
+	PSHINE_CELESTIAL_BODY_PLANET,
+	PSHINE_CELESTIAL_BODY_STAR,
+};
+
 struct pshine_surface_info {
 	const char *albedo_texture_path;
 	const char *bump_texture_path;
@@ -61,13 +69,13 @@ struct pshine_celestial_body {
 	struct pshine_orbit_info orbit;
 	struct pshine_surface_info surface;
 
-	/// Average radius, in m.
+	/// Mean radius, in m.
 	/// Some values:
 	/// - Earth: `6'371'000.0`
 	/// - Sun: `695'700'000.0`
 	double radius;
 
-	/// Planet-ish
+	/// If true, the orbit information is ignored.
 	bool is_static;
 
 	/// Position relative to the origin (usually the Sun)
