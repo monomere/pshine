@@ -98,6 +98,9 @@ struct pshine_celestial_body {
 	/// 0xBBGGRR
 	uint32_t gizmo_color;
 
+	/// 0xBBGGRR
+	uint32_t average_color;
+
 	/// e.g. "Sun", "Earth".
 	const char *name;
 };

@@ -93,8 +93,8 @@ struct time_format_params {
 #define TIME_FORMAT_ARGS(P) ((P).years), ((P).months), ((P).days), ((P).hours), ((P).minutes), ((P).seconds)
 static struct time_format_params compute_time_format_params(double secs) {
 	struct time_format_params r = {0};
-	r.seconds = secs;
-	r.minutes = trunc(fabs(r.seconds)) / 60.0; r.seconds -= r.minutes * 60.0;
+	r.seconds = fabs(secs);
+	r.minutes = trunc(r.seconds / 60.0); r.seconds = fmod(r.seconds, 60.0);
 	r.hours = trunc(r.minutes / 60.0); r.minutes = fmod(r.minutes, 60.0);
 	r.days = trunc(r.hours / 24.0); r.hours = fmod(r.hours, 24.0);
 	r.months = trunc(r.days * 12.0 / 365.0); r.days = fmod(r.days, 365.0 / 12.0);
@@ -242,7 +242,7 @@ void generate_sphere_mesh(size_t n, struct pshine_mesh_data *m) {
 	planet_vertex *vertices = m->vertices; // for easier access.
 
 	size_t nvtx = 0, nidx = 0;
-	
+
 	{
 		planet_vertex vtxs[6] = {
 			{ { +1,  0,  0 } },
@@ -292,7 +292,7 @@ void generate_sphere_mesh(size_t n, struct pshine_mesh_data *m) {
 			};
 		}
 	}
-	
+
 	// generate the 4 shared horiz. strips
 	for (uint32_t i = 0; i < 4; ++i) {
 		const planet_vertex *va = &vertices[i], *vb = &vertices[(i + 1) % 4];
@@ -584,13 +584,13 @@ static void propagate_orbit(struct pshine_game *game, float delta_time, struct p
 	//
 	// The relation of the universal anomaly χ to the other anomalies:
 	//
-	//            ⎧ 
+	//            ⎧
 	//            ⎪ [TODO(tanν / 2)]        for parabolas, e = 1
 	//            ⎪  ___
 	//        χ = ⎨ √ a   E                 for ellipses, e < 1
 	//            ⎪  ____
 	//            ⎪ √ -a  F                 for hyperbolas, e > 1
-	//            ⎩ 
+	//            ⎩
 	//
 	// Let's define the Stumpff functions, useful in the Kepler equation:
 	//                         _
@@ -834,6 +834,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		} else {
 			game->ui_dont_render_windows = game->ui_dont_render_gizmos = !game->ui_dont_render_gizmos;
 		}
+
 	}
 
 	if (game->data_own->movement_mode) {
