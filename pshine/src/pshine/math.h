@@ -319,19 +319,19 @@ MATH_FN_ void float3x3axisangle(float3x3 *m, float3 axis, float angle) {
 }
 MATH_FN_ void setfloat3x3rotation(float3x3 *m, float yaw, float pitch, float roll) {
 	memset(m->vs, 0, sizeof(m->vs));
-	float α = yaw, β = pitch, γ = roll;
+	float α = pitch, β = yaw, γ = roll;
 	float sα = sinf(α), sβ = sinf(β), sγ = sinf(γ);
 	float cα = cosf(α), cβ = cosf(β), cγ = cosf(γ);
 
-	m->vs[0][0] = cα * cβ;
-	m->vs[1][0] = sα * cβ;
+	m->vs[0][0] = cβ * cγ;
+	m->vs[1][0] = cβ * sγ;
 	m->vs[2][0] = -sβ;
-	m->vs[0][1] = cα * sβ * sγ - sα * cγ;
+	m->vs[0][1] = sα * sβ * cγ - cα * sγ;
 	m->vs[1][1] = sα * sβ * sγ + cα * cγ;
-	m->vs[2][1] = cβ * sγ;
+	m->vs[2][1] = sα * cβ;
 	m->vs[0][2] = cα * sβ * cγ + sα * sγ;
-	m->vs[1][2] = sα * sβ * cγ - cα * sγ;
-	m->vs[2][2] = cβ * cγ;
+	m->vs[1][2] = cα * sβ * sγ - sα * cγ;
+	m->vs[2][2] = cα * cβ;
 }
 MATH_FN_ void float4x4trans(float4x4 *m, float3 d) {
 	float r[4] = {};
@@ -732,19 +732,19 @@ MATH_FN_ void double3x3axisangle(double3x3 *m, double3 axis, double angle) {
 }
 MATH_FN_ void setdouble3x3rotation(double3x3 *m, double yaw, double pitch, double roll) {
 	memset(m->vs, 0, sizeof(m->vs));
-	double α = yaw, β = pitch, γ = roll;
+	double α = pitch, β = yaw, γ = roll;
 	double sα = sin(α), sβ = sin(β), sγ = sin(γ);
 	double cα = cos(α), cβ = cos(β), cγ = cos(γ);
 
-	m->vs[0][0] = cα * cβ;
-	m->vs[1][0] = sα * cβ;
+	m->vs[0][0] = cβ * cγ;
+	m->vs[1][0] = cβ * sγ;
 	m->vs[2][0] = -sβ;
-	m->vs[0][1] = cα * sβ * sγ - sα * cγ;
+	m->vs[0][1] = sα * sβ * cγ - cα * sγ;
 	m->vs[1][1] = sα * sβ * sγ + cα * cγ;
-	m->vs[2][1] = cβ * sγ;
+	m->vs[2][1] = sα * cβ;
 	m->vs[0][2] = cα * sβ * cγ + sα * sγ;
-	m->vs[1][2] = sα * sβ * cγ - cα * sγ;
-	m->vs[2][2] = cβ * cγ;
+	m->vs[1][2] = cα * sβ * sγ - sα * cγ;
+	m->vs[2][2] = cα * cβ;
 }
 MATH_FN_ void double4x4trans(double4x4 *m, double3 d) {
 	double r[4] = {};

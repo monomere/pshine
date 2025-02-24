@@ -522,9 +522,24 @@ static void update_camera_fly(struct pshine_game *game, float delta_time) {
 	}
 
 	double3x3 mat = {};
-	setdouble3x3rotation(&mat, 0, game->data_own->camera_pitch, game->data_own->camera_yaw);
+	setdouble3x3rotation(&mat, 0.0, game->data_own->camera_pitch, 0.0);
+	{
+		double3x3 mat2 = {};
+		setdouble3x3rotation(&mat2,  game->data_own->camera_yaw, 0.0, 0.0);
+		double3x3mul(&mat, &mat2);
+	}
 
-	double3 cam_forward = double3x3mulv(&mat, double3xyz(0, 0, 1));
+	//   0   -sina cosa
+	//  cosb   0   sinb    0        cosasinb
+	//   0     1    0    -sina  =    -sina
+	// -sinb   0   cosb   cosa      cosacosb
+	
+	double3 cam_forward = double3x3mulv(&mat, double3xyz(0.0, 0.0, 1.0));
+	// double3 cam_forward = double3xyz(
+	// 	cos(game->data_own->camera_pitch) * sin(game->data_own->camera_yaw),
+	// 	-sin(game->data_own->camera_pitch),
+	// 	cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
+	// );
 
 	double3 cam_pos = double3vs(game->camera_position.values);
 	{

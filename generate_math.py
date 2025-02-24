@@ -207,19 +207,19 @@ MATH_FN_ void `B3x3axisangle(`B3x3 *m, `B3 axis, `B angle) {
 }
 MATH_FN_ void set`B3x3rotation(`B3x3 *m, `B yaw, `B pitch, `B roll) {
 	memset(m->vs, 0, sizeof(m->vs));
-	`B α = yaw, β = pitch, γ = roll;
+	`B α = pitch, β = yaw, γ = roll;
 	`B sα = `[α,$sin], sβ = `[β,$sin], sγ = `[γ,$sin];
 	`B cα = `[α,$cos], cβ = `[β,$cos], cγ = `[γ,$cos];
 
-	m->vs[0][0] = cα * cβ;
-	m->vs[1][0] = sα * cβ;
+	m->vs[0][0] = cβ * cγ;
+	m->vs[1][0] = cβ * sγ;
 	m->vs[2][0] = -sβ;
-	m->vs[0][1] = cα * sβ * sγ - sα * cγ;
+	m->vs[0][1] = sα * sβ * cγ - cα * sγ;
 	m->vs[1][1] = sα * sβ * sγ + cα * cγ;
-	m->vs[2][1] = cβ * sγ;
+	m->vs[2][1] = sα * cβ;
 	m->vs[0][2] = cα * sβ * cγ + sα * sγ;
-	m->vs[1][2] = sα * sβ * cγ - cα * sγ;
-	m->vs[2][2] = cβ * cγ;
+	m->vs[1][2] = cα * sβ * sγ - sα * cγ;
+	m->vs[2][2] = cα * cβ;
 }
 MATH_FN_ void `B4x4trans(`B4x4 *m, `B3 d) {
 	`B r[4] = {};
