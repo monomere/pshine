@@ -368,8 +368,13 @@ void generate_sphere_mesh(size_t n, struct pshine_mesh_data *m) {
 	}
 }
 
-void pshine_generate_planet_mesh(const struct pshine_planet *planet, struct pshine_mesh_data *out_mesh) {
-	generate_sphere_mesh(48, out_mesh);
+void pshine_generate_planet_mesh(
+	const struct pshine_planet *planet,
+	struct pshine_mesh_data *out_mesh,
+	size_t lod
+) {
+	const size_t lods[5] = { 48, 32, 24, 16, 8 };
+	generate_sphere_mesh(lod >= 5 ? 8 : lods[lod], out_mesh);
 }
 
 [[maybe_unused]]

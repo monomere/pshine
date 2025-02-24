@@ -5,6 +5,8 @@ parent = "Sun"
 is_static = false
 mass = 1.0
 mu = 3.98600436e-4
+average_color = 0xAABBCC
+gizmo_color = 0xBBCCDD
 
 [rotation]
 speed = -0.026178

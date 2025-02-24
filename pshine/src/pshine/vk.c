@@ -91,7 +91,6 @@ struct vulkan_mesh {
 };
 
 struct pshine_star_graphics_data {
-	struct vulkan_mesh *mesh_ref;
 	struct vulkan_buffer uniform_buffer;
 	// struct vulkan_image atmo_lut;
 	// struct vulkan_image surface_albedo;
@@ -104,7 +103,7 @@ struct pshine_star_graphics_data {
 };
 
 struct pshine_planet_graphics_data {
-	struct vulkan_mesh *mesh_ref;
+	// struct vulkan_mesh *mesh_ref;
 	struct vulkan_buffer uniform_buffer;
 	struct vulkan_image atmo_lut;
 	struct vulkan_image surface_albedo;
@@ -207,11 +206,15 @@ struct vulkan_renderer {
 	struct per_frame_data frames[FRAMES_IN_FLIGHT];
 
 	VmaAllocator allocator;
-	struct vulkan_mesh *sphere_mesh;
+
+	size_t sphere_mesh_count;
+	struct vulkan_mesh *own_sphere_meshes;
 
 	VkSampler atmo_lut_sampler;
 	VkSampler material_texture_sampler;
 	// PSHINE_DYNA_(struct mesh) meshes;
+
+	double lod_ranges[4];
 
 	uint8_t *key_states;
 };
@@ -520,11 +523,12 @@ static void write_to_image_staged(
 	deallocate_buffer(r, staging_buffer);
 }
 
-static struct vulkan_mesh *create_mesh(
+static void create_mesh(
 	struct vulkan_renderer *r,
-	const struct pshine_mesh_data *mesh_data
+	const struct pshine_mesh_data *mesh_data,
+	struct vulkan_mesh *mesh
 ) {
-	struct vulkan_mesh *mesh = calloc(1, sizeof(struct vulkan_mesh));
+	// struct vulkan_mesh *mesh = calloc(1, sizeof(struct vulkan_mesh));
 	PSHINE_DEBUG("mesh %zu vertices, %zu indices", mesh_data->index_count, mesh_data->vertex_count);
 	mesh->index_buffer = allocate_buffer(
 		r,
@@ -534,10 +538,15 @@ static struct vulkan_mesh *create_mesh(
 			.memory_usage = VMA_MEMORY_USAGE_AUTO,
 		}
 	);
+
+	size_t vertex_size = mesh_data->vertex_type == PSHINE_VERTEX_PLANET
+		? sizeof(struct pshine_planet_vertex)
+		: sizeof(struct pshine_static_mesh_vertex);
+	
 	mesh->vertex_buffer = allocate_buffer(
 		r,
 		&(struct vulkan_buffer_alloc_info){
-			.size = mesh_data->vertex_count * sizeof(struct pshine_static_mesh_vertex),
+			.size = mesh_data->vertex_count * vertex_size,
 			.buffer_usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			.memory_usage = VMA_MEMORY_USAGE_AUTO,
 		}
@@ -545,19 +554,18 @@ static struct vulkan_mesh *create_mesh(
 	write_to_buffer_staged(r, &mesh->index_buffer,
 		0, mesh_data->index_count * sizeof(uint32_t), mesh_data->indices);
 	write_to_buffer_staged(r, &mesh->vertex_buffer,
-		0, mesh_data->vertex_count * sizeof(struct pshine_static_mesh_vertex), mesh_data->vertices);
+		0, mesh_data->vertex_count * vertex_size, mesh_data->vertices);
 	
 	mesh->vertex_count = mesh_data->vertex_count;
 	mesh->index_count = mesh_data->index_count;
 	mesh->vertex_type = mesh_data->vertex_type;
-
-	return mesh;
 }
 
 static void destroy_mesh(struct vulkan_renderer *r, struct vulkan_mesh *mesh) {
+	PSHINE_DEBUG("destroy_mesh: idx_buf=%p, vtx_buf=%p", mesh->vertex_buffer, mesh->index_buffer);
 	deallocate_buffer(r, mesh->vertex_buffer);
 	deallocate_buffer(r, mesh->index_buffer);
-	free(mesh);
+	//free(mesh);
 }
 
 static inline void name_vk_object_impl(
@@ -589,6 +597,11 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 
 	r->key_states = calloc(PSHINE_KEY_COUNT_, sizeof(uint8_t));
 
+	r->lod_ranges[0] = 500'000.0;
+	r->lod_ranges[1] = 35'000.0;
+	r->lod_ranges[2] = 3'500.0;
+	r->lod_ranges[3] = 390.0;
+
 	init_glfw(r);
 	init_vulkan(r);
 	init_swapchain(r);
@@ -610,17 +623,21 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	}
 
 	{
-		struct pshine_mesh_data mesh_data = {
-			.index_count = 0,
-			.indices = NULL,
-			.vertex_count = 0,
-			.vertices = NULL,
-			.vertex_type = PSHINE_VERTEX_PLANET
-		};
-		pshine_generate_planet_mesh(NULL, &mesh_data);
-		r->sphere_mesh = create_mesh(r, &mesh_data);
-		free(mesh_data.indices);
-		free(mesh_data.vertices);
+		r->sphere_mesh_count = 5;
+		r->own_sphere_meshes = calloc(r->sphere_mesh_count, sizeof(struct vulkan_mesh));
+		for (size_t lod = 0; lod < r->sphere_mesh_count; ++lod) {
+			struct pshine_mesh_data mesh_data = {
+				.index_count = 0,
+				.indices = NULL,
+				.vertex_count = 0,
+				.vertices = NULL,
+				.vertex_type = PSHINE_VERTEX_PLANET
+			};
+			pshine_generate_planet_mesh(NULL, &mesh_data, lod);
+			create_mesh(r, &mesh_data, &r->own_sphere_meshes[lod]);
+			free(mesh_data.indices);
+			free(mesh_data.vertices);
+		}
 	}
 	
 	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
@@ -671,7 +688,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 			init_atmo_lut_compute(r, p);
 			compute_atmo_lut(r, p, true);
 			load_planet_texture(r, p);
-			p->graphics_data->mesh_ref = r->sphere_mesh;
+			// p->graphics_data->mesh_ref = &r->own_sphere_meshes[0];
 			p->graphics_data->uniform_buffer = allocate_buffer(
 				r,
 				&(struct vulkan_buffer_alloc_info){
@@ -709,7 +726,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 			// init_atmo_lut_compute(r, p);
 			// compute_atmo_lut(r, p, true);
 			// load_planet_texture(r, p);
-			p->graphics_data->mesh_ref = r->sphere_mesh;
+			// p->graphics_data->mesh_ref = r->sphere_mesh;
 			p->graphics_data->uniform_buffer = allocate_buffer(
 				r,
 				&(struct vulkan_buffer_alloc_info){
@@ -1151,7 +1168,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 		uint32_t unique_queue_family_indices[3] = {
 			r->queue_families[0],
 			r->queue_families[1],
-			r->queue_families[3],
+			r->queue_families[2],
 		};
 		if (r->queue_families[0] == r->queue_families[1]) {
 			queue_create_info_count = 2;
@@ -2370,7 +2387,9 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	vkDestroySampler(r->device, r->atmo_lut_sampler, NULL);
 	vkDestroySampler(r->device, r->material_texture_sampler, NULL);
 
-	destroy_mesh(r, r->sphere_mesh);
+	for (size_t i = 0; i < r->sphere_mesh_count; ++i)
+		destroy_mesh(r, &r->own_sphere_meshes[i]);
+	free(r->own_sphere_meshes);
 
 	deinit_imgui(r);
 	deinit_frames(r);
@@ -2403,6 +2422,49 @@ MATH_FN_ void setdouble4x4scale(double4x4 *m, double3 s) {
 	m->vs[3][3] = 1.0;
 }
 
+static inline size_t select_celestial_body_lod(
+	struct vulkan_renderer *r,
+	struct pshine_celestial_body *b,
+	double3 cam_pos
+) {
+	double3 body_pos = SCSd3_WCSp3(b->position);
+	double m2 = double3mag(double3sub(body_pos, cam_pos));
+	double a = SCSd_WCSd(b->radius) / m2;
+	if (a >= SCSd_WCSd(r->lod_ranges[0])) return 0;
+	if (a >= SCSd_WCSd(r->lod_ranges[1])) return 1;
+	if (a >= SCSd_WCSd(r->lod_ranges[2])) return 2;
+	if (a >= SCSd_WCSd(r->lod_ranges[3])) return 3;
+	return 4;
+}
+
+static void render_celestial_body(
+	struct vulkan_renderer *r,
+	struct pshine_celestial_body *b,
+	struct per_frame_data *f,
+	uint32_t current_frame,
+	double3 camera_pos_scs,
+	VkDescriptorSet dset
+) {
+	//struct pshine_planet *p = (void *)b;
+	// double3 p_pos_scs = SCSd3_WCSp3(b->position);
+	size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
+	if (lod >= r->sphere_mesh_count) lod = r->sphere_mesh_count - 1;
+	vkCmdBindDescriptorSets(
+		f->command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		r->pipelines.mesh_layout,
+		2,
+		1,
+		&dset,
+		1, (uint32_t[]){
+			get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame
+		}
+	);
+	vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
+	vkCmdBindIndexBuffer(f->command_buffer, r->own_sphere_meshes[lod].index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+	vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
+}
+
 static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t image_index) {
 	struct per_frame_data *f = &r->frames[current_frame];
 
@@ -2418,13 +2480,15 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		vmaUnmapMemory(r->allocator, r->data.material_uniform_buffer.allocation);
 	}
 
+	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);
+
 	double aspect_ratio = r->swapchain_extent.width /(double) r->swapchain_extent.height;
 	double4x4 view_mat = {};
 	setdouble4x4iden(&view_mat);
 	setdouble4x4lookat(
 		&view_mat,
-		SCSd3_WCSp3(r->game->camera_position),
-		double3add(SCSd3_WCSp3(r->game->camera_position), double3vs(r->game->camera_forward.values)),
+		camera_pos_scs,
+		double3add(camera_pos_scs, double3vs(r->game->camera_forward.values)),
 		double3xyz(0.0, 1.0, 0.0)
 	);
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
@@ -2436,7 +2500,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		float3 cam_z = float3_double3(double3norm(double3vs(r->game->camera_forward.values)));
 		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
 		cam_y = float3norm(float3cross(cam_z, cam_x));
-		double3 cam_pos = SCSd3_WCSp3(r->game->camera_position);
+		double3 cam_pos = camera_pos_scs;
 		double3 sun_pos = SCSd3_WCSp3(r->game->sun_position);
 		struct global_uniform_data new_data = {
 			.camera = float4xyz3w(float3_double3(cam_pos), persp_info.znear),
@@ -2551,7 +2615,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			double3 scs_body_pos_scaled = double3div(scs_body_pos, scale_fact);
 
 			double scs_body_r_scaled = scs_body_r / scale_fact;
-			double3 scs_cam = SCSd3_WCSp3(r->game->camera_position);
+			double3 scs_cam = camera_pos_scs;
 			double3 scs_cam_scaled = double3div(scs_cam, scale_fact);
 
 			double3 sun_pos = SCSd3_WCSp3(r->game->sun_position);
@@ -2625,20 +2689,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
-			vkCmdBindDescriptorSets(
-				f->command_buffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.mesh_layout,
-				2,
-				1,
-				&p->graphics_data->descriptor_set,
-				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame
-				}
-			);
-			vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &p->graphics_data->mesh_ref->vertex_buffer.buffer, &(VkDeviceSize){0});
-			vkCmdBindIndexBuffer(f->command_buffer, p->graphics_data->mesh_ref->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(f->command_buffer, p->graphics_data->mesh_ref->index_count, 1, 0, 0, 0);
+			render_celestial_body(r, b, f, current_frame, camera_pos_scs, p->graphics_data->descriptor_set);
 		}
 	}
 
@@ -2648,20 +2699,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
 			struct pshine_star *p = (void *)b;
-			vkCmdBindDescriptorSets(
-				f->command_buffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.mesh_layout,
-				2,
-				1,
-				&p->graphics_data->descriptor_set,
-				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame
-				}
-			);
-			vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &p->graphics_data->mesh_ref->vertex_buffer.buffer, &(VkDeviceSize){0});
-			vkCmdBindIndexBuffer(f->command_buffer, p->graphics_data->mesh_ref->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(f->command_buffer, p->graphics_data->mesh_ref->index_count, 1, 0, 0, 0);
+			render_celestial_body(r, b, f, current_frame, camera_pos_scs, p->graphics_data->descriptor_set);
 		}
 	}
 
@@ -2757,6 +2795,14 @@ static void show_utils_window(struct vulkan_renderer *r) {
 			compute_atmo_lut(r, (void*)r->game->celestial_bodies_own[0], false);
 		}
 		ImGui_EndDisabled();
+		ImGui_BeginGroup();
+		double lod_min = 0.0;
+		double lod_max = 1'000'000'000.0;
+		ImGui_SliderScalar("LOD3", ImGuiDataType_Double, &r->lod_ranges[3], &lod_min, &r->lod_ranges[2]);
+		ImGui_SliderScalar("LOD2", ImGuiDataType_Double, &r->lod_ranges[2], &r->lod_ranges[3], &r->lod_ranges[1]);
+		ImGui_SliderScalar("LOD1", ImGuiDataType_Double, &r->lod_ranges[1], &r->lod_ranges[2], &r->lod_ranges[0]);
+		ImGui_SliderScalar("LOD0", ImGuiDataType_Double, &r->lod_ranges[0], &r->lod_ranges[1], &lod_max);
+		ImGui_EndGroup();
 	}
 	ImGui_End();
 }
@@ -2773,11 +2819,12 @@ static void show_gizmos(struct vulkan_renderer *r) {
 	double2 screen_size = double2xy(r->swapchain_extent.width, r->swapchain_extent.height);
 	double aspect_ratio = screen_size.x / screen_size.y;
 	double4x4 view_mat = {};
+	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);
 	setdouble4x4iden(&view_mat);
 	setdouble4x4lookat(
 		&view_mat,
-		SCSd3_WCSp3(r->game->camera_position),
-		double3add(SCSd3_WCSp3(r->game->camera_position), double3vs(r->game->camera_forward.values)),
+		camera_pos_scs,
+		double3add(camera_pos_scs, double3vs(r->game->camera_forward.values)),
 		double3xyz(0.0, 1.0, 0.0)
 	);
 	double4x4 proj_mat = {};
@@ -2798,7 +2845,15 @@ static void show_gizmos(struct vulkan_renderer *r) {
 				(pos_screen4.x / pos_screen4.w * 0.5 + 0.5) * screen_size.x,
 				(pos_screen4.y / pos_screen4.w * 0.5 + 0.5) * screen_size.y
 			);
-			ImDrawList_AddText(ImGui_GetBackgroundDrawList(), (ImVec2){ pos_screen.x, pos_screen.y }, 0xff000000 | b->gizmo_color, b->name);
+			size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
+			char *str = pshine_format_string("%s [%zu]", b->name, lod);
+			ImDrawList_AddText(
+				ImGui_GetBackgroundDrawList(),
+				(ImVec2){ pos_screen.x, pos_screen.y },
+				0xff000000 | b->gizmo_color,
+				str
+			);
+			free(str);
 		}
 	}
 }

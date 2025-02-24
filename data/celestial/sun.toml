@@ -5,7 +5,8 @@ is_static = true
 position = [0.0, 0.0, 0.0]
 mass = 332_950.0
 mu = 132.71244
-
+average_color = 0xFFFFFF
+gizmo_color = 0xFFFFFF
 surface_temperature = 5772
 
 [rotation]

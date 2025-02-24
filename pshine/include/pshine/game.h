@@ -167,7 +167,13 @@ struct pshine_mesh_data {
 	enum pshine_vertex_type vertex_type;
 };
 
-void pshine_generate_planet_mesh(const struct pshine_planet *planet, struct pshine_mesh_data *out_mesh);
+/// Generate the mesh for a planet, with the
+/// specified level of detail (0 - highest).
+void pshine_generate_planet_mesh(
+	const struct pshine_planet *planet,
+	struct pshine_mesh_data *out_mesh,
+	size_t lod
+);
 
 struct pshine_renderer;
 struct pshine_game;
