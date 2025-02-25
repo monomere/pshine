@@ -475,7 +475,7 @@ static void init_planet(
 	orbit->longitude = 0.0;
 	orbit->semimajor = 149598.023;
 	orbit->true_anomaly = 0.0;
-	create_orbit_points(&planet->as_body, 100);
+	create_orbit_points(&planet->as_body, 500);
 }
 
 static void deinit_star(struct pshine_star *star) {

@@ -170,6 +170,8 @@ struct vulkan_renderer {
 		VkPipeline planet_pipeline;
 		VkPipelineLayout atmo_layout;
 		VkPipeline atmo_pipeline;
+		VkPipelineLayout line_gizmo_layout;
+		VkPipeline line_gizmo_pipeline;
 
 		// compute pipelines
 		VkPipelineLayout atmo_lut_layout;
@@ -1695,6 +1697,7 @@ struct graphics_pipeline_info {
 	bool depth_test;
 	bool blend;
 	bool vertex_input; // TODO: pass vertex attribute here
+	bool lines;
 };
 
 struct vulkan_pipeline {
@@ -1906,10 +1909,31 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		.depth_test = false,
 		.vertex_input = false,
 		.layout_name = "atmosphere pipeline layout",
-		.pipeline_name = "atmosphere pipeline"
+		.pipeline_name = "atmosphere pipeline",
 	});
 	r->pipelines.atmo_pipeline = atmo_pipeline.pipeline;
 	r->pipelines.atmo_layout = atmo_pipeline.layout;
+
+	// struct vulkan_pipeline line_gizmo_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
+	// 	.vert_fname = "build/pshine/data/line_gizmo.vert.spv",
+	// 	.frag_fname = "build/pshine/data/line_gizmo.frag.spv",
+	// 	.render_pass = r->render_passes.main_pass,
+	// 	.subpass = 1,
+	// 	.push_constant_range_count = 0,
+	// 	.set_layout_count = 3,
+	// 	.set_layouts = (VkDescriptorSetLayout[]){
+	// 		r->descriptors.global_layout,
+	// 		r->descriptors.static_mesh_layout,
+	// 	},
+	// 	.blend = false,
+	// 	.depth_test = false,
+	// 	.vertex_input = true,
+	// 	.lines = true,
+	// 	.layout_name = "line gizmo pipeline layout",
+	// 	.pipeline_name = "line gizmo pipeline",
+	// });
+	// r->pipelines.line_gizmo_layout = line_gizmo_pipeline.layout;
+	// r->pipelines.line_gizmo_pipeline = line_gizmo_pipeline.pipeline;
 
 	{
 		vkCreatePipelineLayout(r->device, &(VkPipelineLayoutCreateInfo){
@@ -2814,6 +2838,66 @@ static void set_gpu_mem_usage(struct vulkan_renderer *r, struct renderer_stats *
 	stats->gpu_memory.allocation_count = budgets[0].statistics.allocationCount;
 }
 
+struct gizmo_renderer {
+	double4x4 screen_mat;
+	double znear;
+	double2 screen_size;
+};
+
+static double4 project_world_to_ndc(struct gizmo_renderer *g, double3 p) {
+	return double4x4mulv(&g->screen_mat, double4xyz3w(p, 1.0));
+}
+
+struct clipped_line {
+	bool ok;
+	double2 p1, p2;
+};
+
+static double2 project_ndc_to_screen(
+	struct gizmo_renderer *g,
+	double4 p
+) {
+	return double2xy(
+		(p.x / p.w * 0.5 + 0.5) * g->screen_size.x,
+		(p.y / p.w * 0.5 + 0.5) * g->screen_size.y
+	);
+}
+
+static struct clipped_line clip_ndc_line_to_screen(
+	struct gizmo_renderer *g,
+	double4 p1,
+	double4 p2
+) {
+	// Thanks https://stackoverflow.com/a/20180585
+
+	if (p1.w > g->znear && p2.w > g->znear) {
+		return (struct clipped_line){
+			.ok = true,
+			.p1 = project_ndc_to_screen(g, p1),
+			.p2 = project_ndc_to_screen(g, p2),
+		};
+	} else if (p1.w <= g->znear && p2.w <= g->znear) {
+		return (struct clipped_line){ .ok = false };
+	}
+	if (p2.w <= g->znear) {
+		double4 tmp = p2;
+		p2 = p1;
+		p1 = tmp;
+	}
+	double n = (g->znear - p2.w) / (p1.w - p2.w);
+	double4 pc = double4xyzw(
+		(n * p1.x) + ((1.0 - n) * p2.x),
+		(n * p1.y) + ((1.0 - n) * p2.y),
+		(n * p1.z) + ((1.0 - n) * p2.z),
+		g->znear
+	);
+	return (struct clipped_line){
+		.ok = true,
+		.p1 = project_ndc_to_screen(g, pc),
+		.p2 = project_ndc_to_screen(g, p2),
+	};
+}
+
 static void show_gizmos(struct vulkan_renderer *r) {
 	if (r->game->ui_dont_render_gizmos) return;
 	double2 screen_size = double2xy(r->swapchain_extent.width, r->swapchain_extent.height);
@@ -2829,60 +2913,56 @@ static void show_gizmos(struct vulkan_renderer *r) {
 	);
 	double4x4 proj_mat = {};
 	setdouble4x4iden(&proj_mat);
-	setdouble4x4persp(&proj_mat, 60.0, aspect_ratio, 0.01);
+	double znear = 0.01;
+	setdouble4x4persp(&proj_mat, 60.0, aspect_ratio, znear);
 
 	double4x4 screen_mat = view_mat;
 	double4x4mul(&screen_mat, &proj_mat);
 
+	struct gizmo_renderer giz = {
+		.screen_mat = screen_mat,
+		.screen_size = screen_size,
+		.znear = znear,
+	};
+
 	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
 		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
-		double3 pos_wcs = double3vs(b->position.values);
-		double3 pos_scs = SCSd3_WCSd3(pos_wcs);
-		double4 pos_screen4 = double4x4mulv(&screen_mat, double4xyz3w(pos_scs, 1.0));
-		double2 pos_screen = double2v0();
-		if (pos_screen4.w > 0.0) {
-			pos_screen = double2xy(
-				(pos_screen4.x / pos_screen4.w * 0.5 + 0.5) * screen_size.x,
-				(pos_screen4.y / pos_screen4.w * 0.5 + 0.5) * screen_size.y
-			);
-			// size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
-			// char *str = pshine_format_string("%s [%zu]", b->name, lod);
-			ImDrawList_AddText(
-				ImGui_GetBackgroundDrawList(),
-				(ImVec2){ pos_screen.x, pos_screen.y },
-				0xff000000 | b->gizmo_color,
-				b->name
-			);
-			// free(str);
-			ImVec2 prev = { 0.0f, 0.0f };
-			{
-				double3 pos_scs = double3vs(
-					b->orbit.cached_points_own[b->orbit.cached_point_count - 1].values
-				);
-				double4 pos_screen4 = double4x4mulv(&screen_mat, double4xyz3w(pos_scs, 1.0));
-				double2 pos_screen = double2xy(
-					(pos_screen4.x / pos_screen4.w * 0.5 + 0.5) * screen_size.x,
-					(pos_screen4.y / pos_screen4.w * 0.5 + 0.5) * screen_size.y
-				);
-				prev = (ImVec2){ pos_screen.x, pos_screen.y };
-			}
-			for (size_t i = 0; i < b->orbit.cached_point_count; ++i) {
-				double3 pos_scs = double3vs(b->orbit.cached_points_own[i].values);
-				double4 pos_screen4 = double4x4mulv(&screen_mat, double4xyz3w(pos_scs, 1.0));
-				if (pos_screen4.w < 0.0) continue;
-				double2 pos_screen = double2xy(
-					(pos_screen4.x / pos_screen4.w * 0.5 + 0.5) * screen_size.x,
-					(pos_screen4.y / pos_screen4.w * 0.5 + 0.5) * screen_size.y
-				);
-				ImVec2 cur = { pos_screen.x, pos_screen.y };
-				ImDrawList_AddLineEx(
+
+		// Planet name
+		{
+			double4 pos_ndc = project_world_to_ndc(&giz, SCSd3_WCSp3(b->position));
+			if (pos_ndc.w > znear) {
+				double2 pos_screen = project_ndc_to_screen(&giz, pos_ndc);
+				// size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
+				// char *str = pshine_format_string("%s [%zu]", b->name, lod);
+				ImDrawList_AddText(
 					ImGui_GetBackgroundDrawList(),
-					prev,
-					cur,
-					0x7F000000 | b->gizmo_color,
-					1.0
+					(ImVec2){ pos_screen.x, pos_screen.y },
+					0xff000000 | b->gizmo_color,
+					b->name
 				);
-				prev = cur;
+				// free(str);
+			}
+		}
+
+		// Orbit
+		{
+			double4 prev_ndc = project_world_to_ndc(&giz, double3vs(
+				b->orbit.cached_points_own[b->orbit.cached_point_count - 1].values
+			));
+			for (size_t i = 0; i < b->orbit.cached_point_count; ++i) {
+				double4 curr_ndc = project_world_to_ndc(&giz, double3vs(b->orbit.cached_points_own[i].values));
+				struct clipped_line line = clip_ndc_line_to_screen(&giz, prev_ndc, curr_ndc);
+				if (line.ok) {
+					ImDrawList_AddLineEx(
+						ImGui_GetBackgroundDrawList(),
+						(ImVec2){ .x = line.p1.x, .y = line.p1.y },
+						(ImVec2){ .x = line.p2.x, .y = line.p2.y },
+						0x7F000000 | b->gizmo_color,
+						1.0
+					);
+				}
+				prev_ndc = curr_ndc;
 			}
 		}
 	}
