@@ -146,6 +146,8 @@ The planet has a radius of 6371km (Earth), the atmosphere has a height of 100km,
 Key|Action
 ---|---
 <kbd>F</kbd> | Switch camera mode (default is arcball)
+<kbd>F2</kbd> | Hide all UI
+<kbd>Shift+F2</kbd> | Only hide the debug windows
 
 #### Arcball Mode
 
@@ -161,6 +163,8 @@ Key|Action
 <kbd>A</kbd>/<kbd>D</kbd> | Move left/right
 <kbd>W</kbd>/<kbd>S</kbd> | Move forward/backward
 <kbd>Shift</kbd>/<kbd>Space</kbd> | Move down/up
+<kbd>&#8592;</kbd>/<kbd>&#8594;</kbd> | Rotate on global Y axis (yaw)
+<kbd>&#8593;</kbd>/<kbd>&#8595;</kbd> | Rotate on local X axis (pitch)
 
 ## TODO
 
@@ -173,6 +177,7 @@ Key|Action
 - [ ] Separate materials for planets and meshes.
 - [ ] Better API for materials? Maybe data-driven.
 - [ ] Fix rotation matrices, and matrices in general.
+  - [x] Kinda did it? I'm not sure.
 - [ ] Rewrite the math library generation, its so ugly.
 - [ ] Stars
 - [ ] Use near-origin coordinates for the "player".
