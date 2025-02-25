@@ -3,6 +3,8 @@
 #include "math.h"
 #include <pshine/util.h>
 #include <cimgui/cimgui.h>
+#include <toml.h>
+#include <errno.h>
 
 // Note: the math in this file is best viewed
 //       with the Julia Mono font, or with UnifontEx.
@@ -377,17 +379,6 @@ void pshine_generate_planet_mesh(
 	generate_sphere_mesh(lod >= 5 ? 8 : lods[lod], out_mesh);
 }
 
-[[maybe_unused]]
-static void init_star(struct pshine_star *star) {
-	star->as_body.type = PSHINE_CELESTIAL_BODY_STAR;
-	star->as_body.is_static = true;
-	star->as_body.radius = 695'700'000.0;
-	star->as_body.parent_ref = NULL;
-	star->as_body.gravitational_parameter = 132.71244;
-	star->as_body.name = "Sol";
-	star->as_body.gizmo_color = 0x97e6fc;
-}
-
 static void propagate_orbit(double time, double gravitational_parameter, struct pshine_orbit_info *body);
 static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbit);
 
@@ -430,52 +421,125 @@ static void create_orbit_points(
 	}
 }
 
-static void init_planet(
-	struct pshine_planet *planet,
-	struct pshine_celestial_body *parent,
-	double radius,
-	double3 center
+static struct pshine_celestial_body *load_celestial_body(
+	const char *fpath
 ) {
-	planet->as_body.type = PSHINE_CELESTIAL_BODY_PLANET;
-	planet->as_body.radius = radius;
-	planet->as_body.mass = 1.0;
-	planet->as_body.parent_ref = parent;
-	planet->as_body.rotation_speed = -0.026178;
-	planet->as_body.name = "Earth";
-	planet->as_body.gizmo_color = 0xf9bf2c;
-#define DEG2RAD π/180.0
-	*(double3*)planet->as_body.rotation_axis.values
-		= double3xyz(0.0, 1.0, 0.0)
-		;
-		// = double3norm(double3xyz(0.0, sin((90 - 23.44) * DEG2RAD), cos((90 - 23.44) * DEG2RAD)));
-	planet->as_body.rotation = 0.0;
-	*(double3*)planet->as_body.position.values = center;
-	planet->has_atmosphere = true;
-	// similar to Earth, the radius is 6371km
-	// and the atmosphere height is 100km
-	planet->atmosphere.height = 0.015696123 * radius;
-	planet->atmosphere.rayleigh_coefs[0] = 3.8f;
-	planet->atmosphere.rayleigh_coefs[1] = 13.5f;
-	planet->atmosphere.rayleigh_coefs[2] = 33.1f;
-	planet->atmosphere.rayleigh_falloff = 13.5f;
-	planet->atmosphere.mie_coef = 20.1f;
-	planet->atmosphere.mie_ext_coef = 1.1f;
-	planet->atmosphere.mie_g_coef = -0.87f;
-	planet->atmosphere.mie_falloff = 18.0f;
-	planet->atmosphere.intensity = 20.0f;
-	planet->as_body.surface.albedo_texture_path = "data/textures/earth_5k.jpg";
-	planet->as_body.surface.lights_texture_path = "data/textures/earth_lights_2k.jpg";
-	planet->as_body.surface.bump_texture_path = "data/textures/earth_bump_2k.jpg";
-	planet->as_body.surface.spec_texture_path = "data/textures/earth_spec_2k.jpg";
+	FILE *fin = fopen(fpath, "rb");
+	if (fin == nullptr) {
+		PSHINE_ERROR("Failed to open celestial body file %s: %s", fpath,
+			strerror(errno));
+		return nullptr;
+	}
+	char *errbuf = calloc(1024, 1);
+	toml_table_t *tab = toml_parse_file(fin, errbuf, 1024);
+	fclose(fin);
+	if (tab == nullptr) {
+		PSHINE_ERROR("Failed to parse celestial body configuration:\n%s", errbuf);
+		free(errbuf);
+		return nullptr;
+	}
+	struct pshine_celestial_body *body = nullptr;
+	toml_table_t *ptab = nullptr;
 
-	struct pshine_orbit_info *orbit = &planet->as_body.orbit;
-	orbit->argument = 0.0;
-	orbit->eccentricity = 0.0167086;
-	orbit->inclination = 0.0;
-	orbit->longitude = 0.0;
-	orbit->semimajor = 149598.023;
-	orbit->true_anomaly = 0.0;
-	create_orbit_points(&planet->as_body, 500);
+	toml_datum_t dat;
+#define READ_FIELD(tab, NAME, FIELD_NAME, TYPE, DAT_FIELD) \
+	dat = toml_##TYPE##_in(tab, NAME); if (dat.ok) FIELD_NAME = dat.u.DAT_FIELD
+#define READ_FIELD_AT(arr, IDX, FIELD_NAME, TYPE, DAT_FIELD) \
+	dat = toml_##TYPE##_at(arr, IDX); if (dat.ok) FIELD_NAME = dat.u.DAT_FIELD
+
+	// no need for pshine_strdup, as dat.u.s is allocated by tomlc99.
+#define READ_STR_FIELD(tab, NAME, FIELD_NAME) \
+	dat = toml_string_in(tab, NAME); if (dat.ok) FIELD_NAME = dat.u.s
+	
+	if ((ptab = toml_table_in(tab, "planet")) != nullptr) {
+		body = calloc(1, sizeof(struct pshine_planet));
+		body->type = PSHINE_CELESTIAL_BODY_PLANET;
+		struct pshine_planet *planet = (void*)body;
+		toml_table_t *atab = toml_table_in(tab, "atmosphere");
+		if (atab != nullptr) {
+			READ_FIELD(atab, "height", planet->atmosphere.height, double, d);
+			toml_array_t *arr = toml_array_in(atab, "rayleigh_coefs");
+			if (arr != nullptr) {
+				if (toml_array_nelem(arr) != 3) {
+					PSHINE_WARN("Invalid celestial body configuration: atmosphere.rayleigh_coefs "
+						"must be a 3 element array.");
+				} else {
+					READ_FIELD_AT(arr, 0, planet->atmosphere.rayleigh_coefs[0], double, d);
+					READ_FIELD_AT(arr, 1, planet->atmosphere.rayleigh_coefs[1], double, d);
+					READ_FIELD_AT(arr, 2, planet->atmosphere.rayleigh_coefs[2], double, d);
+				}
+			}
+			READ_FIELD(atab, "rayleigh_falloff", planet->atmosphere.rayleigh_falloff, double, d);
+			READ_FIELD(atab, "mie_coef", planet->atmosphere.mie_coef, double, d);
+			READ_FIELD(atab, "mie_ext_coef", planet->atmosphere.mie_ext_coef, double, d);
+			READ_FIELD(atab, "mie_g_coef", planet->atmosphere.mie_g_coef, double, d);
+			READ_FIELD(atab, "mie_falloff", planet->atmosphere.mie_falloff, double, d);
+			READ_FIELD(atab, "intensity", planet->atmosphere.intensity, double, d);
+		}
+	} else if ((ptab = toml_table_in(tab, "star")) != nullptr) {
+		body = calloc(1, sizeof(struct pshine_star));
+		body->type = PSHINE_CELESTIAL_BODY_STAR;
+	} else {
+		PSHINE_ERROR("Invalid celestial body configuration: no [planet] or [star] tables.");
+		free(errbuf);
+		return nullptr;
+	}
+	PSHINE_CHECK(ptab != nullptr, "what the");
+
+	READ_STR_FIELD(ptab, "name", body->name_own);
+	READ_STR_FIELD(ptab, "parent", body->tmp_parent_ref_name_own);
+
+	READ_FIELD(ptab, "radius", body->radius, double, d);
+	READ_FIELD(ptab, "mass", body->mass, double, d);
+	READ_FIELD(ptab, "mu", body->gravitational_parameter, double, d);
+	READ_FIELD(ptab, "average_color", body->average_color, int, i);
+	READ_FIELD(ptab, "gizmo_color", body->gizmo_color, int, i);
+	READ_FIELD(ptab, "is_static", body->is_static, bool, b);
+
+	toml_table_t *otab = toml_table_in(tab, "orbit");
+	if (otab != nullptr) {
+			READ_FIELD(otab, "argument", body->orbit.argument, double, d);
+			READ_FIELD(otab, "eccentricity", body->orbit.eccentricity, double, d);
+			READ_FIELD(otab, "inclination", body->orbit.inclination, double, d);
+			READ_FIELD(otab, "longitude", body->orbit.longitude, double, d);
+			READ_FIELD(otab, "semimajor", body->orbit.semimajor, double, d);
+			READ_FIELD(otab, "true_anomaly", body->orbit.true_anomaly, double, d);
+	}
+
+	toml_table_t *stab = toml_table_in(tab, "surface");
+	if (stab != nullptr) {
+		READ_STR_FIELD(stab, "albedo_texture_path", body->surface.albedo_texture_path_own);
+		READ_STR_FIELD(stab, "spec_texture_path", body->surface.spec_texture_path_own);
+		READ_STR_FIELD(stab, "lights_texture_path", body->surface.lights_texture_path_own);
+		READ_STR_FIELD(stab, "bump_texture_path", body->surface.bump_texture_path_own);
+	}
+
+	toml_table_t *rtab = toml_table_in(tab, "rotation");
+	if (rtab != nullptr) {
+		READ_FIELD(rtab, "speed", body->rotation_speed, double, d);
+		toml_array_t *arr = toml_array_in(rtab, "axis");
+		if (arr != nullptr) {
+			if (toml_array_nelem(arr) != 3) {
+				PSHINE_WARN("Invalid celestial body configuration: rotation.axis "
+					"must be a 3 element array.");
+			} else {
+				READ_FIELD_AT(arr, 0, body->rotation_axis.xyz.x, double, d);
+				READ_FIELD_AT(arr, 1, body->rotation_axis.xyz.y, double, d);
+				READ_FIELD_AT(arr, 2, body->rotation_axis.xyz.z, double, d);
+			}
+		}
+		READ_FIELD(rtab, "speed", body->rotation_speed, double, d);
+		READ_STR_FIELD(rtab, "spec_texture_path", body->surface.spec_texture_path_own);
+	}
+
+#undef READ_FIELD
+#undef READ_FIELD_AT
+#undef READ_STR_FIELD
+
+	toml_free(tab);
+
+	free(errbuf);
+	return body;
 }
 
 static void deinit_star(struct pshine_star *star) {
@@ -504,10 +568,39 @@ void pshine_init_game(struct pshine_game *game) {
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
 	game->celestial_body_count = 2;
 	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
-	game->celestial_bodies_own[1] = calloc(1, sizeof(struct pshine_star));
-	init_star((void*)game->celestial_bodies_own[1]);
-	game->celestial_bodies_own[0] = calloc(1, sizeof(struct pshine_planet));
-	init_planet((void*)game->celestial_bodies_own[0], game->celestial_bodies_own[1], 6'371'000.0, double3v0());
+	// game->celestial_bodies_own[2] = load_celestial_body("data/celestial/mars.toml");
+	game->celestial_bodies_own[1] = load_celestial_body("data/celestial/sun.toml");
+	game->celestial_bodies_own[0] = load_celestial_body("data/celestial/earth.toml");
+
+	for (size_t i = 0; i < game->celestial_body_count; ++i) {
+		const char *name = game->celestial_bodies_own[i]->tmp_parent_ref_name_own;
+		if (name == nullptr) continue;
+		for (size_t j = 0; j < game->celestial_body_count; ++j) {
+			if (strcmp(game->celestial_bodies_own[j]->name_own, name) == 0) {
+				game->celestial_bodies_own[i]->parent_ref = game->celestial_bodies_own[j];
+				PSHINE_DEBUG(
+					"Setting parent_ref of %s to %s",
+					game->celestial_bodies_own[i]->name_own,
+					name
+				);
+				break;
+			}
+		}
+		if (game->celestial_bodies_own[i]->parent_ref == nullptr) {
+			PSHINE_ERROR(
+				"No celestial body with name '%s' found (setting parent reference for %s)",
+				name,
+				game->celestial_bodies_own[i]->name_own
+			);
+		}
+	}
+
+	create_orbit_points(game->celestial_bodies_own[0], 500);
+	
+	// game->celestial_bodies_own[1] = calloc(1, sizeof(struct pshine_star));
+	// init_star((void*)game->celestial_bodies_own[1]);
+	// game->celestial_bodies_own[0] = calloc(1, sizeof(struct pshine_planet));
+	// init_planet((void*)game->celestial_bodies_own[0], game->celestial_bodies_own[1], 6'371'000.0, double3v0());
 	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
 	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
 	game->data_own->camera_dist = game->celestial_bodies_own[0]->radius + 10'000'000.0;
@@ -534,6 +627,15 @@ void pshine_deinit_game(struct pshine_game *game) {
 			case PSHINE_CELESTIAL_BODY_STAR: deinit_star((void*)b); break;
 			default: PSHINE_PANIC("bad b->type: %d", (int)b->type); break;
 		}
+#define FREE_IF_NOTNULL(X) if ((X) != nullptr) free((X))
+		FREE_IF_NOTNULL(b->surface.albedo_texture_path_own);
+		FREE_IF_NOTNULL(b->surface.spec_texture_path_own);
+		FREE_IF_NOTNULL(b->surface.lights_texture_path_own);
+		FREE_IF_NOTNULL(b->surface.bump_texture_path_own);
+		FREE_IF_NOTNULL(b->name_own);
+		FREE_IF_NOTNULL(b->tmp_parent_ref_name_own);
+		FREE_IF_NOTNULL(b->orbit.cached_points_own);
+#undef FREE_IF_NOTNULL
 		free(b);
 	}
 	free(game->celestial_bodies_own);

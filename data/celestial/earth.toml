@@ -1,12 +1,12 @@
 [planet]
 name = "Earth"
 radius = 6_371_000.0
-parent = "Sun"
+parent = "Sol"
 is_static = false
 mass = 1.0
 mu = 3.98600436e-4
-average_color = 0xAABBCC
-gizmo_color = 0xBBCCDD
+average_color = 0xf9bf2c
+gizmo_color = 0xf9bf2c
 
 [rotation]
 speed = -0.026178
@@ -20,14 +20,14 @@ longitude = 0.0
 semimajor = 149598.023
 true_anomaly = 0.0
 
-[planet.atmosphere]
+[atmosphere]
 height = 100_000.0
 rayleigh_coefs = [3.8, 13.5, 33.1]
-rayleigh_fallof = 13.5
+rayleigh_falloff = 13.5
 mie_coef = 20.1
 mie_ext_coef = 1.1
 mie_g_coef = -0.87
-mie_fallof = 18.0
+mie_falloff = 18.0
 intensity = 20.0
 
 [surface]
@@ -35,3 +35,4 @@ albedo_texture_path = "data/textures/earth_5k.jpg"
 lights_texture_path = "data/textures/earth_lights_2k.jpg"
 bump_texture_path = "data/textures/earth_bump_2k.jpg"
 spec_texture_path = "data/textures/earth_spec_2k.jpg"
+

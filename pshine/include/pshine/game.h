@@ -57,10 +57,10 @@ enum pshine_celestial_body_type {
 };
 
 struct pshine_surface_info {
-	const char *albedo_texture_path;
-	const char *bump_texture_path;
-	const char *lights_texture_path;
-	const char *spec_texture_path;
+	char *albedo_texture_path_own;
+	char *bump_texture_path_own;
+	char *lights_texture_path_own;
+	char *spec_texture_path_own;
 };
 
 struct pshine_celestial_body {
@@ -110,7 +110,10 @@ struct pshine_celestial_body {
 	uint32_t average_color;
 
 	/// e.g. "Sun", "Earth".
-	const char *name;
+	char *name_own;
+
+	/// Name of parent_ref, used during initialization, might be invalid.
+	char *tmp_parent_ref_name_own;
 };
 
 struct pshine_atmosphere_info {

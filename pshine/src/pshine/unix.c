@@ -6,7 +6,9 @@
 
 #include <pshine/util.h>
 
-// returns malloc'd buffer
+// TODO: don't panic on error, return nullptr instead.
+
+/// Returns malloc'd buffer
 char *pshine_read_file(const char *fname, size_t *size) {
 	PSHINE_DEBUG("reading file '%s'", fname);
 	int fdin = open(fname, O_RDONLY);

@@ -39,6 +39,10 @@ if [ "$NO_DOWNLOAD" -eq "0" ]; then
 
 	printf $BOLD'Downloading STB_image\n'$NORMAL
 	wget -P pshine/include/vendor https://raw.githubusercontent.com/nothings/stb/refs/heads/master/stb_image.h
+
+	printf $BOLD'Downloading TomlC99'$NORMAL
+	wget -P pshine/src/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.c
+	wget -P pshine/include/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.h
 fi
 
 printf $BOLD'Generating ImGui Bindings\n'$NORMAL

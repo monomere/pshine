@@ -51,7 +51,7 @@ Make sure to check the contents of the script before running it.
 
 <hr>
 
-### Volk and VMA
+### Volk, VMA, stb_image
 
 The graphics backend uses [stb_image](https://github.com/nothings/stb), [volk](https://github.com/zeux/volk) and
 [VMA](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator),
@@ -62,6 +62,15 @@ wget -P pshine/include/vendor https://raw.githubusercontent.com/zeux/volk/master
 wget -P pshine/src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
 wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
 wget -P pshine/include/vendor https://raw.githubusercontent.com/nothings/stb/refs/heads/master/stb_image.h
+```
+
+### Auxiliary libraries
+
+Currently, [tomlc99](https://github.com/cktan/tomlc99).
+
+```bash
+wget -P pshine/src/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.c
+wget -P pshine/include/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.h
 ```
 
 ### Generating the ImGui bindings

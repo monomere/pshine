@@ -12,6 +12,13 @@
 extern int pshine_argc;
 extern const char **pshine_argv;
 
+static inline char *pshine_strdup(const char *s) {
+	size_t l = strlen(s) + 1;
+	char *z = malloc(l);
+	memcpy(z, s, l);
+	return z;
+}
+
 static inline bool pshine_check_has_option(const char *opt) {
 	for (int i = 1; i < pshine_argc; ++i)
 		if (strcmp(pshine_argv[i], opt) == 0)
