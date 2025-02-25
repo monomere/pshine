@@ -2402,6 +2402,8 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			deallocate_buffer(r, p->graphics_data->uniform_buffer);
+			deallocate_buffer(r, p->graphics_data->atmo_uniform_buffer);
+			deallocate_buffer(r, p->graphics_data->material_uniform_buffer);
 			deallocate_image(r, p->graphics_data->atmo_lut);
 			deallocate_image(r, p->graphics_data->surface_albedo);
 			deallocate_image(r, p->graphics_data->surface_bump);

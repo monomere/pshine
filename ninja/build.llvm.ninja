@@ -4,6 +4,6 @@ cxxstdlib = -stdlib=libc++ -I/opt/homebrew/include
 cxxld = -L/opt/homebrew/lib -fuse-ld=lld
 
 sanitize =  -fsanitize=address,undefined
-# sanitize =
+sanitize =
 cc = clang -fdiagnostics-color -D_DEFAULT_SOURCE $sanitize
 cxx = clang++ -fdiagnostics-color $sanitize
