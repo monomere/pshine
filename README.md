@@ -8,9 +8,13 @@ Atmosphere and meshing playground. WIP.
 
 - [x] Actual atmosphere rendering.
 - [x] Move the backend to vulkan (shouldn't be super hard).
-- [ ] Orbits (almost done now)
+- [ ] Orbits
+  - [x] Elliptic orbits, propagation
+  - [ ] Non-elliptic orbits untested.
 - [ ] Terrain generation, textures.
+  - [x] Textures.
 - [ ] Mesh LOD.
+  - [x] Primitive sphere LODs.
 
 ## Setting Up
 
