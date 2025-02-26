@@ -177,6 +177,8 @@ struct vulkan_renderer {
 		VkPipeline atmo_pipeline;
 		VkPipelineLayout line_gizmo_layout;
 		VkPipeline line_gizmo_pipeline;
+		VkPipelineLayout blit_layout;
+		VkPipeline blit_pipeline;
 
 		// compute pipelines
 		VkPipelineLayout atmo_lut_layout;
@@ -198,11 +200,13 @@ struct vulkan_renderer {
 		VkDescriptorSetLayout static_mesh_layout;
 		VkDescriptorSetLayout atmo_layout;
 		VkDescriptorSetLayout atmo_lut_layout;
+		VkDescriptorSetLayout blit_layout;
 	} descriptors;
 
 	struct {
 		struct vulkan_buffer global_uniform_buffer;
 		VkDescriptorSet global_descriptor_set;
+		VkDescriptorSet atmo_blit_descriptor_set;
 	} data;
 
 	struct per_frame_data frames[FRAMES_IN_FLIGHT];
@@ -1521,15 +1525,25 @@ static void init_rpasses(struct vulkan_renderer *r) {
 			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // current write
 		},
-		// synchronize composite_subpass output_attachment write
-		// before imgui_subpass output_attachment write.
+		// synchronize composite_subpass transient_color_attachment write
+		// before imgui_subpass transient_color_attachment read.
 		(VkSubpassDependency){
 			.srcSubpass = composite_subpass_index,
 			.dstSubpass = imgui_subpass_index,
 			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // earlier write
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // current write
+			.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT, // later read
+		},
+		// synchronize composite_subpass transient_color_attachment write
+		// before composite_subpass transient_color_attachment read.
+		(VkSubpassDependency){
+			.srcSubpass = composite_subpass_index,
+			.dstSubpass = composite_subpass_index,
+			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // earlier write
+			.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT, // later read
 		},
 		// synchronize geometry_subpass transient_color_attachment write
 		// before composite_subpass transient_color_attachment (as input attachment) read.
@@ -1572,7 +1586,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.colorAttachmentCount = 1,
 				.pColorAttachments = (VkAttachmentReference[]) {
 					(VkAttachmentReference){
-						.attachment = output_attachment_index,
+						.attachment = transient_color_attachment_index,
 						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 					},
 				},
@@ -1996,6 +2010,25 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	});
 	r->pipelines.atmo_pipeline = atmo_pipeline.pipeline;
 	r->pipelines.atmo_layout = atmo_pipeline.layout;
+	
+	struct vulkan_pipeline blit_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
+		.vert_fname = "build/pshine/data/blit.vert.spv",
+		.frag_fname = "build/pshine/data/blit.frag.spv",
+		.render_pass = r->render_passes.main_pass,
+		.subpass = 1,
+		.push_constant_range_count = 0,
+		.set_layout_count = 1,
+		.set_layouts = (VkDescriptorSetLayout[]){
+			r->descriptors.blit_layout,
+		},
+		.blend = false,
+		.depth_test = false,
+		.vertex_input = false,
+		.layout_name = "blit pipeline layout",
+		.pipeline_name = "blit pipeline",
+	});
+	r->pipelines.blit_pipeline = blit_pipeline.pipeline;
+	r->pipelines.blit_layout = blit_pipeline.layout;
 
 	// struct vulkan_pipeline line_gizmo_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 	// 	.vert_fname = "build/pshine/data/line_gizmo.vert.spv",
@@ -2239,6 +2272,22 @@ static void init_descriptors(struct vulkan_renderer *r) {
 		}
 	}, NULL, &r->descriptors.atmo_lut_layout);
 	NAME_VK_OBJECT(r, r->descriptors.atmo_lut_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "atmosphere lut descriptor set layout");
+
+
+	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 1,
+		.pBindings = (VkDescriptorSetLayoutBinding[]){
+			(VkDescriptorSetLayoutBinding){
+				.binding = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+		}
+	}, NULL, &r->descriptors.blit_layout);
+	NAME_VK_OBJECT(r, r->descriptors.blit_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "blit descriptor set layout");
+
 }
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
@@ -2287,6 +2336,30 @@ static void init_data(struct vulkan_renderer *r) {
 				.buffer = r->data.global_uniform_buffer.buffer,
 				.offset = 0,
 				.range = sizeof(struct global_uniform_data)
+			}
+		}
+	}, 0, NULL);
+
+	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = r->descriptors.pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &r->descriptors.blit_layout
+	}, &r->data.atmo_blit_descriptor_set));
+	NAME_VK_OBJECT(r, r->data.atmo_blit_descriptor_set, VK_OBJECT_TYPE_DESCRIPTOR_SET, "atmo blit ds");
+
+	vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[1]){
+		(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+			.dstSet = r->data.atmo_blit_descriptor_set,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.pImageInfo = &(VkDescriptorImageInfo){
+				.imageView = r->transients.color_0.view,
+				.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+				.sampler = VK_NULL_HANDLE,
 			}
 		}
 	}, 0, NULL);
@@ -2500,9 +2573,6 @@ static void render_celestial_body(
 
 static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t image_index) {
 	struct per_frame_data *f = &r->frames[current_frame];
-
-	{
-	}
 
 	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);
 
@@ -2771,7 +2841,64 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		}
 	}
 
+
+	// vkCmdBlitImage2(f->command_buffer, &(VkBlitImageInfo2){
+	// 	.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
+	// 	.pNext = nullptr,
+	// 	.filter = VK_FILTER_NEAREST,
+	// 	.srcImage = r->transients.color_0.image,
+	// 	.dstImage = r->swapchain_images_own[image_index],
+	// 	.srcImageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+	// 	.dstImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+	// 	.regionCount = 1,
+	// 	.pRegions = &(VkImageBlit2){
+	// 		.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
+	// 		.pNext = nullptr,
+	// 		.srcSubresource = (VkImageSubresourceLayers){
+	// 			.mipLevel = 0,
+	// 			.layerCount = 1,
+	// 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+	// 			.baseArrayLayer = 0,
+	// 		},
+	// 		.srcOffsets = {
+	// 			(VkOffset3D){ .x = 0, .y = 0, .z = 0 },
+	// 			(VkOffset3D){
+	// 				.x = r->swapchain_extent.width,
+	// 				.y = r->swapchain_extent.height,
+	// 				.z = 1,
+	// 			},
+	// 		},
+	// 		.dstSubresource = (VkImageSubresourceLayers){
+	// 			.mipLevel = 0,
+	// 			.layerCount = 1,
+	// 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+	// 			.baseArrayLayer = 0,
+	// 		},
+	// 		.dstOffsets = {
+	// 			(VkOffset3D){ .x = 0, .y = 0, .z = 0 },
+	// 			(VkOffset3D){
+	// 				.x = r->swapchain_extent.width,
+	// 				.y = r->swapchain_extent.height,
+	// 				.z = 1,
+	// 			},
+	// 		},
+	// 	}
+	// });
+
 	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
+	
+	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.blit_pipeline);
+	vkCmdBindDescriptorSets(
+		f->command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		r->pipelines.blit_layout,
+		0,
+		1,
+		&r->data.atmo_blit_descriptor_set,
+		0,
+		nullptr
+	);
+
 	cImGui_ImplVulkan_RenderDrawData(ImGui_GetDrawData(), f->command_buffer);
 
 	vkCmdEndRenderPass(f->command_buffer);
@@ -2933,7 +3060,8 @@ static struct clipped_line clip_ndc_line_to_screen(
 
 static void show_gizmos(struct vulkan_renderer *r) {
 	if (r->game->ui_dont_render_gizmos) return;
-	double2 screen_size = double2xy(r->swapchain_extent.width, r->swapchain_extent.height);
+	ImVec2 display_size = ImGui_GetIO()->DisplaySize;
+	double2 screen_size = double2xy(display_size.x, display_size.y);
 	double aspect_ratio = screen_size.x / screen_size.y;
 	double4x4 view_mat = {};
 	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);

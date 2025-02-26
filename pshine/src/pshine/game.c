@@ -568,8 +568,9 @@ struct pshine_game_data {
 void pshine_init_game(struct pshine_game *game) {
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
-	game->celestial_body_count = 3;
+	game->celestial_body_count = 4;
 	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
+	game->celestial_bodies_own[3] = load_celestial_body("data/celestial/venus.toml");
 	game->celestial_bodies_own[2] = load_celestial_body("data/celestial/mars.toml");
 	game->celestial_bodies_own[1] = load_celestial_body("data/celestial/sun.toml");
 	game->celestial_bodies_own[0] = load_celestial_body("data/celestial/earth.toml");
@@ -597,8 +598,11 @@ void pshine_init_game(struct pshine_game *game) {
 		}
 	}
 
-	create_orbit_points(game->celestial_bodies_own[0], 500);
-	create_orbit_points(game->celestial_bodies_own[2], 500);
+	for (size_t i = 0; i < game->celestial_body_count; ++i) {
+		if (!game->celestial_bodies_own[i]->is_static) {
+			create_orbit_points(game->celestial_bodies_own[i], 500);
+		}
+	}
 	
 	// game->celestial_bodies_own[1] = calloc(1, sizeof(struct pshine_star));
 	// init_star((void*)game->celestial_bodies_own[1]);

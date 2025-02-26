@@ -1,0 +1,38 @@
+[planet]
+name = "Venus"
+radius = 6_051_800.0
+parent = "Sol"
+is_static = false
+mass = 0.815
+mu = 3.98600436e-4
+average_color = 0x3cd6fc
+gizmo_color = 0x3cd6fc
+
+[rotation]
+speed = 0.0
+axis = [0.0, 1.0, 0.0]
+
+[orbit]
+argument = 0.9579
+eccentricity = 0.006772
+inclination = 0.03752
+longitude = 1.33832
+semimajor = 108210.0
+true_anomaly = 0.0
+
+# [atmosphere]
+# height = 100_000.0
+# rayleigh_coefs = [3.8, 13.5, 33.1]
+# rayleigh_falloff = 13.5
+# mie_coef = 20.1
+# mie_ext_coef = 1.1
+# mie_g_coef = -0.87
+# mie_falloff = 18.0
+# intensity = 20.0
+
+[surface]
+albedo_texture_path = "data/textures/venus_2k.jpg"
+lights_texture_path = "data/textures/1x1_black.png"
+bump_texture_path = "data/textures/1x1_black.png"
+spec_texture_path = "data/textures/1x1_black.png"
+
