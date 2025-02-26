@@ -185,6 +185,7 @@ Key|Action
 - [ ] Clean up the renderer (`vk.c`), maybe move to C-ish C++ because its slowly
       becoming unbearable. Shouldn't be that much of a problem because you already need
       a C++ compiler for ImGui and VMA.
+- [ ] Don't ignore `pshine_planet::has_atmosphere`.
 
 ### Useful stuff
 

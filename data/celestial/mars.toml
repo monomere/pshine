@@ -1,0 +1,38 @@
+[planet]
+name = "Mars"
+radius = 3_389_500.0
+parent = "Sol"
+is_static = false
+mass = 0.107
+mu = 3.98600436e-4
+average_color = 0x0000ff
+gizmo_color = 0x0000ff
+
+[rotation]
+speed = 0.0
+axis = [0.0, 1.0, 0.0]
+
+[orbit]
+argument = 5.000368
+eccentricity = 0.0934
+inclination = 0.028449
+longitude = 0.86530
+semimajor = 227939.366
+true_anomaly = 0.0
+
+# [atmosphere]
+# height = 100_000.0
+# rayleigh_coefs = [3.8, 13.5, 33.1]
+# rayleigh_falloff = 13.5
+# mie_coef = 20.1
+# mie_ext_coef = 1.1
+# mie_g_coef = -0.87
+# mie_falloff = 18.0
+# intensity = 20.0
+
+[surface]
+albedo_texture_path = "data/textures/earth_5k.jpg"
+lights_texture_path = "data/textures/earth_lights_2k.jpg"
+bump_texture_path = "data/textures/earth_bump_2k.jpg"
+spec_texture_path = "data/textures/earth_spec_2k.jpg"
+

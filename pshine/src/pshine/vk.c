@@ -2755,6 +2755,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
+			if (!p->has_atmosphere) continue;
 			vkCmdBindDescriptorSets(
 				f->command_buffer,
 				VK_PIPELINE_BIND_POINT_GRAPHICS,

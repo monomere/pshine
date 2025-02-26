@@ -456,7 +456,9 @@ static struct pshine_celestial_body *load_celestial_body(
 		body->type = PSHINE_CELESTIAL_BODY_PLANET;
 		struct pshine_planet *planet = (void*)body;
 		toml_table_t *atab = toml_table_in(tab, "atmosphere");
+		planet->has_atmosphere = false;
 		if (atab != nullptr) {
+			planet->has_atmosphere = true;
 			READ_FIELD(atab, "height", planet->atmosphere.height, double, d);
 			toml_array_t *arr = toml_array_in(atab, "rayleigh_coefs");
 			if (arr != nullptr) {
@@ -566,9 +568,9 @@ struct pshine_game_data {
 void pshine_init_game(struct pshine_game *game) {
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
-	game->celestial_body_count = 2;
+	game->celestial_body_count = 3;
 	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
-	// game->celestial_bodies_own[2] = load_celestial_body("data/celestial/mars.toml");
+	game->celestial_bodies_own[2] = load_celestial_body("data/celestial/mars.toml");
 	game->celestial_bodies_own[1] = load_celestial_body("data/celestial/sun.toml");
 	game->celestial_bodies_own[0] = load_celestial_body("data/celestial/earth.toml");
 
@@ -596,6 +598,7 @@ void pshine_init_game(struct pshine_game *game) {
 	}
 
 	create_orbit_points(game->celestial_bodies_own[0], 500);
+	create_orbit_points(game->celestial_bodies_own[2], 500);
 	
 	// game->celestial_bodies_own[1] = calloc(1, sizeof(struct pshine_star));
 	// init_star((void*)game->celestial_bodies_own[1]);
@@ -921,7 +924,7 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 	//
 	// Now we can finally get the global position:
 	//
-	//        r = rₚR, where R = R₁R₂R₃.
+	//        r = Rrₚ, where R = R₁R₂R₃.
 	//
 
 	// Some variables to correspond with the math notation:
@@ -936,20 +939,20 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 		1'000'000 * a * (1 - e*e) / (1 + e * cos(ν)));
 
 	double3x3 R1;
-	R1.v3s[0] = double3xyz(cos(-ω), -sin(-ω), 0.0);
-	R1.v3s[1] = double3xyz(sin(-ω),  cos(-ω), 0.0);
-	R1.v3s[2] = double3xyz(    0.0,      0.0, 1.0);
+	R1.v3s[0] = double3xyz( cos(-ω), 0.0, sin(-ω));
+	R1.v3s[1] = double3xyz(     0.0, 1.0,     0.0);
+	R1.v3s[2] = double3xyz(-sin(-ω), 0.0, cos(-ω));
 	double3x3 R2;
-	R2.v3s[0] = double3xyz(1,       0,        0);
-	R2.v3s[1] = double3xyz(0, cos(-i), -sin(-i));
-	R2.v3s[2] = double3xyz(0, sin(-i),  cos(-i));
+	R2.v3s[0] = double3xyz(1.0,     0.0,      0.0);
+	R2.v3s[1] = double3xyz(0.0, cos(-i), -sin(-i));
+	R2.v3s[2] = double3xyz(0.0, sin(-i),  cos(-i));
 	double3x3 R3;
-	R3.v3s[0] = double3xyz(cos(-Ω), -sin(-Ω), 0.0);
-	R3.v3s[1] = double3xyz(sin(-Ω),  cos(-Ω), 0.0);
-	R3.v3s[2] = double3xyz(    0.0,      0.0, 1.0);
+	R3.v3s[0] = double3xyz( cos(-Ω), 0.0, sin(-Ω));
+	R3.v3s[1] = double3xyz(     0.0, 1.0,     0.0);
+	R3.v3s[2] = double3xyz(-sin(-Ω), 0.0, cos(-Ω));
 
-	double3x3 R = R1;
-	double3x3mul(&R, &R2);
+	double3x3 R = R2;
+	double3x3mul(&R, &R1);
 	double3x3mul(&R, &R3);
 
 	double3 r = double3x3mulv(&R, rₚ);
