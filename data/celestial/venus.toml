@@ -20,15 +20,15 @@ longitude = 1.33832
 semimajor = 108210.0
 true_anomaly = 0.0
 
-# [atmosphere]
-# height = 100_000.0
-# rayleigh_coefs = [3.8, 13.5, 33.1]
-# rayleigh_falloff = 13.5
-# mie_coef = 20.1
-# mie_ext_coef = 1.1
-# mie_g_coef = -0.87
-# mie_falloff = 18.0
-# intensity = 20.0
+[atmosphere]
+height = 258_955.261904
+rayleigh_coefs = [433.8, 423.5, 423.1]
+rayleigh_falloff = 4.5
+mie_coef = 20.1
+mie_ext_coef = 1.1
+mie_g_coef = -0.87
+mie_falloff = 2.0
+intensity = 20.0
 
 [surface]
 albedo_texture_path = "data/textures/venus_2k.jpg"
