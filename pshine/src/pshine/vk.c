@@ -2091,6 +2091,8 @@ static void deinit_pipelines(struct vulkan_renderer *r) {
 	vkDestroyPipelineLayout(r->device, r->pipelines.atmo_layout, NULL);
 	vkDestroyPipeline(r->device, r->pipelines.atmo_lut_pipeline, NULL);
 	vkDestroyPipelineLayout(r->device, r->pipelines.atmo_lut_layout, NULL);
+	vkDestroyPipeline(r->device, r->pipelines.blit_pipeline, NULL);
+	vkDestroyPipelineLayout(r->device, r->pipelines.blit_layout, NULL);
 }
 
 
@@ -2299,6 +2301,7 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.static_mesh_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.atmo_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.atmo_lut_layout, NULL);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.blit_layout, NULL);
 }
 
 
