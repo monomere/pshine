@@ -31,7 +31,7 @@ true_anomaly = 0.0
 # intensity = 20.0
 
 [surface]
-albedo_texture_path = "data/textures/earth_5k.jpg"
+albedo_texture_path = "data/textures/mars_2k.jpg"
 lights_texture_path = "data/textures/earth_lights_2k.jpg"
 bump_texture_path = "data/textures/earth_bump_2k.jpg"
 spec_texture_path = "data/textures/earth_spec_2k.jpg"
