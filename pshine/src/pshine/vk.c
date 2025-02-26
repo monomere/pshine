@@ -50,7 +50,8 @@ struct atmo_uniform_data {
 	unsigned int optical_depth_samples;
 	unsigned int scatter_point_samples;
 	float intensity;
-	float4 sun;
+	float3 sun;
+	float scale_factor;
 };
 
 struct material_uniform_data {
@@ -1605,6 +1606,13 @@ static void init_rpasses(struct vulkan_renderer *r) {
 			},
 			[imgui_subpass_index] = (VkSubpassDescription){
 				.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+				.inputAttachmentCount = 1,
+				.pInputAttachments = (VkAttachmentReference[]){
+					(VkAttachmentReference){
+						.attachment = transient_color_attachment_index,
+						.layout = VK_IMAGE_LAYOUT_GENERAL,
+					},
+				},
 				.colorAttachmentCount = 1,
 				.pColorAttachments = (VkAttachmentReference[]) {
 					(VkAttachmentReference){
@@ -2744,7 +2752,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					.optical_depth_samples = 5,
 					.scatter_point_samples = 80,
 					.intensity = p->atmosphere.intensity,
-					.sun = float4xyz3w(float3_double3(double3norm(double3sub(sun_pos, scs_body_pos))), 1.0f),
+					.sun = float3_double3(double3norm(double3sub(sun_pos, scs_body_pos))),
+					.scale_factor = scale_fact,
 				};
 				char *data_raw;
 				vmaMapMemory(r->allocator, p->graphics_data->atmo_uniform_buffer.allocation, (void**)&data_raw);

@@ -209,5 +209,6 @@ This isn't the full set of resources used unfortunately.
 - [Followup: Normal Mapping Without Precomputed Tangents](http://www.thetenthplanet.de/archives/1180)
 - https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader
 - Textures: https://planetpixelemporium.com/
+- Textures: https://svs.gsfc.nasa.gov/4720
 
 - Amazing resource for orbital mechanics: [orbital-mechanics.space](https://orbital-mechanics.space/)

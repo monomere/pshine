@@ -1,0 +1,28 @@
+[planet]
+name = "Moon"
+radius = 1_737_400.0
+parent = "Earth"
+is_static = false
+mass = 0.0123
+mu = 1.0e-8
+average_color = 0xefefef
+gizmo_color = 0xefefef
+
+[rotation]
+speed = 0.0
+axis = [0.0, 1.0, 0.0]
+
+[orbit]
+argument = 0.0 # TODO: precession?
+eccentricity = 0.0549
+inclination = 0.02755333836830928
+longitude = 0.0 # precession
+semimajor = 384.399
+true_anomaly = 0.0
+
+[surface]
+albedo_texture_path = "data/textures/moon_2k.png"
+lights_texture_path = "data/textures/1x1_black.png"
+bump_texture_path = "data/textures/1x1_black.png"
+spec_texture_path = "data/textures/1x1_black.png"
+

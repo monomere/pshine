@@ -134,9 +134,9 @@ vec4 compute_color(vec2 uv, vec4 col, float depth) {
 
 	float dst_to_atmo = atmo_hit.x;
 
-	// return vec4(vec3(dst_to_surface * 0.1), 1.0);
+	if (dst_to_atmo * atmo.scale_factor * 0.5 > depth) return col;
 
-	// if (dst_to_atmo < depth) return col;
+	// return vec4(vec3(dst_to_surface * 0.1), 1.0);
 
 	float dst_thru_atmo = min(atmo_hit.y, dst_to_surface - dst_to_atmo);
 	// if (distance(ray_origin, atmo.planet.xyz) < atmo.planet.w) return vec4(1.0, 0.0, 0.0, 1.0);
@@ -154,7 +154,9 @@ vec4 compute_color(vec2 uv, vec4 col, float depth) {
 }
 
 float linearize_depth(float depth) {
-	return global.camera.w / (depth * 2 - 1);
+	// return depth;
+	// return 1.0 - depth;
+	return global.camera.w / depth;
 }
 
 void main() {
@@ -162,5 +164,6 @@ void main() {
 	// o_col = color;
 	float depth = subpassLoad(u_input_depth).r;
 	float linear_depth = linearize_depth(depth);
+	// o_col = vec4(vec3(linear_depth), 1.0);
 	o_col = compute_color(i_uv, color, linear_depth);
 }

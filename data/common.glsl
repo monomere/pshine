@@ -28,6 +28,7 @@ struct AtmosphereUniforms {
 	uint scatter_point_samples;
 	float intensity;
 	vec3 sun;
+	float scale_factor; // scs_size / scale_factor = atmo_size.
 };
 
 struct StaticMeshUniforms {

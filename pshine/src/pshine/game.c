@@ -26,6 +26,7 @@ enum si_prefix {
 };
 
 static enum si_prefix find_optimal_si_prefix(double value) {
+	value = fabs(value);
 	if (value < 1'000.0) return SI_ONE;
 	if (value < 1'000'000.0) return SI_KILO;
 	if (value < 1'000'000'000.0) return SI_MEGA;
@@ -380,7 +381,10 @@ void pshine_generate_planet_mesh(
 }
 
 static void propagate_orbit(double time, double gravitational_parameter, struct pshine_orbit_info *body);
-static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbit);
+static double3 kepler_orbit_to_state_vector(
+	const struct pshine_celestial_body *parent_ref,
+	const struct pshine_orbit_info *orbit
+);
 
 static void create_orbit_points(
 	struct pshine_celestial_body *body,
@@ -415,7 +419,7 @@ static void create_orbit_points(
 	double time = 0.0;
 	for (size_t i = 0; i < body->orbit.cached_point_count; ++i) {
 		propagate_orbit(time, μ, &o2);
-		double3 pos = double3mul(kepler_orbit_to_state_vector(&o2), PSHINE_SCS_FACTOR);
+		double3 pos = double3mul(kepler_orbit_to_state_vector(body->parent_ref, &o2), PSHINE_SCS_FACTOR);
 		*(double3*)&body->orbit.cached_points_own[i] = pos;
 		time += ti;
 	}
@@ -569,8 +573,9 @@ struct pshine_game_data {
 void pshine_init_game(struct pshine_game *game) {
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
-	game->celestial_body_count = 4;
+	game->celestial_body_count = 5;
 	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
+	game->celestial_bodies_own[4] = load_celestial_body("data/celestial/moon.toml");
 	game->celestial_bodies_own[3] = load_celestial_body("data/celestial/venus.toml");
 	game->celestial_bodies_own[2] = load_celestial_body("data/celestial/mars.toml");
 	game->celestial_bodies_own[1] = load_celestial_body("data/celestial/sun.toml");
@@ -887,8 +892,13 @@ static void propagate_orbit(
 	}
 }
 
-// returns only the position for now.
-static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbit) {
+// TODO: put parent_ref in pshine_orbit_info.
+
+/// returns only the position for now.
+static double3 kepler_orbit_to_state_vector(
+	const struct pshine_celestial_body *parent_ref,
+	const struct pshine_orbit_info *orbit
+) {
 	// Thank god https://orbital-mechanics.space exists!
 	// The conversion formulas are taken from
 	//   /classical-orbital-elements/orbital-elements-and-the-state-vector.html#orbital-elements-state-vector
@@ -963,6 +973,8 @@ static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbi
 
 	double3 r = double3x3mulv(&R, rₚ);
 
+	r = double3add(r, double3vs(parent_ref->position.values));
+
 	return r;
 }
 
@@ -970,7 +982,7 @@ static void update_celestial_body(struct pshine_game *game, float delta_time, st
 	if (!body->is_static) {
 		propagate_orbit(game->time, body->parent_ref->gravitational_parameter, &body->orbit);
 		body->rotation += body->rotation_speed * delta_time;
-		double3 position = kepler_orbit_to_state_vector(&body->orbit);
+		double3 position = kepler_orbit_to_state_vector(body->parent_ref, &body->orbit);
 		*(double3*)&body->position = position;
 	}
 }
