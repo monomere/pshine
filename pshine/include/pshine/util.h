@@ -89,7 +89,7 @@ static inline const char *pshine_log_severity_color(enum pshine_log_severity sev
 	case PSHINE_LOG_SEVERITY_ERROR: return "\033[0;31m";
 	case PSHINE_LOG_SEVERITY_WARNING: return "\033[1;33m";
 	case PSHINE_LOG_SEVERITY_INFO: return "\033[34m";
-	case PSHINE_LOG_SEVERITY_DEBUG: return "";
+	case PSHINE_LOG_SEVERITY_DEBUG: return "\033[90m";
 	default: return "\033[1m";
 	}
 }

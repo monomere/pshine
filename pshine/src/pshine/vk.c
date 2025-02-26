@@ -842,7 +842,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					.dstBinding = 1,
 					.dstArrayElement = 0,
 					.pImageInfo = &(VkDescriptorImageInfo){
-						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						.imageLayout = VK_IMAGE_LAYOUT_GENERAL, // SHADER_READ_ONLY_OPTIMAL
 						.imageView = r->transients.color_0.view,
 						.sampler = VK_NULL_HANDLE
 					}
@@ -1544,6 +1544,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // earlier write
 			.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 			.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT, // later read
+			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 		},
 		// synchronize geometry_subpass transient_color_attachment write
 		// before composite_subpass transient_color_attachment (as input attachment) read.
@@ -1587,14 +1588,14 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.pColorAttachments = (VkAttachmentReference[]) {
 					(VkAttachmentReference){
 						.attachment = transient_color_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+						.layout = VK_IMAGE_LAYOUT_GENERAL,
 					},
 				},
 				.inputAttachmentCount = 2,
 				.pInputAttachments = (VkAttachmentReference[]) {
 					(VkAttachmentReference){
 						.attachment = transient_color_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						.layout = VK_IMAGE_LAYOUT_GENERAL,
 					},
 					(VkAttachmentReference){
 						.attachment = transient_depth_attachment_index,
@@ -2015,7 +2016,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		.vert_fname = "build/pshine/data/blit.vert.spv",
 		.frag_fname = "build/pshine/data/blit.frag.spv",
 		.render_pass = r->render_passes.main_pass,
-		.subpass = 1,
+		.subpass = 2,
 		.push_constant_range_count = 0,
 		.set_layout_count = 1,
 		.set_layouts = (VkDescriptorSetLayout[]){
@@ -2358,7 +2359,7 @@ static void init_data(struct vulkan_renderer *r) {
 			.dstArrayElement = 0,
 			.pImageInfo = &(VkDescriptorImageInfo){
 				.imageView = r->transients.color_0.view,
-				.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+				.imageLayout = VK_IMAGE_LAYOUT_GENERAL, // SHADER_READ_ONLY_OPTIMAL
 				.sampler = VK_NULL_HANDLE,
 			}
 		}
@@ -2898,6 +2899,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		0,
 		nullptr
 	);
+	vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
 
 	cImGui_ImplVulkan_RenderDrawData(ImGui_GetDrawData(), f->command_buffer);
 
