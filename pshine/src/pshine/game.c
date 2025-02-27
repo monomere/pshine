@@ -381,10 +381,7 @@ void pshine_generate_planet_mesh(
 }
 
 static void propagate_orbit(double time, double gravitational_parameter, struct pshine_orbit_info *body);
-static double3 kepler_orbit_to_state_vector(
-	const struct pshine_celestial_body *parent_ref,
-	const struct pshine_orbit_info *orbit
-);
+static double3 kepler_orbit_to_state_vector(const struct pshine_orbit_info *orbit);
 
 static void create_orbit_points(
 	struct pshine_celestial_body *body,
@@ -419,7 +416,7 @@ static void create_orbit_points(
 	double time = 0.0;
 	for (size_t i = 0; i < body->orbit.cached_point_count; ++i) {
 		propagate_orbit(time, μ, &o2);
-		double3 pos = double3mul(kepler_orbit_to_state_vector(body->parent_ref, &o2), PSHINE_SCS_FACTOR);
+		double3 pos = double3mul(kepler_orbit_to_state_vector(&o2), PSHINE_SCS_FACTOR);
 		*(double3*)&body->orbit.cached_points_own[i] = pos;
 		time += ti;
 	}
@@ -927,7 +924,6 @@ static void propagate_orbit(
 
 /// returns only the position for now.
 static double3 kepler_orbit_to_state_vector(
-	const struct pshine_celestial_body *parent_ref,
 	const struct pshine_orbit_info *orbit
 ) {
 	// Thank god https://orbital-mechanics.space exists!
@@ -1003,8 +999,7 @@ static double3 kepler_orbit_to_state_vector(
 	double3x3mul(&R, &R3);
 
 	double3 r = double3x3mulv(&R, rₚ);
-
-	r = double3add(r, double3vs(parent_ref->position.values));
+	// r = double3add(r, double3vs(parent_ref->position.values));
 
 	return r;
 }
@@ -1013,15 +1008,42 @@ static void update_celestial_body(struct pshine_game *game, float delta_time, st
 	if (!body->is_static) {
 		propagate_orbit(game->time, body->parent_ref->gravitational_parameter, &body->orbit);
 		body->rotation += body->rotation_speed * delta_time;
-		double3 position = kepler_orbit_to_state_vector(body->parent_ref, &body->orbit);
+		double3 position = kepler_orbit_to_state_vector(&body->orbit);
+		position = double3add(position, double3vs(body->parent_ref->position.values));
 		*(double3*)&body->position = position;
 	}
 }
 
+/// NB: always start label with '##'.
 static bool eximgui_input_double3(const char *label, double *vs, double step, const char *format) {
-	double3 step3 = double3v(step);
-	double3 faststep3 = double3v(step * 100.0);
-	return ImGui_InputScalarNEx(label, ImGuiDataType_Double, vs, 3, step3.vs, faststep3.vs, format, ImGuiInputTextFlags_None);
+	bool res = false;
+	ImGui_PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0);
+	ImGui_PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0);
+	ImGui_PushStyleVar(ImGuiStyleVar_SeparatorTextBorderSize, 1.0);
+	ImGui_PushStyleColor(ImGuiCol_ChildBg, 0xFF050505);
+	if (ImGui_BeginChild(label + 2, (ImVec2){}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border, 0)) {
+		ImGui_SetCursorPosY(ImGui_GetCursorPosY() - 5.0f);
+		ImGui_SeparatorText(label + 2);
+		ImGui_PushIDInt(0);
+		ImGui_Text("X"); ImGui_SameLine();
+		res |= ImGui_InputDoubleEx(label, &vs[0], step, step * 100.0, format, 0);
+		ImGui_PopID();
+		ImGui_PushIDInt(1);
+		ImGui_Text("Y"); ImGui_SameLine();
+		res |= ImGui_InputDoubleEx(label, &vs[1], step, step * 100.0, format, 0);
+		ImGui_PopID();
+		ImGui_PushIDInt(2);
+		ImGui_Text("Z"); ImGui_SameLine();
+		res |= ImGui_InputDoubleEx(label, &vs[2], step, step * 100.0, format, 0);
+		ImGui_PopID();
+	}
+	ImGui_EndChild();
+	ImGui_PopStyleColor();
+	ImGui_PopStyleVar();
+	ImGui_PopStyleVar();
+	ImGui_PopStyleVar();
+
+	return res;
 }
 
 void pshine_update_game(struct pshine_game *game, float delta_time) {
@@ -1114,17 +1136,23 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 			double d = double3mag(double3sub(p, double3vs(body->position.values))) - body->radius;
 			enum si_prefix d_prefix = find_optimal_si_prefix(d);
 			double d_scaled = apply_si_prefix(d_prefix, d);
-			eximgui_input_double3("WCS Pos.", game->camera_position.values, 1000.0, "%.3fm");
-			if (eximgui_input_double3("SCS Pos.", p_scs.vs, 100.0, "%.3fu")) {
+			eximgui_input_double3("##WCS Position", game->camera_position.values, 1000.0, "%.3fm");
+			if (eximgui_input_double3("##SCS Position", p_scs.vs, 100.0, "%.3fu")) {
 				*(double3*)&game->camera_position.values = double3mul(p_scs, PSHINE_SCS_SCALE);
 			}
 			// ImGui_Text("WCS Position: %.3fm %.3fm %.3fm", p.x, p.y, p.z);
 			// ImGui_Text("SCS Position: %.3fu %.3fu %.3fu", p.x * PSHINE_SCS_FACTOR, p.y * PSHINE_SCS_FACTOR, p.z * PSHINE_SCS_FACTOR);
-			ImGui_Text("Distance from planet surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
+			ImGui_Text("Distance from surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
 			{
-				float v = game->data_own->move_speed;
-				ImGui_DragFloatEx("movement speed, m/s", &v, 100.0f, 0.0f, PSHINE_SPEED_OF_LIGHT * 0.01f, "%.3f", 0);
-				game->data_own->move_speed = v;
+				ImGui_InputDouble("movement speed, m/s", &game->data_own->move_speed);
+				ImGui_Text("That's %0.3fc", game->data_own->move_speed / PSHINE_SPEED_OF_LIGHT);
+				if (ImGui_Button("Slow")) game->data_own->move_speed = 1000.0;
+				ImGui_SameLine();
+				if (ImGui_Button("Approach")) game->data_own->move_speed = 5.0e5;
+				ImGui_SameLine();
+				if (ImGui_Button("Light")) game->data_own->move_speed = PSHINE_SPEED_OF_LIGHT;
+				ImGui_SameLine();
+				if (ImGui_Button("FTL")) game->data_own->move_speed = 5.0e10;
 			}
 			ImGui_Text("Yaw: %.3frad, Pitch: %.3frad", game->data_own->camera_yaw, game->data_own->camera_pitch);
 			if (ImGui_Button("Reset rotation")) {

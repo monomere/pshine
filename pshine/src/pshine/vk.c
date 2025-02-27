@@ -135,6 +135,11 @@ struct render_pass_transients {
 	struct vulkan_image depth_0;
 };
 
+struct image_cache_entry {
+	char *fpath_own;
+	struct vulkan_image image;
+};
+
 struct vulkan_renderer {
 	struct pshine_renderer as_base;
 	struct pshine_game *game;
@@ -224,6 +229,8 @@ struct vulkan_renderer {
 	double lod_ranges[4];
 
 	uint8_t *key_states;
+
+	PSHINE_DYNA_(struct image_cache_entry) image_cache;
 };
 
 VkResult check_vk_impl_(struct pshine_debug_file_loc where, VkResult result, const char *expr) {
@@ -1007,6 +1014,12 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 }
 
 static struct vulkan_image load_texture_from_file(struct vulkan_renderer *r, const char *fpath, VkFormat format, int format_channels) {
+	for (size_t i = 0; i < r->image_cache.dyna.count; ++i) {
+		if (strcmp(r->image_cache.ptr[i].fpath_own, fpath) == 0) {
+			return r->image_cache.ptr[i].image;
+		}
+	}
+	
 	int width = 0, height = 0, channels = 0;
 	void *data = stbi_load(fpath, &width, &height, &channels, format_channels);
 	if (data == NULL) PSHINE_PANIC("failed to load surface texture");
@@ -1047,6 +1060,9 @@ static struct vulkan_image load_texture_from_file(struct vulkan_renderer *r, con
 		1
 	}, format, width * height * format_channels, data);
 	stbi_image_free(data);
+	size_t idx = PSHINE_DYNA_ALLOC(r->image_cache);
+	r->image_cache.ptr[idx].fpath_own = pshine_strdup(fpath);
+	r->image_cache.ptr[idx].image = img;
 	return img;
 }
 
@@ -2497,9 +2513,9 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 			deallocate_buffer(r, p->graphics_data->atmo_uniform_buffer);
 			deallocate_buffer(r, p->graphics_data->material_uniform_buffer);
 			deallocate_image(r, p->graphics_data->atmo_lut);
-			deallocate_image(r, p->graphics_data->surface_albedo);
-			deallocate_image(r, p->graphics_data->surface_bump);
-			deallocate_image(r, p->graphics_data->surface_specular);
+			// deallocate_image(r, p->graphics_data->surface_albedo);
+			// deallocate_image(r, p->graphics_data->surface_bump);
+			// deallocate_image(r, p->graphics_data->surface_specular);
 			vkFreeCommandBuffers(r->device, r->command_pool_compute, 1, &p->graphics_data->compute_cmdbuf);
 			free(p->graphics_data);
 		} else if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
@@ -2515,6 +2531,12 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	for (size_t i = 0; i < r->sphere_mesh_count; ++i)
 		destroy_mesh(r, &r->own_sphere_meshes[i]);
 	free(r->own_sphere_meshes);
+
+	for (size_t i = 0; i < r->image_cache.dyna.count; ++i) {
+		deallocate_image(r, r->image_cache.ptr[i].image);
+		free(r->image_cache.ptr[i].fpath_own);
+		r->image_cache.ptr[i].fpath_own = nullptr;
+	}
 
 	deinit_imgui(r);
 	deinit_frames(r);
@@ -2553,8 +2575,9 @@ static inline size_t select_celestial_body_lod(
 	double3 cam_pos
 ) {
 	double3 body_pos = SCSd3_WCSp3(b->position);
-	double m2 = double3mag(double3sub(body_pos, cam_pos));
-	double a = SCSd_WCSd(b->radius) / m2;
+	double radius = SCSd_WCSd(b->radius);
+	double d = double3mag(double3sub(body_pos, cam_pos));
+	double a = radius / (d - radius);
 	if (a >= SCSd_WCSd(r->lod_ranges[0])) return 0;
 	if (a >= SCSd_WCSd(r->lod_ranges[1])) return 1;
 	if (a >= SCSd_WCSd(r->lod_ranges[2])) return 2;
@@ -3136,18 +3159,30 @@ static void show_gizmos(struct vulkan_renderer *r) {
 	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
 		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
 
+		double3 body_pos_scs = SCSd3_WCSp3(b->position);
+		double3 parent_pos_scs = double3v0();
+		bool should_render_name = true;
+		if (b->parent_ref != nullptr) {
+			parent_pos_scs = SCSd3_WCSp3(b->parent_ref->position);
+			double d = sqrt(double3mag2(double3sub(parent_pos_scs, body_pos_scs)) /
+				double3mag2(double3sub(camera_pos_scs, body_pos_scs)));
+			if (d < 0.01) should_render_name = false;
+		}
+		
 		// Planet name
-		{
-			double4 pos_ndc = project_world_to_ndc(&giz, SCSd3_WCSp3(b->position));
+		if (should_render_name) {
+			double4 pos_ndc = project_world_to_ndc(&giz, body_pos_scs);
 			if (pos_ndc.w > znear) {
 				double2 pos_screen = project_ndc_to_screen(&giz, pos_ndc);
 				// size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
-				// char *str = pshine_format_string("%s [%zu]", b->name, lod);
+				static char str[64];
+				snprintf(str, sizeof str, "%s", b->name_own);
+				// char *str = pshine_format_string("%s", b->name_own, lod);
 				ImDrawList_AddText(
 					ImGui_GetBackgroundDrawList(),
 					(ImVec2){ pos_screen.x, pos_screen.y },
 					0xff000000 | b->gizmo_color,
-					b->name_own
+					str
 				);
 				// free(str);
 			}
@@ -3155,11 +3190,14 @@ static void show_gizmos(struct vulkan_renderer *r) {
 
 		// Orbit
 		if (b->orbit.cached_point_count > 0) {
-			double4 prev_ndc = project_world_to_ndc(&giz, double3vs(
+			double4 prev_ndc = project_world_to_ndc(&giz, double3add(parent_pos_scs, double3vs(
 				b->orbit.cached_points_own[b->orbit.cached_point_count - 1].values
-			));
+			)));
 			for (size_t i = 0; i < b->orbit.cached_point_count; ++i) {
-				double4 curr_ndc = project_world_to_ndc(&giz, double3vs(b->orbit.cached_points_own[i].values));
+				double4 curr_ndc = project_world_to_ndc(
+					&giz,
+					double3add(parent_pos_scs, double3vs(b->orbit.cached_points_own[i].values))
+				);
 				struct clipped_line line = clip_ndc_line_to_screen(&giz, prev_ndc, curr_ndc);
 				if (line.ok) {
 					ImDrawList_AddLineEx(
