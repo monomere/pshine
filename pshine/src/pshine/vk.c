@@ -1297,19 +1297,26 @@ static void init_vulkan(struct vulkan_renderer *r) {
 
 		CHECKVK(vkCreateDevice(r->physical_device, &(VkDeviceCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+			.pNext = &(VkPhysicalDeviceSynchronization2Features){
+				.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+				.synchronization2 = true,
+			},
 			.queueCreateInfoCount = queue_create_info_count,
 			.pQueueCreateInfos = queue_create_infos,
-			.enabledExtensionCount = 1 + have_portability_ext,
+			.enabledExtensionCount = 2 + have_portability_ext,
 			.ppEnabledExtensionNames = (const char *[]){
 				VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+				VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
 				"VK_KHR_portability_subset",
 				// VK_EXT_DEBUG_MARKER_EXTENSION_NAME,
 			},
-			.pEnabledFeatures = &(VkPhysicalDeviceFeatures){}
+			.pEnabledFeatures = &(VkPhysicalDeviceFeatures){},
 		}, NULL, &r->device));
 	}
 
 	volkLoadDevice(r->device);
+
+	
 
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_GRAPHICS], 0, &r->queues[QUEUE_GRAPHICS]);
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_PRESENT], 0, &r->queues[QUEUE_PRESENT]);
@@ -2851,6 +2858,32 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				}
 			);
 			vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
+			vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+				.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+				.imageMemoryBarrierCount = 1,
+				.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
+					(VkImageMemoryBarrier2){
+						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+						.image = r->transients.color_0.image,
+						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+						.newLayout = VK_IMAGE_LAYOUT_GENERAL,
+						.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+						.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+						.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+						.dstAccessMask = VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT,
+						.subresourceRange = (VkImageSubresourceRange){
+							.levelCount = 1,
+							.layerCount = 1,
+							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+							.baseMipLevel = 0,
+							.baseArrayLayer = 0,
+						},
+						.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+						.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+					},
+				},
+			});
 		}
 	}
 
