@@ -570,16 +570,47 @@ struct pshine_game_data {
 	size_t selected_body;
 };
 
+static void load_game_config(struct pshine_game *game, const char *fpath) {
+	FILE *fin = fopen(fpath, "rb");
+	if (fin == nullptr) {
+		PSHINE_ERROR("Failed to open game config file %s: %s", fpath,
+			strerror(errno));
+		return;
+	}
+	char *errbuf = calloc(1024, 1);
+	toml_table_t *tab = toml_parse_file(fin, errbuf, 1024);
+	fclose(fin);
+	if (tab == nullptr) {
+		PSHINE_ERROR("Failed to parse game cnofig:\n%s", errbuf);
+		free(errbuf);
+		return;
+	}
+	toml_array_t *arr = toml_array_in(tab, "planets");
+	game->celestial_body_count = 0;
+	if (arr != nullptr) {
+		game->celestial_body_count = toml_array_nelem(arr);
+		game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
+		for (size_t i = 0; i < game->celestial_body_count; ++i) {
+			toml_datum_t body_fpath = toml_string_at(arr, i);
+			if (!body_fpath.ok) {
+				PSHINE_ERROR("game config planets[%zu] isn't a string", i);
+				continue;
+			}
+			game->celestial_bodies_own[i] = load_celestial_body(body_fpath.u.s);
+			free(body_fpath.u.s);
+		}
+	}
+}
+
 void pshine_init_game(struct pshine_game *game) {
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
-	game->celestial_body_count = 5;
-	game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
-	game->celestial_bodies_own[4] = load_celestial_body("data/celestial/moon.toml");
-	game->celestial_bodies_own[3] = load_celestial_body("data/celestial/venus.toml");
-	game->celestial_bodies_own[2] = load_celestial_body("data/celestial/mars.toml");
-	game->celestial_bodies_own[1] = load_celestial_body("data/celestial/sun.toml");
-	game->celestial_bodies_own[0] = load_celestial_body("data/celestial/earth.toml");
+	load_game_config(game, "data/config.toml");
+	// game->celestial_bodies_own[4] = load_celestial_body("data/celestial/moon.toml");
+	// game->celestial_bodies_own[3] = load_celestial_body("data/celestial/venus.toml");
+	// game->celestial_bodies_own[2] = load_celestial_body("data/celestial/mars.toml");
+	// game->celestial_bodies_own[1] = load_celestial_body("data/celestial/sun.toml");
+	// game->celestial_bodies_own[0] = load_celestial_body("data/celestial/earth.toml");
 
 	for (size_t i = 0; i < game->celestial_body_count; ++i) {
 		const char *name = game->celestial_bodies_own[i]->tmp_parent_ref_name_own;
@@ -616,7 +647,7 @@ void pshine_init_game(struct pshine_game *game) {
 	// init_planet((void*)game->celestial_bodies_own[0], game->celestial_bodies_own[1], 6'371'000.0, double3v0());
 	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
 	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
-	game->data_own->selected_body = 3;
+	game->data_own->selected_body = 0;
 	game->data_own->camera_dist = game->celestial_bodies_own[0]->radius + 10'000'000.0;
 	game->camera_position.xyz.z = -game->data_own->camera_dist;
 	game->data_own->camera_yaw = π/2;
@@ -1045,29 +1076,35 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		struct pshine_celestial_body *body = game->celestial_bodies_own[game->data_own->selected_body];
 
 		if (ImGui_Begin("Orbit", NULL, 0)) {
-			ImGui_Text("True anomaly: %.5f", body->orbit.true_anomaly);
-			double3 pos = (SCSd3_WCSp3(body->position));
-			ImGui_Text("Position (SCS): %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
-			double μ = body->parent_ref->gravitational_parameter;
-			double a = body->orbit.semimajor; // The semimajor axis.
-			double e = body->orbit.eccentricity; // The eccentricity.
+			if (!body->is_static) {
+				ImGui_Text("True anomaly: %.5f", body->orbit.true_anomaly);
+				double3 pos = (SCSd3_WCSp3(body->position));
+				ImGui_Text("Position (SCS): %.0f, %.0f, %.0f", pos.x, pos.y, pos.z);
+				double μ = body->parent_ref->gravitational_parameter;
+				double a = body->orbit.semimajor; // The semimajor axis.
+				double e = body->orbit.eccentricity; // The eccentricity.
 
-			double p = a * (1 - e*e);
+				double p = a * (1 - e*e);
 
-			double u = NAN; // Mean motion.
-			if (fabs(e - 1.0) < 1e-6) { // parabolic
-				u = 2.0 * sqrt(μ / (p*p*p));
-			} else if (e < 1.0) { // elliptic
-				u = sqrt(μ / (a*a*a));
-			} else if (e < 1.0) { // hyperbolic
-				u = sqrt(μ / -(a*a*a));
+				double u = NAN; // Mean motion.
+				if (fabs(e - 1.0) < 1e-6) { // parabolic
+					u = 2.0 * sqrt(μ / (p*p*p));
+				} else if (e < 1.0) { // elliptic
+					u = sqrt(μ / (a*a*a));
+				} else if (e < 1.0) { // hyperbolic
+					u = sqrt(μ / -(a*a*a));
+				} else {
+					unreachable();
+				}
+
+				double T = 2 * π / u; // Orbital period.
+				struct time_format_params time_fmt = compute_time_format_params(T);
+				ImGui_Text("Period: " TIME_FORMAT, TIME_FORMAT_ARGS(time_fmt));
 			} else {
-				unreachable();
+				ImGui_PushStyleColor(ImGuiCol_Text, 0xff747474);
+				ImGui_Text("This body doesn't have an orbit.");
+				ImGui_PopStyleColor();
 			}
-
-			double T = 2 * π / u; // Orbital period.
-			struct time_format_params time_fmt = compute_time_format_params(T);
-			ImGui_Text("Period: " TIME_FORMAT, TIME_FORMAT_ARGS(time_fmt));
 		}
 		ImGui_End();
 

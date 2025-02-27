@@ -1,0 +1,9 @@
+planets = [
+	"data/celestial/earth.toml",
+	"data/celestial/mars.toml",
+	"data/celestial/moon.toml",
+	"data/celestial/sun.toml",
+	"data/celestial/venus.toml",
+	"data/celestial/jupiter.toml",
+]
+

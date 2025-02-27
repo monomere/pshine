@@ -1,0 +1,42 @@
+[planet]
+name = "Jupiter"
+radius = 69_911_000.0
+parent = "Sol"
+is_static = false
+mass = 317.8
+mu = 3.98600436e-4
+average_color = 0xe1e156
+gizmo_color = 0xe1e156
+
+[rotation]
+speed = 0.0
+axis = [0.0, 1.0, 0.0]
+
+[orbit]
+argument = 4.77988
+eccentricity = 0.0489
+inclination = 0.005585
+longitude = 1.75342
+semimajor = 778_479.0
+true_anomaly = 0.0
+
+# [atmosphere]
+# # P(h) = P₀ exp(-h/H)
+# # P(100km) = 1atm exp(-100km/8.5km)  -- atmosphere edge pressure
+# # P(x) = 0.00628atm exp(-x/11.1km)  -- edge height for Mars.
+# height = 74_306.9584807
+# rayleigh_coefs = [33.8, 13.5, 8.1]
+# rayleigh_falloff = 13.5
+# mie_coef = 30.1
+# mie_ext_coef = 2.0
+# mie_g_coef = -0.87
+# mie_falloff = 18.0
+# intensity = 20.0
+
+[surface]
+albedo_texture_path = "data/textures/jupiter_2k.jpg"
+lights_texture_path = "data/textures/1x1_black.png"
+bump_texture_path = "data/textures/1x1_black.png"
+spec_texture_path = "data/textures/1x1_black.png"
+
+
