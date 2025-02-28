@@ -1194,9 +1194,11 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				ImGui_SameLine();
 				ImGui_InputDouble("##Movement speed", &game->data_own->move_speed);
 				ImGui_Text("That's %0.3fc", game->data_own->move_speed / PSHINE_SPEED_OF_LIGHT);
-				if (ImGui_Button("Slow")) game->data_own->move_speed = 1000.0;
+				if (ImGui_Button("Snail")) game->data_own->move_speed = 1000.0;
 				ImGui_SameLine();
-				if (ImGui_Button("Approach")) game->data_own->move_speed = 5.0e5;
+				if (ImGui_Button("Slow")) game->data_own->move_speed = 5.0e5;
+				ImGui_SameLine();
+				if (ImGui_Button("Fast")) game->data_own->move_speed = 5.0e7;
 				ImGui_SameLine();
 				if (ImGui_Button("Light")) game->data_own->move_speed = PSHINE_SPEED_OF_LIGHT;
 				ImGui_SameLine();

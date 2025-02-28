@@ -1,0 +1,42 @@
+[planet]
+name = "Ganymede"
+radius = 1_560_800.0
+parent = "Jupiter"
+is_static = false
+mass = 0.008
+mu = 3.98600436e-4
+average_color = 0xdadae0
+gizmo_color = 0xdadae0
+
+[rotation]
+speed = 0.0
+axis = [0.0, 1.0, 0.0]
+
+[orbit]
+argument = 0.785
+eccentricity = 0.009
+inclination = 0.00873
+longitude = 3.21
+semimajor = 671.1
+true_anomaly = 0.0
+
+# [atmosphere]
+# # P(h) = P₀ exp(-h/H)
+# # P(100km) = 1atm exp(-100km/8.5km)  -- atmosphere edge pressure
+# # P(x) = 0.00628atm exp(-x/11.1km)  -- edge height for Mars.
+# height = 74_306.9584807
+# rayleigh_coefs = [33.8, 13.5, 8.1]
+# rayleigh_falloff = 13.5
+# mie_coef = 30.1
+# mie_ext_coef = 2.0
+# mie_g_coef = -0.87
+# mie_falloff = 18.0
+# intensity = 20.0
+
+[surface]
+albedo_texture_path = "data/textures/moon_2k.png"
+lights_texture_path = "data/textures/1x1_black.png"
+bump_texture_path = "data/textures/1x1_black.png"
+spec_texture_path = "data/textures/1x1_black.png"
+
+

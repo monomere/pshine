@@ -5,6 +5,9 @@ planets = [
 	"data/celestial/sun.toml",
 	"data/celestial/venus.toml",
 	"data/celestial/jupiter.toml",
-	"data/celestial/jupiter/io.toml",
+	"data/celestial/jupiter/io2.toml",
+	"data/celestial/jupiter/europa2.toml",
+	"data/celestial/jupiter/ganymede2.toml",
+	"data/celestial/jupiter/callisto2.toml",
 ]
 
