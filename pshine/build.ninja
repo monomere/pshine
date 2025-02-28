@@ -6,6 +6,7 @@ build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      || $mod/sr
 build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
 build $builddir/pshine/$platform.c.o : cc $mod/src/pshine/$platform.c || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
 build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
+# build $builddir/pshine/eximgui.cc.o  : cxx $mod/src/pshine/eximgui.cc
 
 build $builddir/pshine/stb.c.o           : cc $mod/src/pshine/stb.c
 build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/vk_mem_alloc.cc

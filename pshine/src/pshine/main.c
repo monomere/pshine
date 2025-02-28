@@ -26,6 +26,8 @@ int main(int argc, char **argv) {
 	PSHINE_INFO("initializing renderer");
 	pshine_init_renderer(renderer, &game);
 	game.renderer = renderer;
+	PSHINE_INFO("game post-init");
+	pshine_post_init_game(&game);
 	PSHINE_INFO("main loop");
 	pshine_main_loop(&game, game.renderer);
 	PSHINE_INFO("deinitializing renderer");

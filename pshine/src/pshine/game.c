@@ -599,6 +599,8 @@ static void load_game_config(struct pshine_game *game, const char *fpath) {
 	}
 }
 
+static void init_imgui_style();
+
 void pshine_init_game(struct pshine_game *game) {
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
@@ -651,10 +653,18 @@ void pshine_init_game(struct pshine_game *game) {
 	game->data_own->camera_pitch = 0.0;
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0;
-	game->data_own->movement_mode = 1;
+	game->data_own->movement_mode = 0;
 	game->data_own->move_speed = 500'000.0;
+	game->time_scale = 0.0;
+	game->camera_position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
+	game->camera_position.xyz.y = 75.221 * PSHINE_SCS_SCALE;
+	game->camera_position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
 	game->material_smoothness_ = 0.02;
 	*(double3*)game->sun_position.values = double3xyz(0, 0, 0);
+}
+
+void pshine_post_init_game(struct pshine_game *game) {
+	init_imgui_style();
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
@@ -1014,16 +1024,60 @@ static void update_celestial_body(struct pshine_game *game, float delta_time, st
 	}
 }
 
-/// NB: always start label with '##'.
-static bool eximgui_input_double3(const char *label, double *vs, double step, const char *format) {
-	bool res = false;
+static inline ImVec4 rgbint_to_vec4(int r, int g, int b, int a) {
+	return (ImVec4){ r / 255.f, g / 255.f, b / 255.f, a / 255.f };
+}
+
+static void init_imgui_style() {
+	ImGuiStyle *st = ImGui_GetStyle();
+	st->Colors[ImGuiCol_WindowBg] = rgbint_to_vec4(0x02,0x02,0x02,0xFE);
+	st->Colors[ImGuiCol_Button] = rgbint_to_vec4(0x0C, 0x0C, 0x0C, 0xFF);
+	st->Colors[ImGuiCol_ButtonHovered] = rgbint_to_vec4(0x0E, 0x0E, 0x0E, 0xFF);
+	st->Colors[ImGuiCol_ButtonActive] = rgbint_to_vec4(0x0A, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_FrameBg] = rgbint_to_vec4(0x0C, 0x0C, 0x0C, 0xFF);
+	st->Colors[ImGuiCol_FrameBgHovered] = rgbint_to_vec4(0x0E, 0x0E, 0x0E, 0xFF);
+	st->Colors[ImGuiCol_FrameBgActive] = rgbint_to_vec4(0x0A, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_SliderGrab] = rgbint_to_vec4(0x30, 0x30, 0x30, 0xFF);
+	st->Colors[ImGuiCol_SliderGrabActive] = rgbint_to_vec4(0x2C, 0x2C, 0x2C, 0xFF);
+	st->Colors[ImGuiCol_TitleBg] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
+	st->Colors[ImGuiCol_TitleBgActive] = rgbint_to_vec4(0x0A, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_TitleBgCollapsed] = rgbint_to_vec4(0, 0, 0, 0xE0);
+	st->Colors[ImGuiCol_TextSelectedBg] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_Header] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_HeaderActive] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_HeaderHovered] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_ResizeGrip] = rgbint_to_vec4(0x0C, 0x0C, 0x0C, 0xFF);
+	st->Colors[ImGuiCol_ResizeGripActive] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_ResizeGripHovered] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_BorderShadow] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_SeparatorHovered] = rgbint_to_vec4(0x1F, 0x11, 0x11, 0xFF);
+	st->Colors[ImGuiCol_SeparatorActive] = rgbint_to_vec4(0x1F, 0x11, 0x11, 0xFF);
+	// st->FrameRounding = 3.0f;
+	// st->Colors[ImGuiCol_Button] 31478479.308u
+}
+static bool eximgui_begin_input_box(const char *label) {
 	ImGui_PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0);
 	ImGui_PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0);
 	ImGui_PushStyleVar(ImGuiStyleVar_SeparatorTextBorderSize, 1.0);
 	ImGui_PushStyleColor(ImGuiCol_ChildBg, 0xFF050505);
-	if (ImGui_BeginChild(label + 2, (ImVec2){}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border, 0)) {
-		ImGui_SetCursorPosY(ImGui_GetCursorPosY() - 5.0f);
-		ImGui_SeparatorText(label + 2);
+	bool r = ImGui_BeginChild(label, (ImVec2){}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border, 0);
+	ImGui_SetCursorPosY(ImGui_GetCursorPosY() - 5.0f);
+	ImGui_SeparatorText(label);
+	ImGui_PopStyleColor();
+	ImGui_PopStyleVar();
+	ImGui_PopStyleVar();
+	ImGui_PopStyleVar();
+	return r;
+}
+
+static void eximgui_end_input_box() {
+	ImGui_EndChild();
+}
+
+/// NB: always start label with '##'.
+static bool eximgui_input_double3(const char *label, double *vs, double step, const char *format) {
+	bool res = false;
+	if (eximgui_begin_input_box(label + 2)) {
 		ImGui_PushIDInt(0);
 		ImGui_Text("X"); ImGui_SameLine();
 		res |= ImGui_InputDoubleEx(label, &vs[0], step, step * 100.0, format, 0);
@@ -1037,12 +1091,7 @@ static bool eximgui_input_double3(const char *label, double *vs, double step, co
 		res |= ImGui_InputDoubleEx(label, &vs[2], step, step * 100.0, format, 0);
 		ImGui_PopID();
 	}
-	ImGui_EndChild();
-	ImGui_PopStyleColor();
-	ImGui_PopStyleVar();
-	ImGui_PopStyleVar();
-	ImGui_PopStyleVar();
-
+	eximgui_end_input_box();
 	return res;
 }
 
@@ -1140,11 +1189,10 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 			if (eximgui_input_double3("##SCS Position", p_scs.vs, 100.0, "%.3fu")) {
 				*(double3*)&game->camera_position.values = double3mul(p_scs, PSHINE_SCS_SCALE);
 			}
-			// ImGui_Text("WCS Position: %.3fm %.3fm %.3fm", p.x, p.y, p.z);
-			// ImGui_Text("SCS Position: %.3fu %.3fu %.3fu", p.x * PSHINE_SCS_FACTOR, p.y * PSHINE_SCS_FACTOR, p.z * PSHINE_SCS_FACTOR);
-			ImGui_Text("Distance from surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
-			{
-				ImGui_InputDouble("movement speed, m/s", &game->data_own->move_speed);
+			if (eximgui_begin_input_box("Movement speed")) {
+				ImGui_Text("Speed, m/s");
+				ImGui_SameLine();
+				ImGui_InputDouble("##Movement speed", &game->data_own->move_speed);
 				ImGui_Text("That's %0.3fc", game->data_own->move_speed / PSHINE_SPEED_OF_LIGHT);
 				if (ImGui_Button("Slow")) game->data_own->move_speed = 1000.0;
 				ImGui_SameLine();
@@ -1154,6 +1202,8 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				ImGui_SameLine();
 				if (ImGui_Button("FTL")) game->data_own->move_speed = 5.0e10;
 			}
+			eximgui_end_input_box();
+			ImGui_Text("Distance from surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
 			ImGui_Text("Yaw: %.3frad, Pitch: %.3frad", game->data_own->camera_yaw, game->data_own->camera_pitch);
 			if (ImGui_Button("Reset rotation")) {
 				game->data_own->camera_yaw = 0.0;
@@ -1164,6 +1214,21 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				game->data_own->camera_yaw = 0.0;
 				game->data_own->camera_pitch = 0.0;
 			}
+
+			// ImGui_Spacing();
+			// ImVec2 begin = ImGui_GetCursorScreenPos();
+			// ImVec2 size = ImGui_GetItemRectSize();
+			// ImVec2 end = { begin.x + size.x, begin.y + size.y };
+			// ImDrawList_AddRectFilledEx(ImDrawList *self, ImVec2 p_min, ImVec2 p_max, ImU32 col, float rounding, ImDrawFlags flags)
+			// ImDrawList_AddRectFilledMultiColor(
+			// 	ImGui_GetWindowDrawList(),
+			// 	begin,
+			// 	end,
+			// 	0xFF565656,
+			// 	0xFF565656,
+			// 	0xFF232323,
+			// 	0xFF232323
+			// );
 		}
 		ImGui_End();
 

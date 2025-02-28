@@ -216,9 +216,15 @@ struct pshine_game {
 	bool ui_dont_render_windows;
 };
 
+/// This is ran at the start of the game, before the renderer is initialized.
 void pshine_init_game(struct pshine_game *game);
+/// This is ran before the main loop but after the renderer is initialized.
+void pshine_post_init_game(struct pshine_game *game);
+/// This is ran at the end of the game.
 void pshine_deinit_game(struct pshine_game *game);
+/// This is ran each frame.
 void pshine_update_game(struct pshine_game *game, float delta_time);
+/// This starts the game loop.
 void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer);
 
 enum pshine_key {
