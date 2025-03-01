@@ -153,6 +153,7 @@ struct vulkan_renderer {
 	uint32_t queue_families[QUEUE_FAMILY_COUNT_];
 	VkQueue queues[QUEUE_FAMILY_COUNT_];
 	VkSwapchainKHR swapchain;
+	VkSurfaceCapabilitiesKHR surface_capabilities;
 	VkExtent2D swapchain_extent;
 	uint32_t swapchain_image_count;
 	VkImage *swapchain_images_own; // `*[.swapchain_image_count]`
@@ -260,6 +261,7 @@ static void init_vulkan(struct vulkan_renderer *r); static void deinit_vulkan(st
 static void init_swapchain(struct vulkan_renderer *r); static void deinit_swapchain(struct vulkan_renderer *r);
 static void init_rpasses(struct vulkan_renderer *r); static void deinit_rpasses(struct vulkan_renderer *r);
 static void init_pipelines(struct vulkan_renderer *r); static void deinit_pipelines(struct vulkan_renderer *r);
+static void init_transients(struct vulkan_renderer *r); static void deinit_transients(struct vulkan_renderer *r);
 static void init_fbufs(struct vulkan_renderer *r); static void deinit_fbufs(struct vulkan_renderer *r);
 static void init_cmdbufs(struct vulkan_renderer *r); static void deinit_cmdbufs(struct vulkan_renderer *r);
 static void init_sync(struct vulkan_renderer *r); static void deinit_sync(struct vulkan_renderer *r);
@@ -621,6 +623,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	init_swapchain(r);
 	init_rpasses(r);
 	init_descriptors(r);
+	init_transients(r);
 	init_fbufs(r);
 	init_pipelines(r);
 	init_cmdbufs(r);
@@ -1161,7 +1164,7 @@ static void init_glfw(struct vulkan_renderer *r) {
 	if (!glfwInit()) PSHINE_PANIC("could not initialize GLFW");
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	r->window = glfwCreateWindow(1920 / 1.5f, 1080 / 1.5f, "pshine2", NULL, NULL);
+	r->window = glfwCreateWindow(1920 / 1.5, 1080 / 1.5, "pshine2", nullptr, nullptr);
 	glfwSetWindowUserPointer(r->window, r);
 	if (r->window == NULL) PSHINE_PANIC("could not create window");
 	glfwSetKeyCallback(r->window, &key_cb_glfw_);
@@ -1427,30 +1430,18 @@ static VkFormat find_optimal_format(
 	return found_format;
 }
 
-static void init_swapchain(struct vulkan_renderer *r) {
-	VkSurfaceCapabilitiesKHR surface_capabilities = {};
-	CHECKVK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(r->physical_device, r->surface, &surface_capabilities));
-	r->swapchain_extent = get_swapchain_extent(r, &surface_capabilities);
-	r->surface_format = find_surface_format(r);
-	r->depth_format = find_optimal_format(r, 1, (VkFormat[]){
-		VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT
-	}, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_TILING_OPTIMAL);
+static void reinit_swapchain(struct vulkan_renderer *r) {
+	vkDeviceWaitIdle(r->device);
+	vkDestroySwapchainKHR(r->device, r->swapchain, nullptr);
+	int width, height;
+	glfwGetFramebufferSize(r->window, &width, &height);
+	r->swapchain_extent.width = width;
+	r->swapchain_extent.height = height;
 	PSHINE_INFO("swapchain extent: %ux%u", r->swapchain_extent.width, r->swapchain_extent.height);
-
-	// {
-	// 	uint32_t surface_format_count = 0;
-	// 	CHECKVK(vkGetPhysicalDeviceSurfaceFormatsKHR(r->physical_device, r->surface, &surface_format_count, NULL));
-	// 	VkSurfaceFormatKHR surface_formats[surface_format_count];
-	// 	CHECKVK(vkGetPhysicalDeviceSurfaceFormatsKHR(r->physical_device, r->surface, &surface_format_count, surface_formats));
-	// 	for (uint32_t i = 0; i < surface_format_count; ++i) {
-	// 		PSHINE_INFO("surface format: %d, color space: %d", surface_formats[i].format, surface_formats[i].colorSpace);
-	// 	}
-	// }
-
 	CHECKVK(vkCreateSwapchainKHR(r->device, &(VkSwapchainCreateInfoKHR){
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 		.surface = r->surface,
-		.minImageCount = surface_capabilities.minImageCount,
+		.minImageCount = r->surface_capabilities.minImageCount,
 		.imageFormat = r->surface_format.format,
 		.imageArrayLayers = 1,
 		.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
@@ -1460,13 +1451,19 @@ static void init_swapchain(struct vulkan_renderer *r) {
 		.imageSharingMode = r->queue_families[QUEUE_GRAPHICS] != r->queue_families[QUEUE_PRESENT]
 			? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
 		.pQueueFamilyIndices = (uint32_t[]) { r->queue_families[QUEUE_GRAPHICS], r->queue_families[QUEUE_PRESENT] },
-		.preTransform = surface_capabilities.currentTransform,
+		.preTransform = r->surface_capabilities.currentTransform,
 		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
 		.presentMode = VK_PRESENT_MODE_FIFO_KHR,
 		.oldSwapchain = VK_NULL_HANDLE,
 	}, NULL, &r->swapchain));
 
+	for (size_t i = 0; i < r->swapchain_image_count; ++i) {
+		vkDestroyImageView(r->device, r->swapchain_image_views_own[i], nullptr);
+	}
+	free(r->swapchain_image_views_own);
+
 	r->swapchain_image_count = 0;
+	free(r->swapchain_images_own);
 	CHECKVK(vkGetSwapchainImagesKHR(r->device, r->swapchain, &r->swapchain_image_count, NULL));
 	r->swapchain_images_own = calloc(r->swapchain_image_count, sizeof(VkImage));
 	CHECKVK(vkGetSwapchainImagesKHR(r->device, r->swapchain, &r->swapchain_image_count, r->swapchain_images_own));
@@ -1487,6 +1484,26 @@ static void init_swapchain(struct vulkan_renderer *r) {
 			}
 		}, NULL, &r->swapchain_image_views_own[i]));
 	}
+}
+
+static void init_swapchain(struct vulkan_renderer *r) {
+	CHECKVK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(r->physical_device, r->surface, &r->surface_capabilities));
+	r->swapchain_extent = get_swapchain_extent(r, &r->surface_capabilities);
+	r->surface_format = find_surface_format(r);
+	r->depth_format = find_optimal_format(r, 1, (VkFormat[]){
+		VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT
+	}, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_TILING_OPTIMAL);
+	reinit_swapchain(r);
+	// {
+	// 	uint32_t surface_format_count = 0;
+	// 	CHECKVK(vkGetPhysicalDeviceSurfaceFormatsKHR(r->physical_device, r->surface, &surface_format_count, NULL));
+	// 	VkSurfaceFormatKHR surface_formats[surface_format_count];
+	// 	CHECKVK(vkGetPhysicalDeviceSurfaceFormatsKHR(r->physical_device, r->surface, &surface_format_count, surface_formats));
+	// 	for (uint32_t i = 0; i < surface_format_count; ++i) {
+	// 		PSHINE_INFO("surface format: %d, color space: %d", surface_formats[i].format, surface_formats[i].colorSpace);
+	// 	}
+	// }
+
 }
 
 static void deinit_swapchain(struct vulkan_renderer *r) {	
@@ -1688,11 +1705,7 @@ static void deinit_rpasses(struct vulkan_renderer *r) {
 	vkDestroyRenderPass(r->device, r->render_passes.main_pass, NULL);
 }
 
-
-// Framebuffers
-
-static void init_fbufs(struct vulkan_renderer *r) {
-	r->swapchain_framebuffers_own = calloc(r->swapchain_image_count, sizeof(VkFramebuffer));
+static void init_transients(struct vulkan_renderer *r) {
 	r->depth_image = allocate_image(r, &(struct vulkan_image_alloc_info){
 		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
 		.preferred_memory_property_flags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
@@ -1763,9 +1776,17 @@ static void init_fbufs(struct vulkan_renderer *r) {
 	});
 	NAME_VK_OBJECT(r, r->transients.color_0.image, VK_OBJECT_TYPE_IMAGE, "transient color0 image");
 	NAME_VK_OBJECT(r, r->transients.color_0.view, VK_OBJECT_TYPE_IMAGE_VIEW, "transient color0 image view");
+}
 
+static void deinit_transients(struct vulkan_renderer *r) {
+	deallocate_image(r, r->depth_image);
+	deallocate_image(r, r->transients.color_0);
+}
+
+// Framebuffers
+static void init_fbufs(struct vulkan_renderer *r) {
+	r->swapchain_framebuffers_own = calloc(r->swapchain_image_count, sizeof(VkFramebuffer));
 	for (uint32_t i = 0; i < r->swapchain_image_count; ++i) {
-
 		CHECKVK(vkCreateFramebuffer(r->device, &(VkFramebufferCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
 			.attachmentCount = 3,
@@ -1786,8 +1807,6 @@ static void deinit_fbufs(struct vulkan_renderer *r) {
 	for (uint32_t i = 0; i < r->swapchain_image_count; ++i) {
 		vkDestroyFramebuffer(r->device, r->swapchain_framebuffers_own[i], NULL);
 	}
-	deallocate_image(r, r->depth_image);
-	deallocate_image(r, r->transients.color_0);
 	free(r->swapchain_framebuffers_own);
 }
 
@@ -2544,6 +2563,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	deinit_sync(r);
 	deinit_cmdbufs(r);
 	deinit_fbufs(r);
+	deinit_transients(r);
 	deinit_pipelines(r);
 	deinit_descriptors(r);
 	deinit_rpasses(r);
@@ -2629,7 +2649,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	);
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
 	double4x4 proj_mat = {};
-	struct double4x4persp_info persp_info = setdouble4x4persp(&proj_mat, 60.0, aspect_ratio, 0.01);
+	struct double4x4persp_info persp_info = setdouble4x4persp(&proj_mat, r->game->camera_fov, aspect_ratio, 0.01);
 
 	{
 		float3 cam_y = float3xyz(0.0f, 1.0f, 0.0f);
@@ -2980,12 +3000,25 @@ static void render(struct vulkan_renderer *r, uint32_t current_frame) {
 	vkWaitForFences(r->device, 1, &f->sync.in_flight_fence, VK_TRUE, UINT64_MAX);
 	vkResetFences(r->device, 1, &f->sync.in_flight_fence);
 	uint32_t image_index = 0;
-	CHECKVK(vkAcquireNextImageKHR(
+	VkResult acquireImageRes = vkAcquireNextImageKHR(
 		r->device, r->swapchain,
 		UINT64_MAX,
 		f->sync.image_avail_semaphore, VK_NULL_HANDLE,
 		&image_index
-	));
+	);
+	if (acquireImageRes == VK_ERROR_OUT_OF_DATE_KHR || acquireImageRes == VK_SUBOPTIMAL_KHR) {
+		reinit_swapchain(r);
+		deinit_fbufs(r);
+		init_fbufs(r);
+		CHECKVK(vkAcquireNextImageKHR(
+			r->device, r->swapchain,
+			UINT64_MAX,
+			f->sync.image_avail_semaphore, VK_NULL_HANDLE,
+			&image_index
+		));
+	} else if (acquireImageRes != VK_SUCCESS) {	
+		CHECKVK(acquireImageRes);
+	}
 	CHECKVK(vkResetCommandBuffer(f->command_buffer, 0));
 	do_frame(r, current_frame, image_index);
 	CHECKVK(vkQueueSubmit(r->queues[QUEUE_GRAPHICS], 1, &(VkSubmitInfo){
@@ -3145,7 +3178,7 @@ static void show_gizmos(struct vulkan_renderer *r) {
 	double4x4 proj_mat = {};
 	setdouble4x4iden(&proj_mat);
 	double znear = 0.01;
-	setdouble4x4persp(&proj_mat, 60.0, aspect_ratio, znear);
+	setdouble4x4persp(&proj_mat, r->game->camera_fov, aspect_ratio, znear);
 
 	double4x4 screen_mat = view_mat;
 	double4x4mul(&screen_mat, &proj_mat);

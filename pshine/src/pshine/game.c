@@ -659,6 +659,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->camera_position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
 	game->camera_position.xyz.y = 75.221 * PSHINE_SCS_SCALE;
 	game->camera_position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
+	game->camera_fov = 60.0;
 	game->material_smoothness_ = 0.02;
 	*(double3*)game->sun_position.values = double3xyz(0, 0, 0);
 }
@@ -1205,7 +1206,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				if (ImGui_Button("FTL")) game->data_own->move_speed = 5.0e10;
 			}
 			eximgui_end_input_box();
-			ImGui_Text("Distance from surface: %.3f %s m", d_scaled, si_prefix_english(d_prefix));
+			ImGui_Text("Distance from surface: %.3f %s m = %.3fly", d_scaled, si_prefix_english(d_prefix), d / 9.4607e+15);
 			ImGui_Text("Yaw: %.3frad, Pitch: %.3frad", game->data_own->camera_yaw, game->data_own->camera_pitch);
 			if (ImGui_Button("Reset rotation")) {
 				game->data_own->camera_yaw = 0.0;
@@ -1216,6 +1217,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				game->data_own->camera_yaw = 0.0;
 				game->data_own->camera_pitch = 0.0;
 			}
+			ImGui_SliderFloat("FoV", &game->camera_fov, 0.00001f, 79.999f);
 
 			// ImGui_Spacing();
 			// ImVec2 begin = ImGui_GetCursorScreenPos();

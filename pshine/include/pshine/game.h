@@ -201,12 +201,13 @@ void pshine_destroy_renderer(struct pshine_renderer *renderer);
 const uint8_t *pshine_get_key_states(struct pshine_renderer *renderer);
 
 struct pshine_game {
+	struct pshine_game_data *data_own;
 	size_t celestial_body_count;
 	struct pshine_celestial_body **celestial_bodies_own;
 	struct pshine_renderer *renderer;
 	pshine_point3d camera_position;
 	pshine_vector3d camera_forward;
-	struct pshine_game_data *data_own;
+	float camera_fov;
 	float atmo_blend_factor;
 	pshine_vector3d sun_position;
 	float material_smoothness_;
