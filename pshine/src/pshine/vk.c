@@ -613,10 +613,10 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 
 	r->key_states = calloc(PSHINE_KEY_COUNT_, sizeof(uint8_t));
 
-	r->lod_ranges[0] = 500'000.0;
-	r->lod_ranges[1] = 35'000.0;
-	r->lod_ranges[2] = 3'500.0;
-	r->lod_ranges[3] = 390.0;
+	r->lod_ranges[0] = 300'000.0;
+	r->lod_ranges[1] = 25'000.0;
+	r->lod_ranges[2] = 1'500.0;
+	r->lod_ranges[3] = 290.0;
 
 	init_glfw(r);
 	init_vulkan(r);
@@ -1164,7 +1164,17 @@ static void init_glfw(struct vulkan_renderer *r) {
 	if (!glfwInit()) PSHINE_PANIC("could not initialize GLFW");
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	r->window = glfwCreateWindow(1920 / 1.5, 1080 / 1.5, "pshine2", nullptr, nullptr);
+
+	int window_width = 1920 / 1.5, window_height = 1080 / 1.5;
+	GLFWmonitor *monitor = nullptr;
+	if (pshine_check_has_option("--fullscreen")) {
+		monitor = glfwGetPrimaryMonitor();
+		const GLFWvidmode *mode = glfwGetVideoMode(monitor);
+		window_width = mode->width;
+		window_height = mode->height;
+	}
+
+	r->window = glfwCreateWindow(window_width, window_height, "pshine2", monitor, nullptr);
 	glfwSetWindowUserPointer(r->window, r);
 	if (r->window == NULL) PSHINE_PANIC("could not create window");
 	glfwSetKeyCallback(r->window, &key_cb_glfw_);
@@ -2597,12 +2607,12 @@ static inline size_t select_celestial_body_lod(
 	double3 body_pos = SCSd3_WCSp3(b->position);
 	double radius = SCSd_WCSd(b->radius);
 	double d = double3mag(double3sub(body_pos, cam_pos));
-	double a = radius / (d - radius);
-	if (a >= SCSd_WCSd(r->lod_ranges[0])) return 0;
-	if (a >= SCSd_WCSd(r->lod_ranges[1])) return 1;
-	if (a >= SCSd_WCSd(r->lod_ranges[2])) return 2;
-	if (a >= SCSd_WCSd(r->lod_ranges[3])) return 3;
-	return 4;
+	double a = radius / fabs(d - radius);
+	if (a <= SCSd_WCSd(r->lod_ranges[3])) return 4;
+	if (a <= SCSd_WCSd(r->lod_ranges[2])) return 3;
+	if (a <= SCSd_WCSd(r->lod_ranges[1])) return 2;
+	if (a <= SCSd_WCSd(r->lod_ranges[0])) return 1;
+	return 0;
 }
 
 static void render_celestial_body(
@@ -3210,14 +3220,12 @@ static void show_gizmos(struct vulkan_renderer *r) {
 				// size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
 				static char str[64];
 				snprintf(str, sizeof str, "%s", b->name_own);
-				// char *str = pshine_format_string("%s", b->name_own, lod);
 				ImDrawList_AddText(
 					ImGui_GetBackgroundDrawList(),
 					(ImVec2){ pos_screen.x, pos_screen.y },
 					0xff000000 | b->gizmo_color,
 					str
 				);
-				// free(str);
 			}
 		}
 

@@ -1,23 +1,23 @@
 [planet]
-name = "Jupiter"
-radius = 69_911_000.0
+name = "Saturn"
+radius = 58_232_000.0
 parent = "Sol"
 is_static = false
-mass = 317.8
-mu = 0.03793
+mass = 95.159
+mu = 0.1267
 average_color = 0x56e1e1
-gizmo_color = 0x4681d1
+gizmo_color = 0x5681d1
 
 [rotation]
 speed = 0.0
 axis = [0.0, 1.0, 0.0]
 
 [orbit]
-argument = 4.77988
-eccentricity = 0.0489
-inclination = 0.005585
-longitude = 1.75342
-semimajor = 778_479.0
+argument = 5.9235
+eccentricity = 0.0565
+inclination = 0.016231
+longitude = 1.983828
+semimajor = 1_433_479.53
 true_anomaly = 0.0
 
 # [atmosphere]

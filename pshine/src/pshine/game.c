@@ -376,7 +376,7 @@ void pshine_generate_planet_mesh(
 	struct pshine_mesh_data *out_mesh,
 	size_t lod
 ) {
-	const size_t lods[5] = { 48, 32, 24, 16, 8 };
+	const size_t lods[5] = { 96, 32, 24, 16, 8 };
 	generate_sphere_mesh(lod >= 5 ? 8 : lods[lod], out_mesh);
 }
 
@@ -1203,7 +1203,11 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				ImGui_SameLine();
 				if (ImGui_Button("Light")) game->data_own->move_speed = PSHINE_SPEED_OF_LIGHT;
 				ImGui_SameLine();
-				if (ImGui_Button("FTL")) game->data_own->move_speed = 5.0e10;
+				if (ImGui_Button("166c")) game->data_own->move_speed = 5.0e10;
+				ImGui_SameLine();
+				if (ImGui_Button("1kc")) game->data_own->move_speed = PSHINE_SPEED_OF_LIGHT * 1000.0;
+				ImGui_SameLine();
+				if (ImGui_Button("2kc")) game->data_own->move_speed = PSHINE_SPEED_OF_LIGHT * 2000.0;
 			}
 			eximgui_end_input_box();
 			ImGui_Text("Distance from surface: %.3f %s m = %.3fly", d_scaled, si_prefix_english(d_prefix), d / 9.4607e+15);
