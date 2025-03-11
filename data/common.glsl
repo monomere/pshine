@@ -44,4 +44,13 @@ struct MaterialUniforms {
 	float smoothness;
 };
 
+struct RingsUniforms {
+	mat4 proj;
+	mat4 model_view;
+	vec4 sun;
+	float inner_radius;
+	float outer_radius;
+	float rel_planet_radius;
+};
+
 #endif // COMMON_GLSLI_

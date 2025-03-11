@@ -67,6 +67,15 @@ struct static_mesh_uniform_data {
 	float4 sun;
 };
 
+struct rings_uniform_data {
+	float4x4 proj;
+	float4x4 model_view;
+	float4 sun;
+	float inner_radius;
+	float outer_radius;
+	float rel_planet_radius;
+};
+
 struct atmo_lut_push_const_data {
 	float planet_radius;
 	float atmo_height;
@@ -93,12 +102,14 @@ struct vulkan_mesh {
 
 struct pshine_star_graphics_data {
 	struct vulkan_buffer uniform_buffer;
+	struct vulkan_buffer rings_uniform_buffer;
 	// struct vulkan_image atmo_lut;
 	// struct vulkan_image surface_albedo;
 	// struct vulkan_image surface_lights;
 	// struct vulkan_image surface_specular;
 	// struct vulkan_image surface_bump;
 	VkDescriptorSet descriptor_set;
+	VkDescriptorSet rings_descriptor_set;
 	// VkCommandBuffer compute_cmdbuf;
 	// bool should_submit_compute;
 };
@@ -108,6 +119,8 @@ struct pshine_planet_graphics_data {
 	struct vulkan_buffer uniform_buffer;
 	struct vulkan_buffer atmo_uniform_buffer;
 	struct vulkan_buffer material_uniform_buffer;
+	/// Note: Can be uninitialized if there are no rings.
+	struct vulkan_buffer rings_uniform_buffer;
 	struct vulkan_image atmo_lut;
 	struct vulkan_image surface_albedo;
 	struct vulkan_image surface_lights;
@@ -119,6 +132,9 @@ struct pshine_planet_graphics_data {
 	VkDescriptorSet atmo_descriptor_set;
 	VkDescriptorSet atmo_lut_descriptor_set;
 	VkDescriptorSet material_descriptor_set;
+	/// Note: Can be VK_NULL_HANDLE if there are no rings.
+	VkDescriptorSet rings_descriptor_set;
+	struct vulkan_image ring_slice_texture;
 };
 
 struct per_frame_data {
@@ -186,6 +202,8 @@ struct vulkan_renderer {
 		VkPipeline line_gizmo_pipeline;
 		VkPipelineLayout blit_layout;
 		VkPipeline blit_pipeline;
+		VkPipelineLayout rings_layout;
+		VkPipeline rings_pipeline;
 
 		// compute pipelines
 		VkPipelineLayout atmo_lut_layout;
@@ -208,6 +226,7 @@ struct vulkan_renderer {
 		VkDescriptorSetLayout atmo_layout;
 		VkDescriptorSetLayout atmo_lut_layout;
 		VkDescriptorSetLayout blit_layout;
+		VkDescriptorSetLayout rings_layout;
 	} descriptors;
 
 	struct {
@@ -728,6 +747,16 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 				.pSetLayouts = &r->descriptors.atmo_lut_layout,
 			}, &p->graphics_data->atmo_lut_descriptor_set));
 
+			if (b->rings.has_rings) {
+				// Rings shader descriptors
+				CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+					.descriptorPool = r->descriptors.pool,
+					.descriptorSetCount = 1,
+					.pSetLayouts = &r->descriptors.rings_layout,
+				}, &p->graphics_data->rings_descriptor_set));
+			}
+
 			struct vulkan_buffer_alloc_info common_alloc_info = {
 				.size = 0,
 				.buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -748,6 +777,12 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 			p->graphics_data->material_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 			NAME_VK_OBJECT(r, p->graphics_data->material_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "material ub");
 
+			if (b->rings.has_rings) {
+				common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * FRAMES_IN_FLIGHT;
+				p->graphics_data->rings_uniform_buffer = allocate_buffer(r, &common_alloc_info);
+				NAME_VK_OBJECT(r, p->graphics_data->rings_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "rings ub");
+			}
+
 			load_planet_texture(r, p);
 			init_atmo_lut_compute(r, p);
 
@@ -764,7 +799,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					.pBufferInfo = &(VkDescriptorBufferInfo){
 						.buffer = p->graphics_data->uniform_buffer.buffer,
 						.offset = 0,
-						.range = sizeof(struct static_mesh_uniform_data)
+						.range = sizeof(struct static_mesh_uniform_data),
 					}
 				},
 				(VkWriteDescriptorSet){
@@ -777,7 +812,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					.pBufferInfo = &(VkDescriptorBufferInfo){
 						.buffer = p->graphics_data->atmo_uniform_buffer.buffer,
 						.offset = 0,
-						.range = sizeof(struct atmo_uniform_data)
+						.range = sizeof(struct atmo_uniform_data),
 					}
 				},
 				(VkWriteDescriptorSet){
@@ -790,7 +825,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					.pBufferInfo = &(VkDescriptorBufferInfo){
 						.buffer = p->graphics_data->material_uniform_buffer.buffer,
 						.offset = 0,
-						.range = sizeof(struct material_uniform_data)
+						.range = sizeof(struct material_uniform_data),
 					}
 				},
 				(VkWriteDescriptorSet){
@@ -803,7 +838,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					.pImageInfo = &(VkDescriptorImageInfo){
 						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 						.imageView = p->graphics_data->atmo_lut.view,
-						.sampler = r->atmo_lut_sampler
+						.sampler = r->atmo_lut_sampler,
 					},
 				},
 				(VkWriteDescriptorSet){
@@ -816,7 +851,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					.pImageInfo = &(VkDescriptorImageInfo){
 						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 						.imageView = p->graphics_data->surface_albedo.view,
-						.sampler = r->material_texture_sampler
+						.sampler = r->material_texture_sampler,
 					},
 				},
 				(VkWriteDescriptorSet){
@@ -829,7 +864,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					.pImageInfo = &(VkDescriptorImageInfo){
 						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 						.imageView = p->graphics_data->surface_bump.view,
-						.sampler = r->material_texture_sampler
+						.sampler = r->material_texture_sampler,
 					},
 				},
 				(VkWriteDescriptorSet){
@@ -842,7 +877,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					.pImageInfo = &(VkDescriptorImageInfo){
 						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 						.imageView = p->graphics_data->surface_specular.view,
-						.sampler = r->material_texture_sampler
+						.sampler = r->material_texture_sampler,
 					},
 				},
 				(VkWriteDescriptorSet){
@@ -855,7 +890,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					.pImageInfo = &(VkDescriptorImageInfo){
 						.imageLayout = VK_IMAGE_LAYOUT_GENERAL, // SHADER_READ_ONLY_OPTIMAL
 						.imageView = r->transients.color_0.view,
-						.sampler = VK_NULL_HANDLE
+						.sampler = VK_NULL_HANDLE,
 					}
 				},
 				(VkWriteDescriptorSet){
@@ -872,6 +907,37 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 					}
 				},
 			}, 0, NULL);
+
+			if (b->rings.has_rings) {
+				vkUpdateDescriptorSets(r->device, 2, (VkWriteDescriptorSet[2]){
+					(VkWriteDescriptorSet){
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+						.descriptorCount = 1,
+						.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+						.dstSet = p->graphics_data->rings_descriptor_set,
+						.dstBinding = 0,
+						.dstArrayElement = 0,
+						.pBufferInfo = &(VkDescriptorBufferInfo){
+							.buffer = p->graphics_data->rings_uniform_buffer.buffer,
+							.offset = 0,
+							.range = sizeof(struct rings_uniform_data),
+						}
+					},
+					(VkWriteDescriptorSet){
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+						.descriptorCount = 1,
+						.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+						.dstSet = p->graphics_data->rings_descriptor_set,
+						.dstBinding = 1,
+						.dstArrayElement = 0,
+						.pImageInfo = &(VkDescriptorImageInfo){
+							.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+							.imageView = p->graphics_data->ring_slice_texture.view,
+							.sampler = r->material_texture_sampler,
+						}
+					},
+				}, 0, nullptr);
+			}
 
 			compute_atmo_lut(r, p, true);
 		} else if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
@@ -1082,6 +1148,11 @@ static void load_planet_texture(struct vulkan_renderer *r, struct pshine_planet 
 	planet->graphics_data->surface_specular = load_texture_from_file(
 		r, planet->as_body.surface.spec_texture_path_own, VK_FORMAT_R8_UNORM, 1
 	);
+	if (planet->as_body.rings.has_rings) {
+		planet->graphics_data->ring_slice_texture = load_texture_from_file(
+			r, planet->as_body.rings.slice_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4
+		);
+	}
 }
 
 static void init_atmo_lut_compute(struct vulkan_renderer *r, struct pshine_planet *planet) {
@@ -2091,6 +2162,26 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	r->pipelines.blit_pipeline = blit_pipeline.pipeline;
 	r->pipelines.blit_layout = blit_pipeline.layout;
 
+	struct vulkan_pipeline rings_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
+		.vert_fname = "build/pshine/data/rings.vert.spv",
+		.frag_fname = "build/pshine/data/rings.frag.spv",
+		.render_pass = r->render_passes.main_pass,
+		.subpass = 0,
+		.push_constant_range_count = 0,
+		.set_layout_count = 2,
+		.set_layouts = (VkDescriptorSetLayout[]){
+			r->descriptors.global_layout,
+			r->descriptors.rings_layout,
+		},
+		.blend = true,
+		.depth_test = true,
+		.vertex_input = false,
+		.layout_name = "rings pipeline layout",
+		.pipeline_name = "rings pipeline",
+	});
+	r->pipelines.rings_pipeline = rings_pipeline.pipeline;
+	r->pipelines.rings_layout = rings_pipeline.layout;
+
 	// struct vulkan_pipeline line_gizmo_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 	// 	.vert_fname = "build/pshine/data/line_gizmo.vert.spv",
 	// 	.frag_fname = "build/pshine/data/line_gizmo.frag.spv",
@@ -2350,6 +2441,26 @@ static void init_descriptors(struct vulkan_renderer *r) {
 		}
 	}, NULL, &r->descriptors.blit_layout);
 	NAME_VK_OBJECT(r, r->descriptors.blit_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "blit descriptor set layout");
+
+	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 2,
+		.pBindings = (VkDescriptorSetLayoutBinding[]){
+			(VkDescriptorSetLayoutBinding){
+				.binding = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
+			},
+			(VkDescriptorSetLayoutBinding){
+				.binding = 1,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+		}
+	}, NULL, &r->descriptors.rings_layout);
+	NAME_VK_OBJECT(r, r->descriptors.rings_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "rings descriptor set layout");
 
 }
 
@@ -2721,8 +2832,10 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			// 	pos.z);
 			// setdouble4x4scale
 
+			double scs_planet_radius = SCSd_WCSd(b->radius);
+
 			double4x4 model_scale_mat;
-			setdouble4x4scale(&model_scale_mat, double3v(SCSd_WCSd(b->radius)));
+			setdouble4x4scale(&model_scale_mat, double3v(scs_planet_radius));
 
 			double4x4 model_trans_mat;
 			setdouble4x4trans(&model_trans_mat, SCSd3_WCSp3(b->position));
@@ -2750,12 +2863,15 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			new_data.sun = float4xyz3w(float3_double3(double3norm(double3sub(sun_pos, body_pos))), 1.0f);
 
 			struct vulkan_buffer *uniform_buffer = nullptr;
+			struct vulkan_buffer *rings_uniform_buffer = nullptr;
 			if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 				struct pshine_planet *p = (void *)b;
 				uniform_buffer = &p->graphics_data->uniform_buffer;
+				rings_uniform_buffer = &p->graphics_data->rings_uniform_buffer;
 			} else if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
 				struct pshine_star *p = (void *)b;
 				uniform_buffer = &p->graphics_data->uniform_buffer;
+				rings_uniform_buffer = &p->graphics_data->rings_uniform_buffer;
 			} else {
 				PSHINE_ERROR("Unknown body type: %d", b->type);
 			}
@@ -2764,6 +2880,29 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			data_raw += get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame;
 			memcpy(data_raw, &new_data, sizeof(new_data));
 			vmaUnmapMemory(r->allocator, uniform_buffer->allocation);
+			// Rings
+			if (b->rings.has_rings) {
+				double4x4 model_scale_mat;
+				double scs_outer_radius = SCSd_WCSd(b->rings.outer_radius);
+				setdouble4x4scale(&model_scale_mat, double3v(scs_outer_radius));
+				double4x4 model_mat;
+				setdouble4x4iden(&model_mat);
+				// double4x4mul(&model_mat, &model_rot_mat);
+				double4x4mul(&model_mat, &model_scale_mat);
+				double4x4mul(&model_mat, &model_trans_mat);
+				double4x4mul(&model_mat, &view_mat);
+				struct rings_uniform_data new_data_rings = {
+					.proj = new_data.proj,
+					.model_view = float4x4_double4x4(model_mat),
+					.inner_radius = (float)b->rings.inner_radius,
+					.outer_radius = (float)b->rings.outer_radius,
+					.rel_planet_radius = (float)(scs_planet_radius / scs_outer_radius),
+					.sun = new_data.sun,
+				};
+				vmaCopyMemoryToAllocation(r->allocator, &new_data_rings, rings_uniform_buffer->allocation,
+					get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * current_frame,
+					sizeof(new_data));
+			}
 		}
 	}
 
@@ -2823,6 +2962,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			}
 
 			// Upload material data.
+			// TODO: check if this access is valid (why no current_frame)
 			{
 				struct material_uniform_data new_data = {
 					.color = float4rgba(0.8f, 0.3f, 0.1f, 1.0f),
@@ -2888,6 +3028,27 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
 			struct pshine_star *p = (void *)b;
 			render_celestial_body(r, b, f, current_frame, camera_pos_scs, p->graphics_data->descriptor_set);
+		}
+	}
+
+	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.rings_pipeline);
+	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
+		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+		if (!b->rings.has_rings) continue;
+		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
+			struct pshine_planet *p = (void *)b;
+			vkCmdBindDescriptorSets(
+				f->command_buffer,
+				VK_PIPELINE_BIND_POINT_GRAPHICS,
+				r->pipelines.rings_layout,
+				1,
+				1,
+				(VkDescriptorSet[]){ p->graphics_data->rings_descriptor_set },
+				1, (uint32_t[]){
+					get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * current_frame
+				}
+			);
+			vkCmdDraw(f->command_buffer, 6, 1, 0, 0);
 		}
 	}
 

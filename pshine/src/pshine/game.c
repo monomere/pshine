@@ -501,12 +501,12 @@ static struct pshine_celestial_body *load_celestial_body(
 
 	toml_table_t *otab = toml_table_in(tab, "orbit");
 	if (otab != nullptr) {
-			READ_FIELD(otab, "argument", body->orbit.argument, double, d);
-			READ_FIELD(otab, "eccentricity", body->orbit.eccentricity, double, d);
-			READ_FIELD(otab, "inclination", body->orbit.inclination, double, d);
-			READ_FIELD(otab, "longitude", body->orbit.longitude, double, d);
-			READ_FIELD(otab, "semimajor", body->orbit.semimajor, double, d);
-			READ_FIELD(otab, "true_anomaly", body->orbit.true_anomaly, double, d);
+		READ_FIELD(otab, "argument", body->orbit.argument, double, d);
+		READ_FIELD(otab, "eccentricity", body->orbit.eccentricity, double, d);
+		READ_FIELD(otab, "inclination", body->orbit.inclination, double, d);
+		READ_FIELD(otab, "longitude", body->orbit.longitude, double, d);
+		READ_FIELD(otab, "semimajor", body->orbit.semimajor, double, d);
+		READ_FIELD(otab, "true_anomaly", body->orbit.true_anomaly, double, d);
 	}
 
 	toml_table_t *stab = toml_table_in(tab, "surface");
@@ -515,6 +515,19 @@ static struct pshine_celestial_body *load_celestial_body(
 		READ_STR_FIELD(stab, "spec_texture_path", body->surface.spec_texture_path_own);
 		READ_STR_FIELD(stab, "lights_texture_path", body->surface.lights_texture_path_own);
 		READ_STR_FIELD(stab, "bump_texture_path", body->surface.bump_texture_path_own);
+	}
+
+	body->rings.has_rings = false;
+	toml_table_t *gtab = toml_table_in(tab, "rings");
+	if (gtab != nullptr) {
+		body->rings.has_rings = true;
+		READ_FIELD(gtab, "inner_radius", body->rings.inner_radius, double, d);
+		READ_FIELD(gtab, "outer_radius", body->rings.outer_radius, double, d);
+		READ_STR_FIELD(gtab, "slice_texture_path", body->rings.slice_texture_path_own);
+		if (body->rings.slice_texture_path_own == nullptr) {
+			body->rings.has_rings = false;
+			PSHINE_ERROR("No ring texture path present, ignoring rings.");
+		}
 	}
 
 	toml_table_t *rtab = toml_table_in(tab, "rotation");
@@ -647,7 +660,7 @@ void pshine_init_game(struct pshine_game *game) {
 	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
 	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
 	game->data_own->selected_body = 0;
-	game->data_own->camera_dist = game->celestial_bodies_own[0]->radius + 10'000'000.0;
+	game->data_own->camera_dist = game->celestial_bodies_own[0]->radius + 165'000'000.0;
 	game->camera_position.xyz.z = -game->data_own->camera_dist;
 	game->data_own->camera_yaw = π/2;
 	game->data_own->camera_pitch = 0.0;

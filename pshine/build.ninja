@@ -26,15 +26,17 @@ build $builddir/vendor/imgui/imgui_draw.cpp.o    : cxx vendor/imgui/imgui_draw.c
 build $builddir/vendor/imgui/imgui_tables.cpp.o  : cxx vendor/imgui/imgui_tables.cpp
 build $builddir/vendor/imgui/imgui_widgets.cpp.o : cxx vendor/imgui/imgui_widgets.cpp
 
-build $builddir/data/tri.vert.spv  : glslc data/tri.vert
-build $builddir/data/tri.frag.spv  : glslc data/tri.frag
-build $builddir/data/mesh.vert.spv : glslc data/mesh.vert
-build $builddir/data/mesh.frag.spv : glslc data/mesh.frag
-build $builddir/data/atmo.vert.spv : glslc data/atmo.vert
-build $builddir/data/atmo.frag.spv : glslc data/atmo.frag
-build $builddir/data/blit.vert.spv : glslc data/blit.vert
-build $builddir/data/blit.frag.spv : glslc data/blit.frag
-build $builddir/data/atmo_lut.comp.spv : glslc data/atmo_lut.comp
+build $builddir/data/tri.vert.spv         : glslc data/tri.vert
+build $builddir/data/tri.frag.spv         : glslc data/tri.frag
+build $builddir/data/mesh.vert.spv        : glslc data/mesh.vert
+build $builddir/data/mesh.frag.spv        : glslc data/mesh.frag
+build $builddir/data/atmo.vert.spv        : glslc data/atmo.vert
+build $builddir/data/atmo.frag.spv        : glslc data/atmo.frag
+build $builddir/data/blit.vert.spv        : glslc data/blit.vert
+build $builddir/data/blit.frag.spv        : glslc data/blit.frag
+build $builddir/data/rings.vert.spv       : glslc data/rings.vert
+build $builddir/data/rings.frag.spv       : glslc data/rings.frag
+build $builddir/data/atmo_lut.comp.spv    : glslc data/atmo_lut.comp
 build $builddir/data/solid_color.frag.spv : glslc data/solid_color.frag
 
 build $builddir/main: ld $
@@ -66,6 +68,8 @@ build $builddir/main: ld $
   $builddir/data/atmo.frag.spv $
   $builddir/data/blit.vert.spv $
   $builddir/data/blit.frag.spv $
+  $builddir/data/rings.vert.spv $
+  $builddir/data/rings.frag.spv $
   $builddir/data/atmo_lut.comp.spv $
   || $
   build/giraffe/libgiraffe.a

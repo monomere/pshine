@@ -56,6 +56,13 @@ enum pshine_celestial_body_type {
 	PSHINE_CELESTIAL_BODY_STAR,
 };
 
+struct pshine_rings_info {
+	bool has_rings;
+	char *slice_texture_path_own;
+	double inner_radius;
+	double outer_radius;
+};
+
 struct pshine_surface_info {
 	char *albedo_texture_path_own;
 	char *bump_texture_path_own;
@@ -68,6 +75,7 @@ struct pshine_celestial_body {
 	struct pshine_celestial_body *parent_ref;
 	struct pshine_orbit_info orbit;
 	struct pshine_surface_info surface;
+	struct pshine_rings_info rings;
 
 	/// Mean radius, in m.
 	/// Some values:
