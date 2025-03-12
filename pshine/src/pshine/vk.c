@@ -2244,6 +2244,8 @@ static void deinit_pipelines(struct vulkan_renderer *r) {
 	vkDestroyPipelineLayout(r->device, r->pipelines.atmo_lut_layout, NULL);
 	vkDestroyPipeline(r->device, r->pipelines.blit_pipeline, NULL);
 	vkDestroyPipelineLayout(r->device, r->pipelines.blit_layout, NULL);
+	vkDestroyPipeline(r->device, r->pipelines.rings_pipeline, NULL);
+	vkDestroyPipelineLayout(r->device, r->pipelines.rings_layout, NULL);
 }
 
 
@@ -2473,6 +2475,7 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.atmo_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.atmo_lut_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.blit_layout, NULL);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.rings_layout, NULL);
 }
 
 
@@ -2653,9 +2656,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 			deallocate_buffer(r, p->graphics_data->atmo_uniform_buffer);
 			deallocate_buffer(r, p->graphics_data->material_uniform_buffer);
 			deallocate_image(r, p->graphics_data->atmo_lut);
-			// deallocate_image(r, p->graphics_data->surface_albedo);
-			// deallocate_image(r, p->graphics_data->surface_bump);
-			// deallocate_image(r, p->graphics_data->surface_specular);
+			if (b->rings.has_rings) deallocate_buffer(r, p->graphics_data->rings_uniform_buffer);
 			vkFreeCommandBuffers(r->device, r->command_pool_compute, 1, &p->graphics_data->compute_cmdbuf);
 			free(p->graphics_data);
 		} else if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
