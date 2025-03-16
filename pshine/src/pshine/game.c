@@ -587,6 +587,7 @@ struct pshine_game_data {
 	uint8_t last_key_states[PSHINE_KEY_COUNT_];
 	size_t selected_body;
 	struct eximgui_state eximgui_state;
+	bool is_control_precise;
 };
 
 static void load_game_config(struct pshine_game *game, const char *fpath) {
@@ -600,7 +601,7 @@ static void load_game_config(struct pshine_game *game, const char *fpath) {
 	toml_table_t *tab = toml_parse_file(fin, errbuf, 1024);
 	fclose(fin);
 	if (tab == nullptr) {
-		PSHINE_ERROR("Failed to parse game cnofig:\n%s", errbuf);
+		PSHINE_ERROR("Failed to parse game config:\n%s", errbuf);
 		free(errbuf);
 		return;
 	}
@@ -619,6 +620,23 @@ static void load_game_config(struct pshine_game *game, const char *fpath) {
 			free(body_fpath.u.s);
 		}
 	}
+	game->environment.type = PSHINE_ENVIRONMENT_PROJECTION_EQUIRECTANGULAR;
+	game->environment.texture_path_own = nullptr;
+	toml_table_t *etab = toml_table_in(tab, "environment");
+	if (etab != nullptr) {
+		struct toml_datum_t path = toml_string_in(etab, "texture_path");
+		if (path.ok) game->environment.texture_path_own = path.u.s;
+		struct toml_datum_t proj = toml_string_in(etab, "projection");
+		if (proj.ok) {
+			if (strcmp(proj.u.s, "equirectangular") == 0)
+				game->environment.type = PSHINE_ENVIRONMENT_PROJECTION_EQUIRECTANGULAR;
+			else
+				PSHINE_ERROR("game config environment.projection: unknown value '%s', "
+					"keeping default equirectangular.", proj.u.s);
+			free(proj.u.s);
+		}
+	}
+	free(errbuf);
 }
 
 static void init_imgui_style();
@@ -683,6 +701,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->camera_position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
 	game->camera_fov = 60.0;
 	game->material_smoothness_ = 0.02;
+	game->data_own->is_control_precise = false;
 	*(double3*)game->sun_position.values = double3xyz(0, 0, 0);
 
 	eximgui_state_init(&game->data_own->eximgui_state);
@@ -740,8 +759,9 @@ static void update_camera_fly(struct pshine_game *game, float delta_time) {
 		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_RIGHT)) delta.x -= 1.0;
 		if (pshine_is_key_down(game->renderer, PSHINE_KEY_UP)) delta.y += 1.0;
 		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_DOWN)) delta.y -= 1.0;
-		game->data_own->camera_pitch += delta.y * ROTATE_SPEED * delta_time;
-		game->data_own->camera_yaw += delta.x * ROTATE_SPEED * delta_time;
+		double rot_speed = ROTATE_SPEED * (game->data_own->is_control_precise ? 0.01 : 1.0);
+		game->data_own->camera_pitch += delta.y * rot_speed * delta_time;
+		game->data_own->camera_yaw += delta.x * rot_speed * delta_time;
 	}
 
 	double3x3 mat = {};
@@ -795,8 +815,9 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 	else if (pshine_is_key_down(game->renderer, K_ZOOM_OUT))
 		game->data_own->camera_dist -= game->data_own->move_speed * delta_time;
 
-	game->data_own->camera_pitch += delta.y * ROTATE_SPEED * delta_time;
-	game->data_own->camera_yaw += delta.x * ROTATE_SPEED * delta_time;
+	double rot_speed = ROTATE_SPEED * (game->data_own->is_control_precise ? 0.01 : 1.0);
+	game->data_own->camera_pitch += delta.y * rot_speed * delta_time;
+	game->data_own->camera_yaw += delta.x * rot_speed * delta_time;
 
 	game->data_own->camera_pitch = clampd(game->data_own->camera_pitch, -π/2 + 0.1, π/2 - 0.1);
 
@@ -1152,6 +1173,10 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		update_celestial_body(game, delta_time * game->time_scale, game->celestial_bodies_own[i]);
 	}
 
+	if (pshine_is_key_down(game->renderer, PSHINE_KEY_P) && !game->data_own->last_key_states[PSHINE_KEY_P]) {
+		game->data_own->is_control_precise = !game->data_own->is_control_precise;
+	}
+
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F) && !game->data_own->last_key_states[PSHINE_KEY_F]) {
 		game->data_own->movement_mode = !game->data_own->movement_mode;
 	}
@@ -1271,7 +1296,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				game->data_own->camera_yaw = 0.0;
 				game->data_own->camera_pitch = 0.0;
 			}
-			ImGui_SliderFloat("FoV", &game->camera_fov, 0.00001f, 79.999f);
+			ImGui_SliderFloat("FoV", &game->camera_fov, 0.00001f, 179.999f);
 
 			// ImGui_Spacing();
 			// ImVec2 begin = ImGui_GetCursorScreenPos();

@@ -12,4 +12,4 @@ debug = -g
 debugc =
 debugcxx =
 
-libs = -lglfw -lm -Wl,-rpath,/opt/homebrew/lib -Lbuild/giraffe -lgiraffe
+libs = -lglfw -lm -Wl,-rpath,/opt/homebrew/lib -Lbuild/giraffe -lgiraffe -lcpptrace

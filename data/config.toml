@@ -13,3 +13,7 @@ planets = [
 	"data/celestial/saturn.toml",
 ]
 
+[environment]
+texture_path = "data/textures/nasa_sky.exr"
+projection = "equirectangular"
+

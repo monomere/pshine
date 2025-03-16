@@ -71,6 +71,15 @@ struct pshine_surface_info {
 	char *spec_texture_path_own;
 };
 
+enum pshine_environment_projection_type {
+	PSHINE_ENVIRONMENT_PROJECTION_EQUIRECTANGULAR,
+};
+
+struct pshine_environment_info {
+	char *texture_path_own;
+	enum pshine_environment_projection_type type;
+};
+
 struct pshine_celestial_body {
 	enum pshine_celestial_body_type type;
 	struct pshine_celestial_body *parent_ref;
@@ -223,6 +232,7 @@ struct pshine_game {
 	double time;
 	bool ui_dont_render_gizmos;
 	bool ui_dont_render_windows;
+	struct pshine_environment_info environment;
 };
 
 /// This is ran at the start of the game, before the renderer is initialized.

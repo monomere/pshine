@@ -113,7 +113,7 @@ python vendor/dear_bindings/dear_bindings.py \
 
 ## Building
 
-> requirements: ninja modern gcc-compatible c/c++ compiler, glfw, python (optional)
+> requirements: ninja modern gcc-compatible c/c++ compiler, glfw, python (optional), cpptrace/ctrace (temporarily a system dependency)
 > requirements: rust (for giraffe, but can be removed by tweaking ninja files, as its not needed *for now*). I might rewrite all of this in Rust.
 
 To build (incremental)

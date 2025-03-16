@@ -140,6 +140,9 @@ void pshine_log_impl(
 		res; \
 	})
 
+// May not print the stacktrace if library is missing.
+void pshine_print_stacktrace(FILE *fout, bool color);
+
 // NB: returns a malloc'd buffer
 char *pshine_read_file(const char *fname, size_t *size);
 

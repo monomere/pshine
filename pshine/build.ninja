@@ -26,18 +26,18 @@ build $builddir/vendor/imgui/imgui_draw.cpp.o    : cxx vendor/imgui/imgui_draw.c
 build $builddir/vendor/imgui/imgui_tables.cpp.o  : cxx vendor/imgui/imgui_tables.cpp
 build $builddir/vendor/imgui/imgui_widgets.cpp.o : cxx vendor/imgui/imgui_widgets.cpp
 
-build $builddir/data/tri.vert.spv         : glslc data/tri.vert
-build $builddir/data/tri.frag.spv         : glslc data/tri.frag
-build $builddir/data/mesh.vert.spv        : glslc data/mesh.vert
-build $builddir/data/mesh.frag.spv        : glslc data/mesh.frag
-build $builddir/data/atmo.vert.spv        : glslc data/atmo.vert
-build $builddir/data/atmo.frag.spv        : glslc data/atmo.frag
-build $builddir/data/blit.vert.spv        : glslc data/blit.vert
-build $builddir/data/blit.frag.spv        : glslc data/blit.frag
-build $builddir/data/rings.vert.spv       : glslc data/rings.vert
-build $builddir/data/rings.frag.spv       : glslc data/rings.frag
-build $builddir/data/atmo_lut.comp.spv    : glslc data/atmo_lut.comp
-build $builddir/data/solid_color.frag.spv : glslc data/solid_color.frag
+build $builddir/data/shaders/tri.vert.spv         : glslc data/shaders/tri.vert
+build $builddir/data/shaders/tri.frag.spv         : glslc data/shaders/tri.frag
+build $builddir/data/shaders/mesh.vert.spv        : glslc data/shaders/mesh.vert
+build $builddir/data/shaders/mesh.frag.spv        : glslc data/shaders/mesh.frag
+build $builddir/data/shaders/atmo.vert.spv        : glslc data/shaders/atmo.vert
+build $builddir/data/shaders/atmo.frag.spv        : glslc data/shaders/atmo.frag
+build $builddir/data/shaders/blit.vert.spv        : glslc data/shaders/blit.vert
+build $builddir/data/shaders/blit.frag.spv        : glslc data/shaders/blit.frag
+build $builddir/data/shaders/rings.vert.spv       : glslc data/shaders/rings.vert
+build $builddir/data/shaders/rings.frag.spv       : glslc data/shaders/rings.frag
+build $builddir/data/shaders/atmo_lut.comp.spv    : glslc data/shaders/atmo_lut.comp
+build $builddir/data/shaders/solid_color.frag.spv : glslc data/shaders/solid_color.frag
 
 build $builddir/main: ld $
   $builddir/pshine/vk.c.o $
@@ -60,16 +60,16 @@ build $builddir/main: ld $
   $builddir/vendor/imgui/backends/imgui_impl_glfw.cpp.o $
   $builddir/vendor/imgui/backends/imgui_impl_vulkan.cpp.o $
   | $
-  $builddir/data/tri.vert.spv $
-  $builddir/data/tri.frag.spv $
-  $builddir/data/mesh.vert.spv $
-  $builddir/data/mesh.frag.spv $
-  $builddir/data/atmo.vert.spv $
-  $builddir/data/atmo.frag.spv $
-  $builddir/data/blit.vert.spv $
-  $builddir/data/blit.frag.spv $
-  $builddir/data/rings.vert.spv $
-  $builddir/data/rings.frag.spv $
-  $builddir/data/atmo_lut.comp.spv $
+  $builddir/data/shaders/tri.vert.spv $
+  $builddir/data/shaders/tri.frag.spv $
+  $builddir/data/shaders/mesh.vert.spv $
+  $builddir/data/shaders/mesh.frag.spv $
+  $builddir/data/shaders/atmo.vert.spv $
+  $builddir/data/shaders/atmo.frag.spv $
+  $builddir/data/shaders/blit.vert.spv $
+  $builddir/data/shaders/blit.frag.spv $
+  $builddir/data/shaders/rings.vert.spv $
+  $builddir/data/shaders/rings.frag.spv $
+  $builddir/data/shaders/atmo_lut.comp.spv $
   || $
   build/giraffe/libgiraffe.a

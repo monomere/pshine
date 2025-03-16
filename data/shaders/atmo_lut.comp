@@ -1,0 +1,55 @@
+#version 460
+#extension GL_ARB_shading_language_include: enable
+#pragma shader_stage(compute)
+#include "common.glsl"
+#include "atmo_common.glsl"
+
+// thank you
+// https://playerunknownproductions.net/news/atmospheric-scattering
+// https://paminerva.github.io/docs/LearnVulkan/02.F-Compute-Shader.html
+
+// Generates the atmosphere shader LUT
+// X: zenith angle
+// Y: height above surface (0-1)
+
+layout (set = 0, binding = 0, rg32f) uniform writeonly image2D o_tex;
+
+struct ShaderPushConstants {
+	float planet_radius;
+	float atmo_height;
+	vec2 falloffs;
+	uint samples;
+};
+
+layout (push_constant) uniform BUFFER(ShaderPushConstants, push_consts);
+
+vec2 compute_optical_depth(vec3 ray_origin, vec3 ray_dir, float ray_len) {
+	float step_len = ray_len / float(push_consts.samples);
+	vec3 p = ray_origin;
+
+	vec2 sum = vec2(0.0);
+	for (uint i = 0; i < push_consts.samples; ++i, p += ray_dir * step_len) {
+		sum += vec2(
+			compute_density(p, push_consts.falloffs.x, push_consts.planet_radius, push_consts.atmo_height),
+			compute_density(p, push_consts.falloffs.y, push_consts.planet_radius, push_consts.atmo_height)
+		);
+	}
+
+	return sum * step_len;
+}
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+void main() {
+	vec2 resolution = imageSize(o_tex);
+	vec2 uv = gl_GlobalInvocationID.xy / resolution;
+	float zen = uv.x * 2.0 - 1.0;
+	float alt = uv.y * push_consts.atmo_height;
+
+	vec3 ray_start = vec3(0.0, alt + push_consts.planet_radius, 0);
+	vec3 ray_dir = -normalize(vec3(sqrt(1.0 - zen * zen), zen, 0.0));
+	float dst_thru_atmo = intersect_ray_sphere(vec3(0.0), push_consts.planet_radius + push_consts.atmo_height, ray_start, ray_dir).y;
+	vec2 optical_depth = compute_optical_depth(ray_start, ray_dir, dst_thru_atmo);
+
+	imageStore(o_tex, ivec2(gl_GlobalInvocationID.xy), vec4(optical_depth, 0.0, 0.0));
+}

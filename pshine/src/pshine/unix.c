@@ -35,3 +35,22 @@ size_t pshine_get_mem_usage() {
 	getrusage(RUSAGE_SELF, &usage);
 	return usage.ru_maxrss;
 }
+
+// TODO: PSHINE_USE_CPPTRACE
+#ifndef PSHINE_USE_CPPTRACE
+#define PSHINE_USE_CPPTRACE 1
+#endif
+
+#if defined(PSHINE_USE_CPPTRACE) && PSHINE_USE_CPPTRACE
+#include <ctrace/ctrace.h>
+
+void pshine_print_stacktrace(FILE *fout, bool color) {
+	struct ctrace_stacktrace trace = ctrace_generate_trace(0, SIZE_MAX);
+	ctrace_print_stacktrace(&trace, fout, color);
+	ctrace_free_stacktrace(&trace);
+}
+#else
+// Do nothing, no library is provided.
+void pshine_print_stacktrace(FILE *fout) {}
+#endif
+

@@ -245,6 +245,8 @@ struct vulkan_renderer {
 
 	VkSampler atmo_lut_sampler;
 	VkSampler material_texture_sampler;
+
+	struct vulkan_image environment_image;
 	// PSHINE_DYNA_(struct mesh) meshes;
 
 	double lod_ranges[4];
@@ -626,6 +628,102 @@ static inline void name_vk_object_impl(
 #define NAME_VK_OBJECT(r, o, t, n, ...) \
 	name_vk_object_impl((r), (uint64_t)(o), (t), (n) __VA_OPT__(,) __VA_ARGS__)
 
+enum vulkan_load_texture_flags {
+	VULKAN_LOAD_TEXTURE_NORMAL = 0,
+	VULKAN_LOAD_TEXTURE_CUBEMAP = 1,
+};
+
+static struct vulkan_image load_texture_from_file(
+	struct vulkan_renderer *r,
+	const char *fpath,
+	VkFormat format,
+	int format_channels,
+	int bytes_per_channel,
+	enum vulkan_load_texture_flags flags
+) {
+	// PSHINE_INFO("Called load_texture_from_file(r, \"%s\", format=%d, format_channels=%d, bytes_per_channel=%d)",
+	// 	fpath, (int)format, format_channels, bytes_per_channel);
+	// TODO: cache parameters
+	for (size_t i = 0; i < r->image_cache.dyna.count; ++i) {
+		if (strcmp(r->image_cache.ptr[i].fpath_own, fpath) == 0) {
+			return r->image_cache.ptr[i].image;
+		}
+	}
+	
+	int width = 0, height = 0, channels = 0;
+	void *data = nullptr;
+	if (bytes_per_channel == 1) {
+		data = stbi_load(fpath, &width, &height, &channels, format_channels);
+	} else {
+		float *fs = stbi_loadf(fpath, &width, &height, &channels, format_channels);
+		// Change image to correct format.
+		switch (bytes_per_channel) {
+			case 4: break; // floats are already 4 byte
+			case 2: {
+				uint16_t *data = calloc(width * height * format_channels * 2, 1);
+
+				if (format != VK_FORMAT_R16G16B16_UNORM)
+					PSHINE_PANIC("HDR formats other than R16G16B16_UNORM are not supported yet.");
+
+				PSHINE_CHECK(format_channels == 3, "format has 3 channels but passed in format_channels != 3");
+
+				for (size_t y = 0; y < height * height; y += width) {
+					for (size_t x = 0; x < width; ++x) {
+						data[y + x] = fs[y + x] * UINT16_MAX;
+					}
+				}
+				free(fs);
+			} break; //<-- i forgot this
+			case 1: unreachable(); // handled in the if above.
+			default:
+				PSHINE_PANIC("HDR bytes_per_channel == %d not supported (only 4, 2, and 1 are).", bytes_per_channel);
+				break;
+		}
+	}
+	if (data == nullptr) PSHINE_PANIC("failed to load texture at '%s': %s", fpath, stbi_failure_reason());
+	struct vulkan_image img = allocate_image(r, &(struct vulkan_image_alloc_info){
+		.allocation_flags = 0,
+		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+		.preferred_memory_property_flags = 0,
+		.required_memory_property_flags = 0,
+		.out_allocation_info = NULL,
+		.image_info = &(VkImageCreateInfo){
+			.imageType = VK_IMAGE_TYPE_2D,
+			.arrayLayers = 1,
+			.mipLevels = 1,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.extent = (VkExtent3D){ .width = width, .height = height, .depth = 1 },
+			.format = format,
+			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		},
+		.view_info = &(VkImageViewCreateInfo){
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = format,
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.baseMipLevel = 0,
+				.layerCount = 1,
+				.levelCount = 1,
+			}
+		},
+	});
+	NAME_VK_OBJECT(r, img.image, VK_OBJECT_TYPE_IMAGE, "%s image", fpath);
+	NAME_VK_OBJECT(r, img.view, VK_OBJECT_TYPE_IMAGE_VIEW, "%s image view", fpath);
+	write_to_image_staged(r, &img, (VkExtent3D){
+		width,
+		height,
+		1
+	}, format, width * height * format_channels * bytes_per_channel, data);
+	free(data);
+	size_t idx = PSHINE_DYNA_ALLOC(r->image_cache);
+	r->image_cache.ptr[idx].fpath_own = pshine_strdup(fpath);
+	r->image_cache.ptr[idx].image = img;
+	return img;
+}
+
 void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *game) {
 	struct vulkan_renderer *r = (void*)renderer;
 	r->game = game;
@@ -977,6 +1075,14 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 			}, 0, NULL);
 		}
 	}
+
+	r->environment_image = load_texture_from_file(
+		r,
+		r->game->environment.texture_path_own,
+		VK_FORMAT_R16G16B16_UNORM,
+		3, 
+		2
+	);
 }
 
 static const VkExtent2D atmo_lut_extent = { 1024, 1024 };
@@ -1083,75 +1189,22 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 	vkQueueWaitIdle(r->queues[QUEUE_COMPUTE]);
 }
 
-static struct vulkan_image load_texture_from_file(struct vulkan_renderer *r, const char *fpath, VkFormat format, int format_channels) {
-	for (size_t i = 0; i < r->image_cache.dyna.count; ++i) {
-		if (strcmp(r->image_cache.ptr[i].fpath_own, fpath) == 0) {
-			return r->image_cache.ptr[i].image;
-		}
-	}
-	
-	int width = 0, height = 0, channels = 0;
-	void *data = stbi_load(fpath, &width, &height, &channels, format_channels);
-	if (data == NULL) PSHINE_PANIC("failed to load surface texture");
-	struct vulkan_image img = allocate_image(r, &(struct vulkan_image_alloc_info){
-		.allocation_flags = 0,
-		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-		.preferred_memory_property_flags = 0,
-		.required_memory_property_flags = 0,
-		.out_allocation_info = NULL,
-		.image_info = &(VkImageCreateInfo){
-			.imageType = VK_IMAGE_TYPE_2D,
-			.arrayLayers = 1,
-			.mipLevels = 1,
-			.samples = VK_SAMPLE_COUNT_1_BIT,
-			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.tiling = VK_IMAGE_TILING_OPTIMAL,
-			.extent = (VkExtent3D){ .width = width, .height = height, .depth = 1 },
-			.format = format,
-			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-		},
-		.view_info = &(VkImageViewCreateInfo){
-			.viewType = VK_IMAGE_VIEW_TYPE_2D,
-			.format = format,
-			.subresourceRange = {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseArrayLayer = 0,
-				.baseMipLevel = 0,
-				.layerCount = 1,
-				.levelCount = 1,
-			}
-		},
-	});
-	NAME_VK_OBJECT(r, img.image, VK_OBJECT_TYPE_IMAGE, "%s image", fpath);
-	NAME_VK_OBJECT(r, img.view, VK_OBJECT_TYPE_IMAGE_VIEW, "%s image view", fpath);
-	write_to_image_staged(r, &img, (VkExtent3D){
-		width,
-		height,
-		1
-	}, format, width * height * format_channels, data);
-	stbi_image_free(data);
-	size_t idx = PSHINE_DYNA_ALLOC(r->image_cache);
-	r->image_cache.ptr[idx].fpath_own = pshine_strdup(fpath);
-	r->image_cache.ptr[idx].image = img;
-	return img;
-}
-
 static void load_planet_texture(struct vulkan_renderer *r, struct pshine_planet *planet) {
 	planet->graphics_data->surface_albedo = load_texture_from_file(
-		r, planet->as_body.surface.albedo_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4
+		r, planet->as_body.surface.albedo_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4, 1
 	);
 	// planet->graphics_data->surface_lights = load_texture_from_file(
 	// 	r, planet->surface.lights_texture_path, VK_FORMAT_R8G8B8A8_SRGB, 4
 	// );
 	planet->graphics_data->surface_bump = load_texture_from_file(
-		r, planet->as_body.surface.bump_texture_path_own, VK_FORMAT_R8_UNORM, 1
+		r, planet->as_body.surface.bump_texture_path_own, VK_FORMAT_R8_UNORM, 1, 1
 	);
 	planet->graphics_data->surface_specular = load_texture_from_file(
-		r, planet->as_body.surface.spec_texture_path_own, VK_FORMAT_R8_UNORM, 1
+		r, planet->as_body.surface.spec_texture_path_own, VK_FORMAT_R8_UNORM, 1, 1
 	);
 	if (planet->as_body.rings.has_rings) {
 		planet->graphics_data->ring_slice_texture = load_texture_from_file(
-			r, planet->as_body.rings.slice_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4
+			r, planet->as_body.rings.slice_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4, 1
 		);
 	}
 }
@@ -2084,8 +2137,8 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 
 static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/mesh.vert.spv",
-		.frag_fname = "build/pshine/data/mesh.frag.spv",
+		.vert_fname = "build/pshine/data/shaders/mesh.vert.spv",
+		.frag_fname = "build/pshine/data/shaders/mesh.frag.spv",
 		.render_pass = r->render_passes.main_pass,
 		.subpass = 0,
 		.push_constant_range_count = 0,
@@ -2104,8 +2157,8 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	r->pipelines.mesh_pipeline = mesh_pipeline.pipeline;
 	r->pipelines.mesh_layout = mesh_pipeline.layout;
 	struct vulkan_pipeline color_mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/mesh.vert.spv",
-		.frag_fname = "build/pshine/data/solid_color.frag.spv",
+		.vert_fname = "build/pshine/data/shaders/mesh.vert.spv",
+		.frag_fname = "build/pshine/data/shaders/solid_color.frag.spv",
 		.render_pass = r->render_passes.main_pass,
 		.subpass = 0,
 		.push_constant_range_count = 0,
@@ -2124,8 +2177,8 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	r->pipelines.color_mesh_pipeline = color_mesh_pipeline.pipeline;
 	r->pipelines.color_mesh_layout = color_mesh_pipeline.layout;
 	struct vulkan_pipeline atmo_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/atmo.vert.spv",
-		.frag_fname = "build/pshine/data/atmo.frag.spv",
+		.vert_fname = "build/pshine/data/shaders/atmo.vert.spv",
+		.frag_fname = "build/pshine/data/shaders/atmo.frag.spv",
 		.render_pass = r->render_passes.main_pass,
 		.subpass = 1,
 		.push_constant_range_count = 0,
@@ -2145,8 +2198,8 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	r->pipelines.atmo_layout = atmo_pipeline.layout;
 	
 	struct vulkan_pipeline blit_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/blit.vert.spv",
-		.frag_fname = "build/pshine/data/blit.frag.spv",
+		.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
+		.frag_fname = "build/pshine/data/shaders/blit.frag.spv",
 		.render_pass = r->render_passes.main_pass,
 		.subpass = 2,
 		.push_constant_range_count = 0,
@@ -2164,8 +2217,8 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	r->pipelines.blit_layout = blit_pipeline.layout;
 
 	struct vulkan_pipeline rings_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/rings.vert.spv",
-		.frag_fname = "build/pshine/data/rings.frag.spv",
+		.vert_fname = "build/pshine/data/shaders/rings.vert.spv",
+		.frag_fname = "build/pshine/data/shaders/rings.frag.spv",
 		.render_pass = r->render_passes.main_pass,
 		.subpass = 0,
 		.push_constant_range_count = 0,

@@ -26,6 +26,7 @@ void pshine_panic_impl(
 			fputs("\033[m\n", sink->fout);
 		else
 			fputc('\n', sink->fout);
+		pshine_print_stacktrace(sink->fout, sink->enable_color);
 	}
 	exit(1);
 }

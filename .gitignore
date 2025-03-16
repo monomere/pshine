@@ -24,3 +24,6 @@ include/volk.h
 .local
 
 **/.DS_Store
+
+nohup.out
+
