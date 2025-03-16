@@ -51,6 +51,7 @@ struct RingsUniforms {
 	float inner_radius;
 	float outer_radius;
 	float rel_planet_radius;
+	float smoothing;
 };
 
 #endif // COMMON_GLSLI_

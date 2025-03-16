@@ -37,6 +37,7 @@ true_anomaly = 0.0
 inner_radius = 65_000_000.0
 outer_radius = 140_000_000.0
 slice_texture_path = "data/textures/saturn_rings_4k.png"
+shadow_smoothing = 0.6
 
 [surface]
 albedo_texture_path = "data/textures/saturn_2k.jpg"

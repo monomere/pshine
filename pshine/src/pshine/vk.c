@@ -74,6 +74,7 @@ struct rings_uniform_data {
 	float inner_radius;
 	float outer_radius;
 	float rel_planet_radius;
+	float shadow_smoothing;
 };
 
 struct atmo_lut_push_const_data {
@@ -2899,6 +2900,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					.outer_radius = (float)b->rings.outer_radius,
 					.rel_planet_radius = (float)(scs_planet_radius / scs_outer_radius),
 					.sun = new_data.sun,
+					.shadow_smoothing = b->rings.shadow_smoothing,
 				};
 				vmaCopyMemoryToAllocation(r->allocator, &new_data_rings, rings_uniform_buffer->allocation,
 					get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * current_frame,

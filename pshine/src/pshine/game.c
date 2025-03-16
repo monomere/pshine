@@ -523,6 +523,7 @@ static struct pshine_celestial_body *load_celestial_body(
 		body->rings.has_rings = true;
 		READ_FIELD(gtab, "inner_radius", body->rings.inner_radius, double, d);
 		READ_FIELD(gtab, "outer_radius", body->rings.outer_radius, double, d);
+		READ_FIELD(gtab, "shadow_smoothing", body->rings.shadow_smoothing, double, d);
 		READ_STR_FIELD(gtab, "slice_texture_path", body->rings.slice_texture_path_own);
 		if (body->rings.slice_texture_path_own == nullptr) {
 			body->rings.has_rings = false;
@@ -571,6 +572,13 @@ struct ship {
 
 };
 
+struct eximgui_state {
+	ImGuiStorage storage;
+};
+
+static void eximgui_state_init(struct eximgui_state *st);
+static void eximgui_state_deinit(struct eximgui_state *st);
+
 struct pshine_game_data {
 	double camera_yaw, camera_pitch;
 	double camera_dist;
@@ -578,6 +586,7 @@ struct pshine_game_data {
 	double move_speed;
 	uint8_t last_key_states[PSHINE_KEY_COUNT_];
 	size_t selected_body;
+	struct eximgui_state eximgui_state;
 };
 
 static void load_game_config(struct pshine_game *game, const char *fpath) {
@@ -649,7 +658,7 @@ void pshine_init_game(struct pshine_game *game) {
 
 	for (size_t i = 0; i < game->celestial_body_count; ++i) {
 		if (!game->celestial_bodies_own[i]->is_static) {
-			create_orbit_points(game->celestial_bodies_own[i], 500);
+			create_orbit_points(game->celestial_bodies_own[i], 1000);
 		}
 	}
 	
@@ -675,6 +684,8 @@ void pshine_init_game(struct pshine_game *game) {
 	game->camera_fov = 60.0;
 	game->material_smoothness_ = 0.02;
 	*(double3*)game->sun_position.values = double3xyz(0, 0, 0);
+
+	eximgui_state_init(&game->data_own->eximgui_state);
 }
 
 void pshine_post_init_game(struct pshine_game *game) {
@@ -682,6 +693,7 @@ void pshine_post_init_game(struct pshine_game *game) {
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
+	eximgui_state_deinit(&game->data_own->eximgui_state);
 	for (size_t i = 0; i < game->celestial_body_count; ++i) {
 		struct pshine_celestial_body *b = game->celestial_bodies_own[i];
 		if (b == NULL) {
@@ -1069,7 +1081,22 @@ static void init_imgui_style() {
 	// st->FrameRounding = 3.0f;
 	// st->Colors[ImGuiCol_Button] 31478479.308u
 }
+
+static struct eximgui_state *g__eximgui_state = nullptr;
+
+static void eximgui_state_init(struct eximgui_state *st) {
+	ImVector_Construct(&st->storage);
+	g__eximgui_state = st;
+}
+
+static void eximgui_state_deinit(struct eximgui_state *st) {
+	ImVector_Destruct(&st->storage);
+}
+
 static bool eximgui_begin_input_box(const char *label) {
+	ImGuiID id = ImGui_GetID(label);
+	bool is_open = ImGuiStorage_GetBool(&g__eximgui_state->storage, id, true);
+	
 	ImGui_PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0);
 	ImGui_PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0);
 	ImGui_PushStyleVar(ImGuiStyleVar_SeparatorTextBorderSize, 1.0);
@@ -1077,11 +1104,21 @@ static bool eximgui_begin_input_box(const char *label) {
 	bool r = ImGui_BeginChild(label, (ImVec2){}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border, 0);
 	ImGui_SetCursorPosY(ImGui_GetCursorPosY() - 5.0f);
 	ImGui_SeparatorText(label);
+	if (ImGui_IsItemClicked()) {
+		is_open = !is_open;
+		ImGuiStorage_SetBool(&g__eximgui_state->storage, id, is_open);
+	}
 	ImGui_PopStyleColor();
 	ImGui_PopStyleVar();
 	ImGui_PopStyleVar();
 	ImGui_PopStyleVar();
-	return r;
+	// if (!is_open) {
+	// 	ImVec2 win_size = ImGui_GetWindowSize();
+	// 	win_size.y -= 10.0f;
+	// 	ImGui_SetWindowSize(win_size, ImGuiCond_Always);
+	// }
+	// ImGui_PopStyleVar();
+	return r && is_open;
 }
 
 static void eximgui_end_input_box() {
@@ -1253,18 +1290,28 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 		}
 		ImGui_End();
 
-		if (ImGui_Begin("Atmosphere", NULL, 0)) {
-			struct pshine_planet *planet =(struct pshine_planet*)body;
-			struct pshine_atmosphere_info *atmo = &planet->atmosphere;
-			ImGui_SliderFloat3("Rayleigh Coefs.", atmo->rayleigh_coefs, 0.001f, 50.0f);
-			ImGui_SliderFloat("Rayleigh Falloff.", &atmo->rayleigh_falloff, 0.0001f, 100.0f);
-			ImGui_SliderFloat("Mie Coef.", &atmo->mie_coef, 0.001f, 50.0f);
-			ImGui_SliderFloat("Mie Ext. Coef.", &atmo->mie_ext_coef, 0.001f, 5.0f);
-			ImGui_SliderFloat("Mie 'g' Coef.", &atmo->mie_g_coef, -0.9999f, 0.9999f);
-			ImGui_SliderFloat("Mie Falloff.", &atmo->mie_falloff, 0.0001f, 100.0f);
-			ImGui_SliderFloat("Intensity", &atmo->intensity, 0.0f, 50.0f);
+		if (body->type == PSHINE_CELESTIAL_BODY_PLANET) {
+			if (ImGui_Begin("Planet", NULL, 0)) {
+				struct pshine_planet *planet = (struct pshine_planet*)body;
+				if (eximgui_begin_input_box("Atmosphere")) {
+					struct pshine_atmosphere_info *atmo = &planet->atmosphere;
+					ImGui_SliderFloat3("Rayleigh Coefs.", atmo->rayleigh_coefs, 0.001f, 50.0f);
+					ImGui_SliderFloat("Rayleigh Falloff.", &atmo->rayleigh_falloff, 0.0001f, 100.0f);
+					ImGui_SliderFloat("Mie Coef.", &atmo->mie_coef, 0.001f, 50.0f);
+					ImGui_SliderFloat("Mie Ext. Coef.", &atmo->mie_ext_coef, 0.001f, 5.0f);
+					ImGui_SliderFloat("Mie 'g' Coef.", &atmo->mie_g_coef, -0.9999f, 0.9999f);
+					ImGui_SliderFloat("Mie Falloff.", &atmo->mie_falloff, 0.0001f, 100.0f);
+					ImGui_SliderFloat("Intensity", &atmo->intensity, 0.0f, 50.0f);
+				}
+				eximgui_end_input_box();
+				if (eximgui_begin_input_box("Rings")) {
+					struct pshine_rings_info *rings = &body->rings;
+					ImGui_SliderFloat("Shadow smoothing", &rings->shadow_smoothing, -1.0f, 1.0f);
+				}
+				eximgui_end_input_box();
+			}
+			ImGui_End();
 		}
-		ImGui_End();
 
 		if (ImGui_Begin("System", NULL, 0)) {
 			// float3 p = float3_double3(double3vs(game->sun_direction_.values));
