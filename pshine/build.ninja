@@ -36,6 +36,8 @@ build $builddir/data/shaders/blit.vert.spv        : glslc data/shaders/blit.vert
 build $builddir/data/shaders/blit.frag.spv        : glslc data/shaders/blit.frag
 build $builddir/data/shaders/rings.vert.spv       : glslc data/shaders/rings.vert
 build $builddir/data/shaders/rings.frag.spv       : glslc data/shaders/rings.frag
+build $builddir/data/shaders/skybox.vert.spv      : glslc data/shaders/skybox.vert
+build $builddir/data/shaders/skybox.frag.spv      : glslc data/shaders/skybox.frag
 build $builddir/data/shaders/atmo_lut.comp.spv    : glslc data/shaders/atmo_lut.comp
 build $builddir/data/shaders/solid_color.frag.spv : glslc data/shaders/solid_color.frag
 
@@ -70,6 +72,8 @@ build $builddir/main: ld $
   $builddir/data/shaders/blit.frag.spv $
   $builddir/data/shaders/rings.vert.spv $
   $builddir/data/shaders/rings.frag.spv $
+  $builddir/data/shaders/skybox.vert.spv $
+  $builddir/data/shaders/skybox.frag.spv $
   $builddir/data/shaders/atmo_lut.comp.spv $
   || $
   build/giraffe/libgiraffe.a

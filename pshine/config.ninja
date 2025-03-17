@@ -5,11 +5,13 @@ cwarns = -Wall -Wno-mathematical-notation-identifier-extension
 opt = 1
 # TODO: fix generated header not to have #include "cimgui.h"
 incs = -I$mod/include/vendor -I/opt/homebrew/include -I$mod/src/vendor/cimgui -I$mod/src/vendor -I$mod/include -Ivendor -Ivendor/imgui -Igiraffe/ffi/include
-cflags = -std=c2x $incs $cwarns
+cflags = -std=c2x $incs $cwarns -DPSHINE_USE_CPPTRACE=0
 cxxflags = $cxxstdlib -std=c++2b $incs $cxxwarns -DIMGUI_IMPL_VULKAN_NO_PROTOTYPES
 
 debug = -g
 debugc =
 debugcxx =
 
-libs = -lglfw -lm -Wl,-rpath,/opt/homebrew/lib -Lbuild/giraffe -lgiraffe -lcpptrace
+libs_cpptrace = -lcpptrace
+libs_cpptrace =
+libs = -lglfw -lm -Wl,-rpath,/opt/homebrew/lib -Lbuild/giraffe -lgiraffe $libs_cpptrace

@@ -205,6 +205,8 @@ struct vulkan_renderer {
 		VkPipeline blit_pipeline;
 		VkPipelineLayout rings_layout;
 		VkPipeline rings_pipeline;
+		VkPipelineLayout skybox_layout;
+		VkPipeline skybox_pipeline;
 
 		// compute pipelines
 		VkPipelineLayout atmo_lut_layout;
@@ -228,12 +230,14 @@ struct vulkan_renderer {
 		VkDescriptorSetLayout atmo_lut_layout;
 		VkDescriptorSetLayout blit_layout;
 		VkDescriptorSetLayout rings_layout;
+		VkDescriptorSetLayout skybox_layout;
 	} descriptors;
 
 	struct {
 		struct vulkan_buffer global_uniform_buffer;
 		VkDescriptorSet global_descriptor_set;
 		VkDescriptorSet atmo_blit_descriptor_set;
+		VkDescriptorSet skybox_descriptor_set;
 	} data;
 
 	struct per_frame_data frames[FRAMES_IN_FLIGHT];
@@ -245,8 +249,9 @@ struct vulkan_renderer {
 
 	VkSampler atmo_lut_sampler;
 	VkSampler material_texture_sampler;
+	VkSampler skybox_sampler;
 
-	struct vulkan_image environment_image;
+	struct vulkan_image skybox_image;
 	// PSHINE_DYNA_(struct mesh) meshes;
 
 	double lod_ranges[4];
@@ -457,6 +462,7 @@ static void write_to_buffer_staged(
 static void write_to_image_staged(
 	struct vulkan_renderer *r,
 	struct vulkan_image *target_image,
+	VkOffset3D offset,
 	VkExtent3D extent,
 	VkFormat format,
 	VkDeviceSize size,
@@ -502,7 +508,7 @@ static void write_to_image_staged(
 			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			.subresourceRange = {
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseArrayLayer = 0,
+				.baseArrayLayer = offset.z,
 				.baseMipLevel = 0,
 				.layerCount = 1,
 				.levelCount = 1,
@@ -517,13 +523,13 @@ static void write_to_image_staged(
 		1,
 		&(VkBufferImageCopy){
 			.imageExtent = extent,
-			.imageOffset = { 0, 0, 0 },
+			.imageOffset = (VkOffset3D){ offset.x, offset.y, 0, },
 			.bufferOffset = 0,
 			.bufferRowLength = 0,
 			.bufferImageHeight = 0,
 			.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 			.imageSubresource.mipLevel = 0,
-			.imageSubresource.baseArrayLayer = 0,
+			.imageSubresource.baseArrayLayer = offset.z,
 			.imageSubresource.layerCount = 1,
 		}
 	);
@@ -543,7 +549,7 @@ static void write_to_image_staged(
 			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			.subresourceRange = {
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseArrayLayer = 0,
+				.baseArrayLayer = offset.z,
 				.baseMipLevel = 0,
 				.layerCount = 1,
 				.levelCount = 1,
@@ -633,6 +639,54 @@ enum vulkan_load_texture_flags {
 	VULKAN_LOAD_TEXTURE_CUBEMAP = 1,
 };
 
+static void *load_texture_data_from_file(
+	const char *fpath,
+	VkFormat format,
+	VkExtent2D *size,
+	int format_channels,
+	int bytes_per_channel
+) {
+	int channels = 0;
+	void *data = nullptr;
+	if (bytes_per_channel == 1) {
+		data = stbi_load(fpath, (int*)&size->width, (int*)&size->height, &channels, format_channels);
+	} else {
+		float *fs = stbi_loadf(fpath, (int*)&size->width, (int*)&size->height, &channels, format_channels);
+		// Change image to correct format.
+		switch (bytes_per_channel) {
+			case 4: data = fs; break; // floats are already 4 byte
+			case 2: {
+				data = calloc(size->width * size->height * format_channels * bytes_per_channel, 1);
+				uint16_t *u16s = data;
+				if (data == nullptr)
+					PSHINE_PANIC("out of memory; tried to alloc %zu",
+						size->width * size->height * format_channels * bytes_per_channel);
+
+				if (format != VK_FORMAT_R16G16B16A16_UNORM)
+					PSHINE_PANIC("HDR formats other than R16G16B16A16_UNORM are not supported yet.");
+
+				PSHINE_CHECK(format_channels == 4, "format has 4 channels but passed in format_channels != 4");
+
+				for (size_t y = 0; y < size->height * size->height * format_channels; y += size->width * format_channels) {
+					for (size_t x = 0; x < size->width * format_channels; x += format_channels) {
+						u16s[y + x + 0] = fs[y + x + 0] * UINT16_MAX;
+						u16s[y + x + 1] = fs[y + x + 1] * UINT16_MAX;
+						u16s[y + x + 2] = fs[y + x + 2] * UINT16_MAX;
+						u16s[y + x + 3] = fs[y + x + 3] * UINT16_MAX;
+					}
+				}
+				free(fs);
+			} break;
+			case 1: unreachable(); // handled in the if above.
+			default:
+				PSHINE_PANIC("HDR bytes_per_channel == %d not supported (only 4, 2, and 1 are).", bytes_per_channel);
+				break;
+		}
+	}
+	if (data == nullptr) PSHINE_PANIC("failed to load texture data at '%s': %s", fpath, stbi_failure_reason());
+	return data;
+}
+
 static struct vulkan_image load_texture_from_file(
 	struct vulkan_renderer *r,
 	const char *fpath,
@@ -650,37 +704,30 @@ static struct vulkan_image load_texture_from_file(
 		}
 	}
 	
-	int width = 0, height = 0, channels = 0;
-	void *data = nullptr;
-	if (bytes_per_channel == 1) {
-		data = stbi_load(fpath, &width, &height, &channels, format_channels);
+	// Figure out the image extent.
+	VkExtent2D size = {};
+	if (flags & VULKAN_LOAD_TEXTURE_CUBEMAP) {
+		size_t fpath_len = strlen(fpath);
+		char fpath_side[fpath_len + 1] = {};
+		fpath_side[fpath_len] = '\0';
+		strncpy(fpath_side, fpath, fpath_len);
+
+		char *found = strstr(fpath_side, "%s");
+		if (found == nullptr) PSHINE_PANIC("Missing '%%s' in cubemap texture path");
+		found[0] = 'p';
+		found[1] = 'x';
+
+		int ignored = 0;
+		if (!stbi_info(fpath_side, (int*)&size.width, (int*)&size.height, &ignored)) {
+			PSHINE_PANIC("Failed to load image at '%s': %s", fpath_side, stbi_failure_reason());
+		}
 	} else {
-		float *fs = stbi_loadf(fpath, &width, &height, &channels, format_channels);
-		// Change image to correct format.
-		switch (bytes_per_channel) {
-			case 4: break; // floats are already 4 byte
-			case 2: {
-				uint16_t *data = calloc(width * height * format_channels * 2, 1);
-
-				if (format != VK_FORMAT_R16G16B16_UNORM)
-					PSHINE_PANIC("HDR formats other than R16G16B16_UNORM are not supported yet.");
-
-				PSHINE_CHECK(format_channels == 3, "format has 3 channels but passed in format_channels != 3");
-
-				for (size_t y = 0; y < height * height; y += width) {
-					for (size_t x = 0; x < width; ++x) {
-						data[y + x] = fs[y + x] * UINT16_MAX;
-					}
-				}
-				free(fs);
-			} break; //<-- i forgot this
-			case 1: unreachable(); // handled in the if above.
-			default:
-				PSHINE_PANIC("HDR bytes_per_channel == %d not supported (only 4, 2, and 1 are).", bytes_per_channel);
-				break;
+		int ignored = 0;
+		if (!stbi_info(fpath, (int*)&size.width, (int*)&size.height, &ignored)) {
+			PSHINE_PANIC("Failed to load image at '%s': %s", fpath, stbi_failure_reason());
 		}
 	}
-	if (data == nullptr) PSHINE_PANIC("failed to load texture at '%s': %s", fpath, stbi_failure_reason());
+
 	struct vulkan_image img = allocate_image(r, &(struct vulkan_image_alloc_info){
 		.allocation_flags = 0,
 		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
@@ -689,35 +736,75 @@ static struct vulkan_image load_texture_from_file(
 		.out_allocation_info = NULL,
 		.image_info = &(VkImageCreateInfo){
 			.imageType = VK_IMAGE_TYPE_2D,
-			.arrayLayers = 1,
+			.arrayLayers = (flags & VULKAN_LOAD_TEXTURE_CUBEMAP) ? 6 : 1,
 			.mipLevels = 1,
 			.samples = VK_SAMPLE_COUNT_1_BIT,
 			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
-			.extent = (VkExtent3D){ .width = width, .height = height, .depth = 1 },
+			.extent = (VkExtent3D){
+				.width = size.width,
+				.height = size.height,
+				.depth = 1,
+			},
 			.format = format,
 			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			.flags = (flags & VULKAN_LOAD_TEXTURE_CUBEMAP) ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0,
 		},
 		.view_info = &(VkImageViewCreateInfo){
-			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.viewType = (flags & VULKAN_LOAD_TEXTURE_CUBEMAP)
+				? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D,
 			.format = format,
 			.subresourceRange = {
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 				.baseArrayLayer = 0,
 				.baseMipLevel = 0,
-				.layerCount = 1,
+				.layerCount = (flags & VULKAN_LOAD_TEXTURE_CUBEMAP) ? 6 : 1,
 				.levelCount = 1,
 			}
 		},
 	});
+
 	NAME_VK_OBJECT(r, img.image, VK_OBJECT_TYPE_IMAGE, "%s image", fpath);
 	NAME_VK_OBJECT(r, img.view, VK_OBJECT_TYPE_IMAGE_VIEW, "%s image view", fpath);
-	write_to_image_staged(r, &img, (VkExtent3D){
-		width,
-		height,
-		1
-	}, format, width * height * format_channels * bytes_per_channel, data);
-	free(data);
+
+	// Now load the actual data.
+	if (flags & VULKAN_LOAD_TEXTURE_CUBEMAP) {
+		size_t fpath_len = strlen(fpath);
+		char fpath_side[fpath_len + 1] = {};
+		strncpy(fpath_side, fpath, fpath_len);
+		char *found = strstr(fpath_side, "%s");
+		if (found == nullptr) PSHINE_PANIC("Missing '%%s' in cubemap texture path");
+		for (size_t i = 0; i < 3; ++i) {
+			found[1] = 'x' + i;
+			for (size_t j = 0; j < 2; ++j) {
+				found[0] = "pn"[j];
+				VkExtent2D current_size = {};
+				void *data = load_texture_data_from_file(fpath_side, format, &current_size, format_channels, bytes_per_channel);
+				if (size.width != 0 && (current_size.width != size.width || current_size.height != size.height)) {
+					PSHINE_PANIC("Incompatible cubemap sizes: expected %ux%u, got %ux%u",
+						size.width, size.height, current_size.width, current_size.height);
+				}
+				write_to_image_staged(r, &img, (VkOffset3D){
+					0, 0, i * 2 + j
+				}, (VkExtent3D){
+					size.width,
+					size.height,
+					1
+				}, format, size.width * size.height * format_channels * bytes_per_channel, data);
+				free(data);
+			}
+		}
+	} else {
+		VkExtent2D current_size = {};
+		void *data = load_texture_data_from_file(fpath, format, &current_size, format_channels, bytes_per_channel);
+		write_to_image_staged(r, &img, (VkOffset3D){ 0, 0, 0 }, (VkExtent3D){
+			size.width,
+			size.height,
+			1
+		}, format, size.width * size.height * format_channels * bytes_per_channel, data);
+		free(data);
+	}
+	
 	size_t idx = PSHINE_DYNA_ALLOC(r->image_cache);
 	r->image_cache.ptr[idx].fpath_own = pshine_strdup(fpath);
 	r->image_cache.ptr[idx].image = img;
@@ -774,38 +861,6 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 			free(mesh_data.vertices);
 		}
 	}
-	
-	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
-		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-		.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-		.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-		.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-		.anisotropyEnable = VK_FALSE,
-		.maxAnisotropy = 1.0f,
-		.compareEnable = VK_FALSE,
-		.magFilter = VK_FILTER_LINEAR,
-		.minFilter = VK_FILTER_LINEAR,
-		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-		.mipLodBias = 0.0f,
-		.minLod = 0.0f,
-		.maxLod = 0.0f,
-	}, NULL, &r->atmo_lut_sampler);
-	
-	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
-		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-		.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-		.anisotropyEnable = VK_FALSE,
-		.maxAnisotropy = 1.0f,
-		.compareEnable = VK_FALSE,
-		.magFilter = VK_FILTER_LINEAR,
-		.minFilter = VK_FILTER_LINEAR,
-		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-		.mipLodBias = 0.0f,
-		.minLod = 0.0f,
-		.maxLod = 0.0f,
-	}, NULL, &r->material_texture_sampler);
 
 	for (uint32_t i = 0; i < r->game->celestial_body_count; ++i) {
 		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
@@ -1076,13 +1131,39 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 		}
 	}
 
-	r->environment_image = load_texture_from_file(
+	PSHINE_DEBUG("Loading environment cubemap");
+	r->skybox_image = load_texture_from_file(
 		r,
 		r->game->environment.texture_path_own,
-		VK_FORMAT_R16G16B16_UNORM,
-		3, 
-		2
+		VK_FORMAT_R16G16B16A16_UNORM,
+		4,
+		2,
+		VULKAN_LOAD_TEXTURE_CUBEMAP
 	);
+
+	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = r->descriptors.pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &r->descriptors.skybox_layout
+	}, &r->data.skybox_descriptor_set));
+	NAME_VK_OBJECT(r, r->data.skybox_descriptor_set, VK_OBJECT_TYPE_DESCRIPTOR_SET, "skybox ds");
+
+	vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[1]){
+		(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.dstSet = r->data.skybox_descriptor_set,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.pImageInfo = &(VkDescriptorImageInfo){
+				.imageView = r->skybox_image.view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.sampler = r->skybox_sampler,
+			}
+		}
+	}, 0, NULL);
 }
 
 static const VkExtent2D atmo_lut_extent = { 1024, 1024 };
@@ -1191,20 +1272,20 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 
 static void load_planet_texture(struct vulkan_renderer *r, struct pshine_planet *planet) {
 	planet->graphics_data->surface_albedo = load_texture_from_file(
-		r, planet->as_body.surface.albedo_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4, 1
+		r, planet->as_body.surface.albedo_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4, 1, 0
 	);
 	// planet->graphics_data->surface_lights = load_texture_from_file(
 	// 	r, planet->surface.lights_texture_path, VK_FORMAT_R8G8B8A8_SRGB, 4
 	// );
 	planet->graphics_data->surface_bump = load_texture_from_file(
-		r, planet->as_body.surface.bump_texture_path_own, VK_FORMAT_R8_UNORM, 1, 1
+		r, planet->as_body.surface.bump_texture_path_own, VK_FORMAT_R8_UNORM, 1, 1, 0
 	);
 	planet->graphics_data->surface_specular = load_texture_from_file(
-		r, planet->as_body.surface.spec_texture_path_own, VK_FORMAT_R8_UNORM, 1, 1
+		r, planet->as_body.surface.spec_texture_path_own, VK_FORMAT_R8_UNORM, 1, 1, 0
 	);
 	if (planet->as_body.rings.has_rings) {
 		planet->graphics_data->ring_slice_texture = load_texture_from_file(
-			r, planet->as_body.rings.slice_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4, 1
+			r, planet->as_body.rings.slice_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4, 1, 0
 		);
 	}
 }
@@ -1981,6 +2062,7 @@ struct graphics_pipeline_info {
 	bool blend;
 	bool vertex_input; // TODO: pass vertex attribute here
 	bool lines;
+	bool triangle_strip;
 };
 
 struct vulkan_pipeline {
@@ -2043,7 +2125,9 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 		.pInputAssemblyState = &(VkPipelineInputAssemblyStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
 			.primitiveRestartEnable = VK_FALSE,
-			.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+			.topology = info->triangle_strip
+				? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
+				: VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 		},
 		.pViewportState = &(VkPipelineViewportStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -2083,7 +2167,7 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 			.depthTestEnable = info->depth_test ? VK_TRUE : VK_FALSE,
 			.depthWriteEnable = info->depth_test ? VK_TRUE : VK_FALSE,
 			.stencilTestEnable = VK_FALSE,
-			.depthCompareOp = VK_COMPARE_OP_GREATER,
+			.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
 			.maxDepthBounds = 1.0f,
 			.minDepthBounds = 0.0f,
 			.back = {},
@@ -2257,6 +2341,34 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	// r->pipelines.line_gizmo_layout = line_gizmo_pipeline.layout;
 	// r->pipelines.line_gizmo_pipeline = line_gizmo_pipeline.pipeline;
 
+	struct vulkan_pipeline skybox_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
+		.vert_fname = "build/pshine/data/shaders/skybox.vert.spv",
+		.frag_fname = "build/pshine/data/shaders/skybox.frag.spv",
+		.render_pass = r->render_passes.main_pass,
+		.subpass = 0,
+		.push_constant_range_count = 1,
+		.push_constant_ranges = (VkPushConstantRange[]) {
+			(VkPushConstantRange){
+				.offset = 0,
+				.size = sizeof(float4x4) * 2,
+				.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+			},
+		},
+		.set_layout_count = 1,
+		.set_layouts = (VkDescriptorSetLayout[]){
+			r->descriptors.skybox_layout,
+		},
+		.blend = false,
+		.depth_test = true,
+		.vertex_input = false,
+		.lines = false,
+		.triangle_strip = true,
+		.layout_name = "skybox pipeline layout",
+		.pipeline_name = "skybox pipeline",
+	});
+	r->pipelines.skybox_layout = skybox_pipeline.layout;
+	r->pipelines.skybox_pipeline = skybox_pipeline.pipeline;
+
 	{
 		vkCreatePipelineLayout(r->device, &(VkPipelineLayoutCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -2300,6 +2412,8 @@ static void deinit_pipelines(struct vulkan_renderer *r) {
 	vkDestroyPipelineLayout(r->device, r->pipelines.blit_layout, NULL);
 	vkDestroyPipeline(r->device, r->pipelines.rings_pipeline, NULL);
 	vkDestroyPipelineLayout(r->device, r->pipelines.rings_layout, NULL);
+	vkDestroyPipeline(r->device, r->pipelines.skybox_pipeline, NULL);
+	vkDestroyPipelineLayout(r->device, r->pipelines.skybox_layout, NULL);
 }
 
 
@@ -2518,6 +2632,20 @@ static void init_descriptors(struct vulkan_renderer *r) {
 	}, NULL, &r->descriptors.rings_layout);
 	NAME_VK_OBJECT(r, r->descriptors.rings_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "rings descriptor set layout");
 
+	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 1,
+		.pBindings = (VkDescriptorSetLayoutBinding[]){
+			(VkDescriptorSetLayoutBinding){
+				.binding = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+		}
+	}, NULL, &r->descriptors.skybox_layout);
+	NAME_VK_OBJECT(r, r->descriptors.skybox_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "skybox descriptor set layout");
+
 }
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
@@ -2530,12 +2658,61 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.atmo_lut_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.blit_layout, NULL);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.rings_layout, NULL);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.skybox_layout, NULL);
 }
 
 
 // Game data
 
 static void init_data(struct vulkan_renderer *r) {
+	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		.anisotropyEnable = VK_FALSE,
+		.maxAnisotropy = 1.0f,
+		.compareEnable = VK_FALSE,
+		.magFilter = VK_FILTER_LINEAR,
+		.minFilter = VK_FILTER_LINEAR,
+		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		.mipLodBias = 0.0f,
+		.minLod = 0.0f,
+		.maxLod = 0.0f,
+	}, NULL, &r->atmo_lut_sampler);
+	
+	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.anisotropyEnable = VK_FALSE,
+		.maxAnisotropy = 1.0f,
+		.compareEnable = VK_FALSE,
+		.magFilter = VK_FILTER_LINEAR,
+		.minFilter = VK_FILTER_LINEAR,
+		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		.mipLodBias = 0.0f,
+		.minLod = 0.0f,
+		.maxLod = 0.0f,
+	}, NULL, &r->material_texture_sampler);
+	
+	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.anisotropyEnable = VK_FALSE,
+		.maxAnisotropy = 1.0f,
+		.compareEnable = VK_FALSE,
+		.magFilter = VK_FILTER_LINEAR,
+		.minFilter = VK_FILTER_LINEAR,
+		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		.mipLodBias = 0.0f,
+		.minLod = 0.0f,
+		.maxLod = 0.0f,
+	}, NULL, &r->skybox_sampler);
+
 	struct vulkan_buffer_alloc_info common_alloc_info = {
 		.size = 0,
 		.buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -2720,6 +2897,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 		}
 	}
 
+	vkDestroySampler(r->device, r->skybox_sampler, NULL);
 	vkDestroySampler(r->device, r->atmo_lut_sampler, NULL);
 	vkDestroySampler(r->device, r->material_texture_sampler, NULL);
 
@@ -2823,9 +3001,11 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		double3add(camera_pos_scs, double3vs(r->game->camera_forward.values)),
 		double3xyz(0.0, 1.0, 0.0)
 	);
+
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
 	double4x4 proj_mat = {};
 	struct double4x4persp_info persp_info = setdouble4x4persp(&proj_mat, r->game->camera_fov, aspect_ratio, 0.01);
+	float4x4 proj_mat32 = float4x4_double4x4(proj_mat);
 
 	{
 		float3 cam_y = float3xyz(0.0f, 1.0f, 0.0f);
@@ -2906,7 +3086,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			// PSHINE_DEBUG("⎢ %f %f %f %f ⎥", model_mat.vs[0][2], model_mat.vs[1][2], model_mat.vs[2][2], model_mat.vs[3][2]);
 			// PSHINE_DEBUG("⎣ %f %f %f %f ⎦", model_mat.vs[0][3], model_mat.vs[1][3], model_mat.vs[2][3], model_mat.vs[3][3]);
 
-			new_data.proj = float4x4_double4x4(proj_mat);
+			new_data.proj = proj_mat32;
+
 
 			double4x4 model_view_mat = model_mat;
 			double4x4mul(&model_view_mat, &view_mat);
@@ -3108,8 +3289,46 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		}
 	}
 
+	
+	// Skybox
+	{
+		float4x4 data[2] = {
+			proj_mat32,
+			float4x4_double4x4(view_mat),
+		};
+
+		// Remove the translation
+		data[1].v4s[3].x = 0.0f;
+		data[1].v4s[3].y = 0.0f;
+		data[1].v4s[3].z = 0.0f;
+
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.skybox_pipeline);
+		vkCmdPushConstants(f->command_buffer, r->pipelines.skybox_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+			sizeof(float4x4) * 2, &data);
+		
+		vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+			r->pipelines.skybox_layout, 0, 1, &r->data.skybox_descriptor_set, 0, nullptr);
+		
+		vkCmdDraw(f->command_buffer, 14, 1, 0, 0);
+	}
+
+
+
+	//:---[ NEXT SUBPASS ]--------------://
 	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.atmo_pipeline);
+
+	vkCmdBindDescriptorSets(
+		f->command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		r->pipelines.atmo_layout,
+		0,
+		1,
+		(VkDescriptorSet[]){ r->data.global_descriptor_set },
+		1, (uint32_t[]){
+			get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+		}
+	);
 
 	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
 		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
@@ -3156,50 +3375,6 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			});
 		}
 	}
-
-
-	// vkCmdBlitImage2(f->command_buffer, &(VkBlitImageInfo2){
-	// 	.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
-	// 	.pNext = nullptr,
-	// 	.filter = VK_FILTER_NEAREST,
-	// 	.srcImage = r->transients.color_0.image,
-	// 	.dstImage = r->swapchain_images_own[image_index],
-	// 	.srcImageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
-	// 	.dstImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-	// 	.regionCount = 1,
-	// 	.pRegions = &(VkImageBlit2){
-	// 		.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
-	// 		.pNext = nullptr,
-	// 		.srcSubresource = (VkImageSubresourceLayers){
-	// 			.mipLevel = 0,
-	// 			.layerCount = 1,
-	// 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-	// 			.baseArrayLayer = 0,
-	// 		},
-	// 		.srcOffsets = {
-	// 			(VkOffset3D){ .x = 0, .y = 0, .z = 0 },
-	// 			(VkOffset3D){
-	// 				.x = r->swapchain_extent.width,
-	// 				.y = r->swapchain_extent.height,
-	// 				.z = 1,
-	// 			},
-	// 		},
-	// 		.dstSubresource = (VkImageSubresourceLayers){
-	// 			.mipLevel = 0,
-	// 			.layerCount = 1,
-	// 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-	// 			.baseArrayLayer = 0,
-	// 		},
-	// 		.dstOffsets = {
-	// 			(VkOffset3D){ .x = 0, .y = 0, .z = 0 },
-	// 			(VkOffset3D){
-	// 				.x = r->swapchain_extent.width,
-	// 				.y = r->swapchain_extent.height,
-	// 				.z = 1,
-	// 			},
-	// 		},
-	// 	}
-	// });
 
 	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
 	

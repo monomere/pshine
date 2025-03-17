@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <string.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <fcntl.h>
@@ -13,8 +15,7 @@ char *pshine_read_file(const char *fname, size_t *size) {
 	PSHINE_DEBUG("reading file '%s'", fname);
 	int fdin = open(fname, O_RDONLY);
 	if (fdin == -1) {
-		perror("open");
-		PSHINE_CHECK(fdin != -1, "could not read file '%s'", fname);
+		PSHINE_PANIC("Could not read file '%s': %s", fname, strerror(errno));
 	}
 	struct stat st = {};
 	if (fstat(fdin, &st) == -1) {
@@ -38,7 +39,7 @@ size_t pshine_get_mem_usage() {
 
 // TODO: PSHINE_USE_CPPTRACE
 #ifndef PSHINE_USE_CPPTRACE
-#define PSHINE_USE_CPPTRACE 1
+#define PSHINE_USE_CPPTRACE
 #endif
 
 #if defined(PSHINE_USE_CPPTRACE) && PSHINE_USE_CPPTRACE
@@ -51,6 +52,6 @@ void pshine_print_stacktrace(FILE *fout, bool color) {
 }
 #else
 // Do nothing, no library is provided.
-void pshine_print_stacktrace(FILE *fout) {}
+void pshine_print_stacktrace(FILE *fout, bool color) {}
 #endif
 

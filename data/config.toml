@@ -14,6 +14,6 @@ planets = [
 ]
 
 [environment]
-texture_path = "data/textures/nasa_sky.exr"
+texture_path = "data/textures/envmap/%s.hdr"
 projection = "equirectangular"
 

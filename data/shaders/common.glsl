@@ -9,6 +9,7 @@ const float PI = 3.14159265358979;
 #define _1D sampler1D
 #define _2D sampler2D
 #define _3D sampler3D
+#define _CUBE samplerCube
 #define SUBPASS_INPUT(name) subpassInput name
 
 struct GlobalUniforms {
@@ -52,6 +53,12 @@ struct RingsUniforms {
 	float outer_radius;
 	float rel_planet_radius;
 	float smoothing;
+};
+
+
+struct SkyboxConsts {
+	mat4 proj;
+	mat4 view;
 };
 
 #endif // COMMON_GLSLI_
