@@ -579,10 +579,16 @@ struct eximgui_state {
 static void eximgui_state_init(struct eximgui_state *st);
 static void eximgui_state_deinit(struct eximgui_state *st);
 
+enum movement_mode {
+	MOVEMENT_FLY,
+	MOVEMENT_ARC,
+	MOVEMENT_WALK,
+};
+
 struct pshine_game_data {
 	double camera_yaw, camera_pitch;
 	double camera_dist;
-	int movement_mode;
+	enum movement_mode movement_mode;
 	double move_speed;
 	uint8_t last_key_states[PSHINE_KEY_COUNT_];
 	size_t selected_body;
@@ -693,7 +699,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->data_own->camera_pitch = 0.0;
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0;
-	game->data_own->movement_mode = 0;
+	game->data_own->movement_mode = MOVEMENT_FLY;
 	game->data_own->move_speed = 500'000.0;
 	game->time_scale = 0.0;
 	game->camera_position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
@@ -750,6 +756,57 @@ static const enum pshine_key
 	K_ZOOM_OUT = PSHINE_KEY_X;
 
 static const double ROTATE_SPEED = 1.0;
+
+[[maybe_unused]]
+static void update_camera_walk(struct pshine_game *game, float delta_time) {
+	{
+		double3 delta = {};
+		if (pshine_is_key_down(game->renderer, PSHINE_KEY_LEFT)) delta.x += 1.0;
+		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_RIGHT)) delta.x -= 1.0;
+		if (pshine_is_key_down(game->renderer, PSHINE_KEY_UP)) delta.y += 1.0;
+		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_DOWN)) delta.y -= 1.0;
+		double rot_speed = ROTATE_SPEED * (game->data_own->is_control_precise ? 0.01 : 1.0);
+		game->data_own->camera_pitch += delta.y * rot_speed * delta_time;
+		game->data_own->camera_yaw += delta.x * rot_speed * delta_time;
+	}
+
+	// Unlike the Fly mode, we need to select a proper basis for our pitch/yaw rotation.
+	// One of the axes is easy, the normal of the planet sphere, the other one a bit more complicated.
+	// (we can get the third axis by doing a cross product of the other axes)
+
+	double3x3 mat = {};
+	setdouble3x3rotation(&mat, 0.0, game->data_own->camera_pitch, 0.0);
+	{
+		double3x3 mat2 = {};
+		setdouble3x3rotation(&mat2,  game->data_own->camera_yaw, 0.0, 0.0);
+		double3x3mul(&mat, &mat2);
+	}
+
+	
+	double3 cam_forward = double3x3mulv(&mat, double3xyz(0.0, 0.0, 1.0));
+	// double3 cam_forward = double3xyz(
+	// 	cos(game->data_own->camera_pitch) * sin(game->data_own->camera_yaw),
+	// 	-sin(game->data_own->camera_pitch),
+	// 	cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
+	// );
+
+	double3 cam_pos = double3vs(game->camera_position.values);
+	{
+		double3 delta = {};
+		if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
+		else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
+		if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
+		else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
+		if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
+		else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
+		delta = double3x3mulv(&mat, delta);
+		cam_pos = double3add(cam_pos, double3mul(double3norm(delta), game->data_own->move_speed * delta_time));
+	}
+
+
+	*(double3*)game->camera_position.values = cam_pos;
+	*(double3*)game->camera_forward.values = cam_forward;
+}
 
 [[maybe_unused]]
 static void update_camera_fly(struct pshine_game *game, float delta_time) {
@@ -1190,10 +1247,15 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 
 	}
 
-	if (game->data_own->movement_mode) {
-		update_camera_arc(game, delta_time);
-	} else {
-		update_camera_fly(game, delta_time);
+	
+	switch (game->data_own->movement_mode) {
+		case MOVEMENT_ARC: update_camera_arc(game, delta_time); break;
+		case MOVEMENT_FLY: update_camera_fly(game, delta_time); break;
+		case MOVEMENT_WALK: update_camera_walk(game, delta_time); break;
+		default:
+			PSHINE_WARN("Unknown movement mode: %d, switching to fly", game->data_own->movement_mode);
+			game->data_own->movement_mode = MOVEMENT_FLY;
+			break;
 	}
 
 	memcpy(game->data_own->last_key_states, pshine_get_key_states(game->renderer), sizeof(uint8_t) * PSHINE_KEY_COUNT_);

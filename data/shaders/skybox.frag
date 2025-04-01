@@ -9,6 +9,5 @@ layout (location = 0) in vec3 i_pos;
 layout (set = 0, binding = 0) uniform SAMPLER(_CUBE, cubemap);
 
 void main() {
-	o_col = vec4(texture(cubemap, i_pos).rgb, 1.0) * 0.5; // + vec4((i_pos * 0.5 + 0.5) * 0.2, 0.0);
-	// o_col = vec4(, 1.0);
+	o_col = vec4(texture(cubemap, i_pos).rgb, 1.0) * 0.2;
 }
