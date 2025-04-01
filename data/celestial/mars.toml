@@ -31,7 +31,7 @@ mie_coef = 30.1
 mie_ext_coef = 2.0
 mie_g_coef = -0.87
 mie_falloff = 18.0
-intensity = 20.0
+intensity = 120.0
 
 [surface]
 albedo_texture_path = "data/textures/mars_2k.jpg"

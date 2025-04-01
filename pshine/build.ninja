@@ -74,6 +74,6 @@ build $builddir/main: ld $
   $builddir/data/shaders/rings.frag.spv $
   $builddir/data/shaders/skybox.vert.spv $
   $builddir/data/shaders/skybox.frag.spv $
-  $builddir/data/shaders/atmo_lut.comp.spv $
+  $builddir/data/shaders/tonemap.frag.spv $
   || $
   build/giraffe/libgiraffe.a

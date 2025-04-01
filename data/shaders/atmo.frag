@@ -146,7 +146,14 @@ vec4 compute_color(vec2 uv, vec4 col, float depth) {
 		vec3 ray_origin_atmo = ray_origin + ray_dir * (dst_to_atmo + epsilon);
 		vec3 light = compute_light(ray_origin_atmo, ray_dir, dst_thru_atmo - epsilon * 2.0, col.rgb);
 
-		// light = pow(light, vec3(1.0 / 2.2));
+		// float cos_sun_ad = cos(0.5);
+		// float sundisk = smoothstep(cos_sun_ad, cos_sun_ad + 0.00002, cosTheta);
+		// vec3 L0 = vec3(0.1) * Fex;
+		// L0 += sunE * 19000.0 * Fex * sundisk;
+		// vec3 texColor = Lin + L0;
+		// texColor *= 0.04;
+		// texColor += vec3(0.0, 0.001, 0.0025) * 0.3;
+
 		return vec4(light, 1.0);
 	}
 

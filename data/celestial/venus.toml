@@ -28,7 +28,7 @@ mie_coef = 20.1
 mie_ext_coef = 1.1
 mie_g_coef = -0.87
 mie_falloff = 2.0
-intensity = 20.0
+intensity = 120.0
 
 [surface]
 albedo_texture_path = "data/textures/venus_2k.jpg"

@@ -211,5 +211,6 @@ This isn't the full set of resources used unfortunately.
 - Textures: https://planetpixelemporium.com/
 - Textures: https://svs.gsfc.nasa.gov/4720
 - Textures: https://bjj.mmedia.is/
+- https://github.com/Tw1ddle/Sky-Shader
 
 - Amazing resource for orbital mechanics: [orbital-mechanics.space](https://orbital-mechanics.space/)

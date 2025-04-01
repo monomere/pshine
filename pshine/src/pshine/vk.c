@@ -1161,8 +1161,8 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 				.imageView = r->skybox_image.view,
 				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 				.sampler = r->skybox_sampler,
-			}
-		}
+			},
+		},
 	}, 0, NULL);
 }
 
@@ -1891,7 +1891,7 @@ static void init_rpasses(struct vulkan_renderer *r) {
 				.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 			},
 			[transient_color_attachment_index] = (VkAttachmentDescription){
-				.format = VK_FORMAT_R8G8B8A8_SRGB,
+				.format = VK_FORMAT_R16G16B16A16_SFLOAT,
 				.samples = VK_SAMPLE_COUNT_1_BIT,
 				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
 				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -1968,7 +1968,7 @@ static void init_transients(struct vulkan_renderer *r) {
 				.height = r->swapchain_extent.height,
 				.depth = 1,
 			},
-			.format = VK_FORMAT_R8G8B8A8_SRGB,
+			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
 			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 			.samples = VK_SAMPLE_COUNT_1_BIT,
 			.mipLevels = 1,
@@ -1980,7 +1980,7 @@ static void init_transients(struct vulkan_renderer *r) {
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
-			.format = VK_FORMAT_R8G8B8A8_SRGB,
+			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
 			.subresourceRange = (VkImageSubresourceRange){
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 				.baseArrayLayer = 0,
@@ -2645,7 +2645,6 @@ static void init_descriptors(struct vulkan_renderer *r) {
 		}
 	}, NULL, &r->descriptors.skybox_layout);
 	NAME_VK_OBJECT(r, r->descriptors.skybox_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "skybox descriptor set layout");
-
 }
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
@@ -3316,6 +3315,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	//:---[ NEXT SUBPASS ]--------------://
 	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
+
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.atmo_pipeline);
 
 	vkCmdBindDescriptorSets(
@@ -3376,6 +3376,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		}
 	}
 
+	//:---[ NEXT SUBPASS ]--------------://
 	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
 	
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.blit_pipeline);
