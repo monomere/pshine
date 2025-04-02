@@ -184,6 +184,8 @@ struct vulkan_renderer {
 	VkImage *swapchain_images_own; // `*[.swapchain_image_count]`
 	VkImageView *swapchain_image_views_own; // `*[.swapchain_image_count]`
 
+	bool opt_bloom;
+
 	bool currently_recomputing_luts;
 
 	VkFormat depth_format;
@@ -836,6 +838,8 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	r->lod_ranges[2] = 1'500.0;
 	r->lod_ranges[3] = 290.0;
 
+	r->opt_bloom = true;
+
 	init_glfw(r);
 	init_vulkan(r);
 	init_swapchain(r);
@@ -1479,9 +1483,11 @@ static void init_vulkan(struct vulkan_renderer *r) {
 		VkQueueFamilyProperties properties[property_count];
 		vkGetPhysicalDeviceQueueFamilyProperties(r->physical_device, &property_count, properties);
 		for (uint32_t i = 0; i < property_count; ++i) {
-			if (properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+			// we can do this because Vulkan requires at least one queue that supports both graphics and compute to exist.
+			if ((properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && (properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
 				r->queue_families[QUEUE_GRAPHICS] = i;
 			}
+			// TODO: prefer this queue to be separate from the graphics queue.
 			if (properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
 				r->queue_families[QUEUE_COMPUTE] = i;
 			}
@@ -1919,8 +1925,12 @@ static void init_sdr_rpass(struct vulkan_renderer *r) {
 		(VkSubpassDependency){
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
 			.dstSubpass = tonemap_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // COMPUTE_SHADER_BIT,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			.srcStageMask = r->opt_bloom
+				? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+				: VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.srcAccessMask = r->opt_bloom
+				? VK_ACCESS_SHADER_WRITE_BIT
+				: VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
 		},
@@ -1978,8 +1988,10 @@ static void init_sdr_rpass(struct vulkan_renderer *r) {
 				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
 				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // TODO: Change when actually doing Bloom compute.
-				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.initialLayout = r->opt_bloom
+					? VK_IMAGE_LAYOUT_GENERAL
+					: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // TODO: figure out if this is good
 			},
 		},
 		.dependencyCount = sizeof(subpass_dependencies) / sizeof(*subpass_dependencies),
@@ -3488,66 +3500,67 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	vkCmdEndRenderPass(f->command_buffer);
 
 	// Bloom
-	// {
-	// 	struct vulkan_image *down_chain[] = {
-	// 		&r->transients.color_0,
-	// 		&r->transients.bloom_0,
-	// 		&r->transients.bloom_1,
-	// 		&r->transients.bloom_2,
-	// 	};
-	// 	for (int i = 1; i < sizeof(down_chain)/sizeof(void*); ++i) {
-	// 		struct vulkan_image *src_image = down_chain[i - 1];
-	// 		struct vulkan_image *dst_image = down_chain[i];
-	// 		vkCmdPipelineBarrier(f->command_buffer,
-	// 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-	// 			VK_PIPELINE_STAGE_TRANSFER_BIT,
-	// 			0,
-	// 			0, nullptr, 0, nullptr, 1, &(VkImageMemoryBarrier){
-	// 				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-	// 				.image = src_image->image,
-	// 				.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-	// 				.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-	// 				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-	// 				.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-	// 				.subresourceRange = (VkImageSubresourceRange){
-	// 					.levelCount = 1,
-	// 					.layerCount = 1,
-	// 					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-	// 					.baseMipLevel = 0,
-	// 					.baseArrayLayer = 0,
-	// 				},
-	// 				.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-	// 				.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-	// 			});
-	// 		vkCmdBlitImage(
-	// 			f->command_buffer,
-	// 			src_image->image,
-	// 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-	// 			r->transients.bloom_0.image,
-	// 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-	// 			1,
-	// 			&(VkImageBlit){
-	// 				.srcSubresource = (VkImageSubresourceLayers){
-	// 					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-	// 					.baseArrayLayer = 0,
-	// 					.layerCount = 1,
-	// 					.mipLevel = 0,
-	// 				},
-	// 				.srcOffsets[0] = (VkOffset3D){ .x = 0, .y = 0, .z = 0 },
-	// 				.srcOffsets[1] = (VkOffset3D){ .x = src_image->width, .y = src_image->height, .z = 0 },
-	// 				.dstSubresource = (VkImageSubresourceLayers){
-	// 					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-	// 					.baseArrayLayer = 0,
-	// 					.layerCount = 1,
-	// 					.mipLevel = 0,
-	// 				},
-	// 				.dstOffsets[0] = (VkOffset3D){ .x = 0, .y = 0, .z = 0 },
-	// 				.dstOffsets[1] = (VkOffset3D){ .x = dst_image->width, .y = dst_image->height, .z = 0 },
-	// 			},
-	// 			VK_FILTER_LINEAR
-	// 		);
-	// 	}
-	// }
+	{
+		struct vulkan_image *down_chain[] = {
+			&r->transients.color_0,
+			&r->transients.bloom_0,
+			&r->transients.bloom_1,
+			// &r->transients.bloom_2,
+		};
+		for (int i = 1; i < sizeof(down_chain)/sizeof(void*); ++i) {
+			struct vulkan_image *src_image = down_chain[i - 1];
+			struct vulkan_image *dst_image = down_chain[i];
+			vkCmdPipelineBarrier(f->command_buffer,
+				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				0,
+				0, nullptr, 0, nullptr, 1, &(VkImageMemoryBarrier){
+					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+					.image = src_image->image,
+					.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+					.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+					.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+					.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					.subresourceRange = (VkImageSubresourceRange){
+						.levelCount = 1,
+						.layerCount = 1,
+						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						.baseMipLevel = 0,
+						.baseArrayLayer = 0,
+					},
+					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				});
+			vkCmdBlitImage(
+				f->command_buffer,
+				src_image->image,
+				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				r->transients.bloom_0.image,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				1,
+				&(VkImageBlit){
+					.srcSubresource = (VkImageSubresourceLayers){
+						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						.baseArrayLayer = 0,
+						.layerCount = 1,
+						.mipLevel = 0,
+					},
+					.srcOffsets[0] = (VkOffset3D){ .x = 0, .y = 0, .z = 0 },
+					.srcOffsets[1] = (VkOffset3D){ .x = src_image->width, .y = src_image->height, .z = 0 },
+					.dstSubresource = (VkImageSubresourceLayers){
+						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						.baseArrayLayer = 0,
+						.layerCount = 1,
+						.mipLevel = 0,
+					},
+					.dstOffsets[0] = (VkOffset3D){ .x = 0, .y = 0, .z = 0 },
+					.dstOffsets[1] = (VkOffset3D){ .x = dst_image->width, .y = dst_image->height, .z = 0 },
+				},
+				VK_FILTER_LINEAR
+			);
+
+		}
+	}
 
 	vkCmdBeginRenderPass(f->command_buffer, &(VkRenderPassBeginInfo){
 		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
