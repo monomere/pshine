@@ -706,6 +706,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->camera_position.xyz.y = 75.221 * PSHINE_SCS_SCALE;
 	game->camera_position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
 	game->camera_fov = 60.0;
+	game->exposure = 1.0;
 	game->material_smoothness_ = 0.02;
 	game->data_own->is_control_precise = false;
 	*(double3*)game->sun_position.values = double3xyz(0, 0, 0);
@@ -1359,6 +1360,7 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				game->data_own->camera_pitch = 0.0;
 			}
 			ImGui_SliderFloat("FoV", &game->camera_fov, 0.00001f, 179.999f);
+			ImGui_SliderFloat("EV", &game->exposure, -8.0f, 6.0f);
 
 			// ImGui_Spacing();
 			// ImVec2 begin = ImGui_GetCursorScreenPos();

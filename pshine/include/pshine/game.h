@@ -225,6 +225,7 @@ struct pshine_game {
 	pshine_point3d camera_position;
 	pshine_vector3d camera_forward;
 	float camera_fov;
+	float exposure;
 	float atmo_blend_factor;
 	pshine_vector3d sun_position;
 	float material_smoothness_;

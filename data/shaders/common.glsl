@@ -55,10 +55,13 @@ struct RingsUniforms {
 	float smoothing;
 };
 
-
 struct SkyboxConsts {
 	mat4 proj;
 	mat4 view;
+};
+
+struct BlitConsts {
+	float exposure;
 };
 
 #endif // COMMON_GLSLI_
