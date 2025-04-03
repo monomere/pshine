@@ -222,6 +222,8 @@ struct vulkan_renderer {
 		// compute pipelines
 		VkPipelineLayout atmo_lut_layout;
 		VkPipeline atmo_lut_pipeline;
+		VkPipelineLayout upsample_blur_layout;
+		VkPipeline upsample_blur_pipeline;
 	} pipelines;
 
 	struct {
@@ -2029,9 +2031,9 @@ static void init_transients(struct vulkan_renderer *r) {
 			.mipLevels = 1,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage
-				= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
-				| VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
-				// | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT
+				= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT // the the geometry rendering
+				| VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT // for the atmosphere rendering
+				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT, // for the downsampling blit
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -2063,9 +2065,78 @@ static void init_transients(struct vulkan_renderer *r) {
 			.mipLevels = 1,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.usage
-				= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
-				| VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-				// | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT
+				= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT // for atmosphere rendering and for the tonemap
+				| VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT // for the geometry rendering
+				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT // for the downsample blit operation 
+				| VK_IMAGE_USAGE_STORAGE_BIT // for the blur/upsample&composite bloom shader
+		},
+		.view_info = &(VkImageViewCreateInfo){
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+			.subresourceRange = (VkImageSubresourceRange){
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.layerCount = 1,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+			},
+		},
+	});
+	r->transients.bloom_0 = allocate_image(r, &(struct vulkan_image_alloc_info){
+		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+		.preferred_memory_property_flags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
+		// .allocation_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+		.image_info = &(VkImageCreateInfo){
+			.imageType = VK_IMAGE_TYPE_2D,
+			.arrayLayers = 1,
+			.extent = {
+				.width = r->swapchain_extent.width / 2,
+				.height = r->swapchain_extent.height / 2,
+				.depth = 1,
+			},
+			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.mipLevels = 1,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.usage
+				= VK_IMAGE_USAGE_STORAGE_BIT // for the bloom compute shader
+				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT // for the downsample op
+				| VK_IMAGE_USAGE_TRANSFER_DST_BIT // for the downsample op
+		},
+		.view_info = &(VkImageViewCreateInfo){
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+			.subresourceRange = (VkImageSubresourceRange){
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.layerCount = 1,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+			}
+		},
+	});
+	r->transients.bloom_1 = allocate_image(r, &(struct vulkan_image_alloc_info){
+		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+		.preferred_memory_property_flags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
+		// .allocation_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+		.image_info = &(VkImageCreateInfo){
+			.imageType = VK_IMAGE_TYPE_2D,
+			.arrayLayers = 1,
+			.extent = {
+				.width = r->swapchain_extent.width / 4,
+				.height = r->swapchain_extent.height / 4,
+				.depth = 1,
+			},
+			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.mipLevels = 1,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.usage
+				= VK_IMAGE_USAGE_STORAGE_BIT
+				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+				| VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -2081,11 +2152,14 @@ static void init_transients(struct vulkan_renderer *r) {
 	});
 	NAME_VK_OBJECT(r, r->transients.color_0.image, VK_OBJECT_TYPE_IMAGE, "transient color0 image");
 	NAME_VK_OBJECT(r, r->transients.color_0.view, VK_OBJECT_TYPE_IMAGE_VIEW, "transient color0 image view");
+	// TODO: bloom image usages, names
 }
 
 static void deinit_transients(struct vulkan_renderer *r) {
 	deallocate_image(r, r->depth_image);
 	deallocate_image(r, r->transients.color_0);
+	deallocate_image(r, r->transients.bloom_0);
+	deallocate_image(r, r->transients.bloom_1);
 }
 
 // Framebuffers
@@ -3501,25 +3575,94 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	// Bloom
 	{
+
+		vkCmdPipelineBarrier(
+			f->command_buffer,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			0,
+			0, nullptr, 0, nullptr,
+			1, (VkImageMemoryBarrier[]){
+				(VkImageMemoryBarrier){
+					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+					.image = r->transients.color_0.image,
+					.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+					.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+					.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // TODO: when changing finalLayout in rpass
+					.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					.subresourceRange = (VkImageSubresourceRange){
+						.levelCount = 1,
+						.layerCount = 1,
+						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						.baseMipLevel = 0,
+						.baseArrayLayer = 0,
+					},
+					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				},
+			}
+		);
+		vkCmdPipelineBarrier(
+			f->command_buffer,
+			VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			0, 0, nullptr, 0, nullptr, 2, (VkImageMemoryBarrier[]){
+				(VkImageMemoryBarrier){
+					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+					.image = r->transients.bloom_0.image,
+					.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+					.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+					.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+					.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					.subresourceRange = (VkImageSubresourceRange){
+						.levelCount = 1,
+						.layerCount = 1,
+						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						.baseMipLevel = 0,
+						.baseArrayLayer = 0,
+					},
+					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				},
+				(VkImageMemoryBarrier){
+					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+					.image = r->transients.bloom_1.image,
+					.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+					.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+					.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+					.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					.subresourceRange = (VkImageSubresourceRange){
+						.levelCount = 1,
+						.layerCount = 1,
+						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						.baseMipLevel = 0,
+						.baseArrayLayer = 0,
+					},
+					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				},
+			}
+		);
 		struct vulkan_image *down_chain[] = {
 			&r->transients.color_0,
 			&r->transients.bloom_0,
 			&r->transients.bloom_1,
 			// &r->transients.bloom_2,
 		};
+		VkImageLayout src_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		for (int i = 1; i < sizeof(down_chain)/sizeof(void*); ++i) {
 			struct vulkan_image *src_image = down_chain[i - 1];
 			struct vulkan_image *dst_image = down_chain[i];
-			vkCmdPipelineBarrier(f->command_buffer,
-				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			if (i != 1) vkCmdPipelineBarrier(f->command_buffer,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
 				VK_PIPELINE_STAGE_TRANSFER_BIT,
 				0,
 				0, nullptr, 0, nullptr, 1, &(VkImageMemoryBarrier){
 					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 					.image = src_image->image,
-					.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-					.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-					.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+					.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+					.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+					.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 					.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 					.subresourceRange = (VkImageSubresourceRange){
 						.levelCount = 1,
@@ -3531,11 +3674,12 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
 					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
 				});
+			src_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 			vkCmdBlitImage(
 				f->command_buffer,
 				src_image->image,
 				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				r->transients.bloom_0.image,
+				dst_image->image,
 				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				1,
 				&(VkImageBlit){
@@ -3546,7 +3690,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 						.mipLevel = 0,
 					},
 					.srcOffsets[0] = (VkOffset3D){ .x = 0, .y = 0, .z = 0 },
-					.srcOffsets[1] = (VkOffset3D){ .x = src_image->width, .y = src_image->height, .z = 0 },
+					.srcOffsets[1] = (VkOffset3D){ .x = src_image->width, .y = src_image->height, .z = 1 },
 					.dstSubresource = (VkImageSubresourceLayers){
 						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 						.baseArrayLayer = 0,
@@ -3554,11 +3698,25 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 						.mipLevel = 0,
 					},
 					.dstOffsets[0] = (VkOffset3D){ .x = 0, .y = 0, .z = 0 },
-					.dstOffsets[1] = (VkOffset3D){ .x = dst_image->width, .y = dst_image->height, .z = 0 },
+					.dstOffsets[1] = (VkOffset3D){ .x = dst_image->width, .y = dst_image->height, .z = 1 },
 				},
 				VK_FILTER_LINEAR
 			);
+		}
 
+		struct vulkan_image *up_chain[] = {
+			&r->transients.bloom_1,
+			&r->transients.bloom_0,
+		};
+
+		for (size_t i = 1; i < sizeof(up_chain)/sizeof(void*); ++i) {
+			struct vulkan_image *tgt_image = up_chain[i];
+			struct vulkan_image *src_image = up_chain[i - 1];
+			vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_pipeline);
+			vkCmdBindDescriptorSets(
+				f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_layout, 0,
+				1, (VkDescriptorSet[]){}, 0, nullptr
+			);
 		}
 	}
 
