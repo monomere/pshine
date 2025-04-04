@@ -24,7 +24,7 @@
 #define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
 #define SCSd_WCSd(wcs) ((wcs) * PSHINE_SCS_FACTOR)
 
-#define BLOOM_STAGE_COUNT 5
+#define BLOOM_STAGE_COUNT 8
 
 struct vulkan_renderer;
 enum queue_family {
@@ -3797,7 +3797,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
 					.srcAccessMask = is_last ? VK_ACCESS_2_TRANSFER_WRITE_BIT : VK_ACCESS_2_TRANSFER_READ_BIT,
 					.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-					.dstAccessMask = is_last ? VK_ACCESS_2_MEMORY_READ_BIT : VK_ACCESS_2_MEMORY_WRITE_BIT,
+					.dstAccessMask = is_last ? VK_ACCESS_2_MEMORY_READ_BIT : VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
 					.oldLayout = is_last ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL     : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 					.newLayout = is_last ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL,
 					.subresourceRange = (VkImageSubresourceRange){
@@ -3844,9 +3844,9 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					(VkImageMemoryBarrier2){
 						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 						.image = dst_image->image,
-						.srcStageMask = is_last ? VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
-						.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-						.dstStageMask = is_last ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
+						.dstStageMask = is_last ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 						.dstAccessMask = is_last ? VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT : VK_ACCESS_2_MEMORY_READ_BIT,
 						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 						.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
