@@ -24,7 +24,7 @@
 #define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
 #define SCSd_WCSd(wcs) ((wcs) * PSHINE_SCS_FACTOR)
 
-#define BLOOM_STAGE_COUNT 6
+#define BLOOM_STAGE_COUNT 3
 
 struct vulkan_renderer;
 enum queue_family {
@@ -2096,14 +2096,14 @@ static void init_transients(struct vulkan_renderer *r) {
 		bloom_stage_extent.height /= 2;
 		r->transients.bloom[i] = allocate_image(r, &(struct vulkan_image_alloc_info){
 			.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-			.preferred_memory_property_flags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
+			// .preferred_memory_property_flags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
 			// .allocation_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
 			.image_info = &(VkImageCreateInfo){
 				.imageType = VK_IMAGE_TYPE_2D,
 				.arrayLayers = 1,
 				.extent = {
-					.width = r->swapchain_extent.width / 2,
-					.height = r->swapchain_extent.height / 2,
+					.width = bloom_stage_extent.width,
+					.height = bloom_stage_extent.height,
 					.depth = 1,
 				},
 				.format = VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -2112,10 +2112,10 @@ static void init_transients(struct vulkan_renderer *r) {
 				.mipLevels = 1,
 				.tiling = VK_IMAGE_TILING_OPTIMAL,
 				.usage
-					= VK_IMAGE_USAGE_STORAGE_BIT // for the bloom compute shader
+					= VK_IMAGE_USAGE_STORAGE_BIT // for the upsample&blur compute shader
 					| VK_IMAGE_USAGE_TRANSFER_SRC_BIT // for the downsample op
 					| VK_IMAGE_USAGE_TRANSFER_DST_BIT // for the downsample op
-					| VK_IMAGE_USAGE_SAMPLED_BIT,
+					| VK_IMAGE_USAGE_SAMPLED_BIT // for the upsample&blur compute shader,
 			},
 			.view_info = &(VkImageViewCreateInfo){
 				.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -3728,12 +3728,12 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			});
 		}
 
-		struct vulkan_image *down_chain[BLOOM_STAGE_COUNT + 1] = { &r->transients.color_0 };
-		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) down_chain[i + 1] = &r->transients.bloom[i];
-		for (int i = 1; i < sizeof(down_chain)/sizeof(void*); ++i) {
-			struct vulkan_image *src_image = down_chain[i - 1];
-			struct vulkan_image *dst_image = down_chain[i];
-			if (i != 1) vkCmdPipelineBarrier(f->command_buffer,
+		// struct vulkan_image *down_chain[BLOOM_STAGE_COUNT + 1] = { &r->transients.color_0 };
+		// for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) down_chain[i + 1] = &r->transients.bloom[i];
+		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
+			struct vulkan_image *dst_image = &r->transients.bloom[i];
+			if (i != 0) vkCmdPipelineBarrier(f->command_buffer,
 				VK_PIPELINE_STAGE_TRANSFER_BIT,
 				VK_PIPELINE_STAGE_TRANSFER_BIT,
 				0,
@@ -3794,7 +3794,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					.srcAccessMask = is_last ? VK_ACCESS_2_TRANSFER_WRITE_BIT : VK_ACCESS_2_TRANSFER_READ_BIT,
 					.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 					.dstAccessMask = is_last ? VK_ACCESS_2_MEMORY_READ_BIT : VK_ACCESS_2_MEMORY_WRITE_BIT,
-					.oldLayout = is_last ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					.oldLayout = is_last ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL     : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 					.newLayout = is_last ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL,
 					.subresourceRange = (VkImageSubresourceRange){
 						.levelCount = 1,
@@ -3815,16 +3815,16 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			});
 		}
 
-		struct vulkan_image *up_chain[BLOOM_STAGE_COUNT + 1] = {
-			[BLOOM_STAGE_COUNT] = &r->transients.color_0,
-		};
+		// struct vulkan_image *up_chain[BLOOM_STAGE_COUNT] = {
+		// 	[BLOOM_STAGE_COUNT - 1] = &r->transients.color_0,
+		// };
 
-		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
-			up_chain[BLOOM_STAGE_COUNT - 1 - i] = &r->transients.bloom[i];
+		// for (size_t i = 1; i < BLOOM_STAGE_COUNT; ++i)
+		// 	up_chain[BLOOM_STAGE_COUNT - 2 - i] = &r->transients.bloom[i];
 
-		for (size_t i = 1; i < BLOOM_STAGE_COUNT + 1; ++i) {
-			struct vulkan_image *dst_image = up_chain[i];
-			VkDescriptorSet ds = r->data.upsample_blur_descriptor_sets[i - 1];
+		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+			struct vulkan_image *dst_image = i == BLOOM_STAGE_COUNT - 1 ? &r->transients.color_0 : &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
+			VkDescriptorSet ds = r->data.upsample_blur_descriptor_sets[BLOOM_STAGE_COUNT - 1 - i];
 			vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_pipeline);
 			vkCmdBindDescriptorSets(
 				f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_layout, 0,
@@ -3839,9 +3839,9 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 						.image = dst_image->image,
 						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-						.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+						.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
 						.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-						.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+						.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
 						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 						.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 						.subresourceRange = (VkImageSubresourceRange){
@@ -3856,7 +3856,6 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					},
 				},
 			});
-			
 		}
 	}
 
