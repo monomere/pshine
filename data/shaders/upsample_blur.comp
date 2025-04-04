@@ -48,6 +48,10 @@ vec3 sample_3x3_tent(vec2 uv) {
 	return d;
 }
 
+float luma_from_rgb(vec3 rgb) {
+	return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+}
+
 void main() {
 	ivec2 ires = textureSize(i_tex, 0);
 	ivec2 ores = imageSize(o_tex);
@@ -57,9 +61,11 @@ void main() {
 
 	vec2 uv = vec2(ipos) / vec2(ires);
 	vec3 src = sample_13_tap(uv);
-	ivec2 opos = ipos * 2;
-	imageStore(o_tex, opos + ivec2(0, 0), vec4(src, 1.0));
-	imageStore(o_tex, opos + ivec2(1, 0), vec4(src, 1.0));
-	imageStore(o_tex, opos + ivec2(0, 1), vec4(src, 1.0));
-	imageStore(o_tex, opos + ivec2(1, 1), vec4(src, 1.0));
+	if (luma_from_rgb(src) > 10.0) {
+		ivec2 opos = ipos * 2;
+		imageStore(o_tex, opos + ivec2(0, 0), vec4(src, 1.0));
+		imageStore(o_tex, opos + ivec2(1, 0), vec4(src, 1.0));
+		imageStore(o_tex, opos + ivec2(0, 1), vec4(src, 1.0));
+		imageStore(o_tex, opos + ivec2(1, 1), vec4(src, 1.0));
+	}
 }

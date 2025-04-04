@@ -3029,7 +3029,9 @@ static void init_data(struct vulkan_renderer *r) {
 		NAME_VK_OBJECT(r, r->data.upsample_blur_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "upsample&blur #%zu ds", i);
 
 	// ds[i] reads from i and writes to i-1
+	// VkDescriptorImageInfo 
 	VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
+	VkDescriptorImageInfo bloom_ds_images[BLOOM_STAGE_COUNT * 2] = {};
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 		bloom_ds_writes[2 * i + 0] = (VkWriteDescriptorSet){
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -3038,11 +3040,11 @@ static void init_data(struct vulkan_renderer *r) {
 			.dstSet = r->data.upsample_blur_descriptor_sets[i],
 			.dstBinding = 0,
 			.dstArrayElement = 0,
-			.pImageInfo = &(VkDescriptorImageInfo){
+			.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
 				.imageView = r->transients.bloom[i].view,
 				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 				.sampler = r->blur_mipmap_sampler,
-			},
+			}, &bloom_ds_images[2 * i + 0]),
 		};
 		bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -3051,11 +3053,11 @@ static void init_data(struct vulkan_renderer *r) {
 			.dstSet = r->data.upsample_blur_descriptor_sets[i],
 			.dstBinding = 1,
 			.dstArrayElement = 0,
-			.pImageInfo = &(VkDescriptorImageInfo){
+			.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
 				.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
 				.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 				.sampler = VK_NULL_HANDLE,
-			}
+			}, &bloom_ds_images[2 * i + 1]),
 		};
 		PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
 	}
