@@ -64,4 +64,7 @@ struct BlitConsts {
 	float exposure;
 };
 
+// struct UpsampleBlurConsts {
+// };
+
 #endif // COMMON_GLSLI_

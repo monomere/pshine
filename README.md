@@ -212,5 +212,8 @@ This isn't the full set of resources used unfortunately.
 - Textures: https://svs.gsfc.nasa.gov/4720
 - Textures: https://bjj.mmedia.is/
 - https://github.com/Tw1ddle/Sky-Shader
+- [Bevy Bloom Impl.](https://github.com/bevyengine/bevy/blob/main/crates/bevy_core_pipeline/src/bloom/bloom.wgsl)
+- [The COD Post-processing slides](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare/)
 
-- Amazing resource for orbital mechanics: [orbital-mechanics.space](https://orbital-mechanics.space/)
+- Amazing resource for orbital mechanics: [https://orbital-mechanics.space/](https://orbital-mechanics.space/)
+- Vulkan discord
