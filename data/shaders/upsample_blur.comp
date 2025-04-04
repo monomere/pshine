@@ -53,7 +53,7 @@ void main() {
 	ivec2 ores = imageSize(o_tex);
 
 	ivec2 ipos = ivec2(gl_GlobalInvocationID.xy);
-	if (any(greaterThanEqual(ipos, ires))) return;
+	if (any(greaterThanEqual(ipos, ires / 2 * 2))) return;
 
 	vec2 uv = vec2(ipos) / vec2(ires);
 	vec3 src = sample_13_tap(uv);

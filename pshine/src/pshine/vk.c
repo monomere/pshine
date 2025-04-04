@@ -24,7 +24,7 @@
 #define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
 #define SCSd_WCSd(wcs) ((wcs) * PSHINE_SCS_FACTOR)
 
-#define BLOOM_STAGE_COUNT 3
+#define BLOOM_STAGE_COUNT 5
 
 struct vulkan_renderer;
 enum queue_family {
@@ -3028,6 +3028,7 @@ static void init_data(struct vulkan_renderer *r) {
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
 		NAME_VK_OBJECT(r, r->data.upsample_blur_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "upsample&blur #%zu ds", i);
 
+	// ds[i] reads from i and writes to i-1
 	VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 		bloom_ds_writes[2 * i + 0] = (VkWriteDescriptorSet){
@@ -3056,6 +3057,7 @@ static void init_data(struct vulkan_renderer *r) {
 				.sampler = VK_NULL_HANDLE,
 			}
 		};
+		PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
 	}
 
 	vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
@@ -3274,7 +3276,7 @@ static void render_celestial_body(
 	vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
 }
 
-static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t image_index) {
+static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t image_index, size_t frame_number) {
 	struct per_frame_data *f = &r->frames[current_frame];
 
 	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);
@@ -3784,12 +3786,12 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		}
 
 		{
-			VkImageMemoryBarrier2 bloom_image_barriers[BLOOM_STAGE_COUNT];
-			for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-				bool is_last = i == BLOOM_STAGE_COUNT - 1;
+			VkImageMemoryBarrier2 bloom_image_barriers[BLOOM_STAGE_COUNT + 1] = {};
+			for (size_t i = 0; i < BLOOM_STAGE_COUNT + 1; ++i) {
+				bool is_last = i == BLOOM_STAGE_COUNT;
 				bloom_image_barriers[i] = (VkImageMemoryBarrier2){
 					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-					.image = r->transients.bloom[i].image,
+					.image = i == 0 ? r->transients.color_0.image : r->transients.bloom[i - 1].image,
 					.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
 					.srcAccessMask = is_last ? VK_ACCESS_2_TRANSFER_WRITE_BIT : VK_ACCESS_2_TRANSFER_READ_BIT,
 					.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -3806,11 +3808,12 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
 					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
 				};
+				// if (frame_number == 1) PSHINE_DEBUG("Wrote image barrier %zu", i);
 			}
 			vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.dependencyFlags = 0,
-				.imageMemoryBarrierCount = BLOOM_STAGE_COUNT,
+				.imageMemoryBarrierCount = BLOOM_STAGE_COUNT + 1,
 				.pImageMemoryBarriers = bloom_image_barriers,
 			});
 		}
@@ -3823,7 +3826,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		// 	up_chain[BLOOM_STAGE_COUNT - 2 - i] = &r->transients.bloom[i];
 
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-			struct vulkan_image *dst_image = i == BLOOM_STAGE_COUNT - 1 ? &r->transients.color_0 : &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
+			bool is_last = i == BLOOM_STAGE_COUNT - 1;
+			struct vulkan_image *dst_image = is_last ? &r->transients.color_0 : &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
 			VkDescriptorSet ds = r->data.upsample_blur_descriptor_sets[BLOOM_STAGE_COUNT - 1 - i];
 			vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_pipeline);
 			vkCmdBindDescriptorSets(
@@ -3838,10 +3842,10 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					(VkImageMemoryBarrier2){
 						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 						.image = dst_image->image,
-						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						.srcStageMask = is_last ? VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
 						.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-						.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-						.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+						.dstStageMask = is_last ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+						.dstAccessMask = is_last ? VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT : VK_ACCESS_2_MEMORY_READ_BIT,
 						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 						.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 						.subresourceRange = (VkImageSubresourceRange){
@@ -3894,7 +3898,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	CHECKVK(vkEndCommandBuffer(f->command_buffer));
 }
 
-static void render(struct vulkan_renderer *r, uint32_t current_frame) {
+static void render(struct vulkan_renderer *r, uint32_t current_frame, size_t frame_number) {
 	struct per_frame_data *f = &r->frames[current_frame];
 	vkWaitForFences(r->device, 1, &f->sync.in_flight_fence, VK_TRUE, UINT64_MAX);
 	vkResetFences(r->device, 1, &f->sync.in_flight_fence);
@@ -3919,7 +3923,7 @@ static void render(struct vulkan_renderer *r, uint32_t current_frame) {
 		CHECKVK(acquireImageRes);
 	}
 	CHECKVK(vkResetCommandBuffer(f->command_buffer, 0));
-	do_frame(r, current_frame, image_index);
+	do_frame(r, current_frame, image_index, frame_number);
 	CHECKVK(vkQueueSubmit(r->queues[QUEUE_GRAPHICS], 1, &(VkSubmitInfo){
 		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 		.commandBufferCount = 1,
@@ -4181,7 +4185,7 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 		show_gizmos(r);		
 		show_utils_window(r);
 		ImGui_Render();
-		render(r, current_frame);
+		render(r, current_frame, frame_number);
 		if (delta_time_sum >= 20.0f) {
 			delta_time_sum = 0.0f;
 			frames_since_dt_reset = 0;
