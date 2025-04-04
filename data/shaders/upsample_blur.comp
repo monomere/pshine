@@ -5,7 +5,7 @@
 
 // layout (constant_id = 0) const bool IS_FIRST_UPSAMPLE = false;
 layout (set = 0, binding = 0) uniform sampler2D i_tex;
-layout (set = 0, binding = 1, rgba16f) uniform writeonly image2D o_tex;
+layout (set = 0, binding = 1, rgba16f) uniform image2D o_tex;
 // layout (push_constant) uniform BUFFER(UpsampleBlurPushConstants, push_consts);
 
 layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
@@ -32,41 +32,46 @@ vec3 sample_13_tap(vec2 uv) {
 }
 
 vec3 sample_3x3_tent(vec2 uv) {
-	vec3 a = textureOffset(i_tex, uv, ivec2(-1,  1)).rgb;
-	vec3 b = textureOffset(i_tex, uv, ivec2( 0,  1)).rgb;
-	vec3 c = textureOffset(i_tex, uv, ivec2( 1,  1)).rgb;
-	vec3 d = textureOffset(i_tex, uv, ivec2(-1,  0)).rgb;
-	vec3 e = textureOffset(i_tex, uv, ivec2( 0,  0)).rgb;
-	vec3 f = textureOffset(i_tex, uv, ivec2( 1,  0)).rgb;
-	vec3 g = textureOffset(i_tex, uv, ivec2(-1, -1)).rgb;
-	vec3 h = textureOffset(i_tex, uv, ivec2( 0, -1)).rgb;
-	vec3 i = textureOffset(i_tex, uv, ivec2( 1, -1)).rgb;
+	vec2 o = vec2(1.0, 1.0) /  vec2(textureSize(i_tex, 0));
+	vec3 a = texture(i_tex, uv + vec2(-o.x,  o.y)).rgb;
+	vec3 b = texture(i_tex, uv + vec2(   0,  o.y)).rgb;
+	vec3 c = texture(i_tex, uv + vec2( o.x,  o.y)).rgb;
+	vec3 d = texture(i_tex, uv + vec2(-o.x,    0)).rgb;
+	vec3 e = texture(i_tex, uv + vec2(   0,    0)).rgb;
+	vec3 f = texture(i_tex, uv + vec2( o.x,    0)).rgb;
+	vec3 g = texture(i_tex, uv + vec2(-o.x, -o.y)).rgb;
+	vec3 h = texture(i_tex, uv + vec2(   0, -o.y)).rgb;
+	vec3 i = texture(i_tex, uv + vec2( o.x, -o.y)).rgb;
 
 	vec3 r = e * 0.25;
-	d += (b + d + f + h) * 0.125;
-	d += (a + c + g + i) * 0.0625;
-	return d;
+	r += (b + d + f + h) * 0.125;
+	r += (a + c + g + i) * 0.0625;
+	return r;
 }
 
 float luma_from_rgb(vec3 rgb) {
 	return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
 }
 
+void imageStoreAdd(ivec2 pos, vec3 c) {
+	imageStore(o_tex, pos, vec4(imageLoad(o_tex, pos).rgb + c, 1.0));
+}
+
 void main() {
 	ivec2 ires = textureSize(i_tex, 0);
 	ivec2 ores = imageSize(o_tex);
 
-	ivec2 ipos = ivec2(gl_GlobalInvocationID.xy);
-	if (any(greaterThanEqual(ipos, ires / 2 * 2))) return;
+	ivec2 opos = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(opos, ores))) return;
 
-	vec2 uv = vec2(ipos) / vec2(ires);
+	vec2 uv = vec2(opos) / vec2(ores);
 	vec3 src = sample_3x3_tent(uv);
 	// if (luma_from_rgb(src) > 10.0)
 	{
-		ivec2 opos = ipos * 2;
-		imageStore(o_tex, opos + ivec2(0, 0), vec4(src, 1.0));
-		imageStore(o_tex, opos + ivec2(1, 0), vec4(src, 1.0));
-		imageStore(o_tex, opos + ivec2(0, 1), vec4(src, 1.0));
-		imageStore(o_tex, opos + ivec2(1, 1), vec4(src, 1.0));
+		// ivec2 opos = ipos * 2;
+		imageStoreAdd(opos + ivec2(0, 0), src * 0.4);
+		// imageStoreAdd(opos + ivec2(1, 0), src);
+		// imageStoreAdd(opos + ivec2(0, 1), src);
+		// imageStoreAdd(opos + ivec2(1, 1), src);
 	}
 }
