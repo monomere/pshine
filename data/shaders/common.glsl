@@ -64,7 +64,8 @@ struct BlitConsts {
 	float exposure;
 };
 
-// struct UpsampleBlurConsts {
-// };
+float luma_from_rgb(vec3 rgb) {
+	return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+}
 
 #endif // COMMON_GLSLI_

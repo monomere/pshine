@@ -261,7 +261,7 @@ struct vulkan_renderer {
 		VkDescriptorSet global_descriptor_set;
 		VkDescriptorSet blit_descriptor_set;
 		VkDescriptorSet upsample_blur_descriptor_sets[BLOOM_STAGE_COUNT];
-		VkDescriptorSet downsample_blur_descriptor_sets[BLOOM_STAGE_COUNT];
+		VkDescriptorSet downsample_blur_descriptor_set;
 		VkDescriptorSet skybox_descriptor_set;
 	} data;
 
@@ -3017,6 +3017,13 @@ static void init_data(struct vulkan_renderer *r) {
 		}
 	}, 0, NULL);
 
+	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = r->descriptors.pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &r->descriptors.downsample_blur_layout,
+	}, &r->data.downsample_blur_descriptor_set));
+
 	VkDescriptorSetLayout upsample_blur_layout_copies[BLOOM_STAGE_COUNT];
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 		upsample_blur_layout_copies[i] = r->descriptors.upsample_blur_layout;
@@ -3739,6 +3746,9 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 		// struct vulkan_image *down_chain[BLOOM_STAGE_COUNT + 1] = { &r->transients.color_0 };
 		// for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) down_chain[i + 1] = &r->transients.bloom[i];
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_blur_pipeline);
+		vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_blur_layout, 0,
+			1, &r->data.downsample_blur_descriptor_set, 0, nullptr);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
 			struct vulkan_image *dst_image = &r->transients.bloom[i];
@@ -3832,11 +3842,11 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		// for (size_t i = 1; i < BLOOM_STAGE_COUNT; ++i)
 		// 	up_chain[BLOOM_STAGE_COUNT - 2 - i] = &r->transients.bloom[i];
 
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_pipeline);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			bool is_last = i == BLOOM_STAGE_COUNT - 1;
 			struct vulkan_image *dst_image = is_last ? &r->transients.color_0 : &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
 			VkDescriptorSet ds = r->data.upsample_blur_descriptor_sets[BLOOM_STAGE_COUNT - 1 - i];
-			vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_pipeline);
 			vkCmdBindDescriptorSets(
 				f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_layout, 0,
 				1, (VkDescriptorSet[]){ ds }, 0, nullptr
