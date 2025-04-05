@@ -228,6 +228,8 @@ struct vulkan_renderer {
 		VkPipeline atmo_lut_pipeline;
 		VkPipelineLayout upsample_blur_layout;
 		VkPipeline upsample_blur_pipeline;
+		VkPipelineLayout downsample_blur_layout;
+		VkPipeline downsample_blur_pipeline;
 	} pipelines;
 
 	struct {
@@ -251,6 +253,7 @@ struct vulkan_renderer {
 		VkDescriptorSetLayout rings_layout;
 		VkDescriptorSetLayout skybox_layout;
 		VkDescriptorSetLayout upsample_blur_layout;
+		VkDescriptorSetLayout downsample_blur_layout;
 	} descriptors;
 
 	struct {
@@ -258,6 +261,7 @@ struct vulkan_renderer {
 		VkDescriptorSet global_descriptor_set;
 		VkDescriptorSet blit_descriptor_set;
 		VkDescriptorSet upsample_blur_descriptor_sets[BLOOM_STAGE_COUNT];
+		VkDescriptorSet downsample_blur_descriptor_sets[BLOOM_STAGE_COUNT];
 		VkDescriptorSet skybox_descriptor_set;
 	} data;
 
@@ -3674,32 +3678,33 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	// Bloom
 	{
 
-		vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
-			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-			.dependencyFlags = 0,
-			.imageMemoryBarrierCount = 1,
-			.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
-				(VkImageMemoryBarrier2){
-					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-					.image = r->transients.color_0.image,
-					.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-					.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-					.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-					.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-					.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // TODO: when changing finalLayout in rpass (remove useless shader_read_only_optimal transition)
-					.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-					.subresourceRange = (VkImageSubresourceRange){
-						.levelCount = 1,
-						.layerCount = 1,
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.baseMipLevel = 0,
-						.baseArrayLayer = 0,
-					},
-					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-				},
-			}
-		});
+		// shader-read-only-optimal is what we need for the compute shaders already.
+		// vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+		// 	.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		// 	.dependencyFlags = 0,
+		// 	.imageMemoryBarrierCount = 1,
+		// 	.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
+		// 		(VkImageMemoryBarrier2){
+		// 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+		// 			.image = r->transients.color_0.image,
+		// 			.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+		// 			.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+		// 			.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		// 			.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+		// 			.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // TODO: when changing finalLayout in rpass (remove useless shader_read_only_optimal transition)
+		// 			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		// 			.subresourceRange = (VkImageSubresourceRange){
+		// 				.levelCount = 1,
+		// 				.layerCount = 1,
+		// 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		// 				.baseMipLevel = 0,
+		// 				.baseArrayLayer = 0,
+		// 			},
+		// 			.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+		// 			.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+		// 		},
+		// 	}
+		// });
 
 		{
 			VkImageMemoryBarrier2 bloom_image_barriers[BLOOM_STAGE_COUNT];
@@ -3709,10 +3714,10 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 					.image = r->transients.bloom[i].image,
 					.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 					.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
-					.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-					.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+					.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
 					.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-					.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					.newLayout = VK_IMAGE_LAYOUT_GENERAL,
 					.subresourceRange = (VkImageSubresourceRange){
 						.levelCount = 1,
 						.layerCount = 1,
