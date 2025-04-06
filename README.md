@@ -1,6 +1,6 @@
 # PlanetShine
 
-<img align="right" src="data/screenshots/atmo-2024-06-09.png" width="50%" />
+<img align="right" src="data/screenshots/atmo-2025-04-06.png" width="50%" />
 
 Atmosphere and meshing playground. WIP.
 
