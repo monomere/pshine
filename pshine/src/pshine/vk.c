@@ -3146,7 +3146,7 @@ static void init_data(struct vulkan_renderer *r) {
 				.dstArrayElement = 0,
 				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
 					.imageView = r->transients.bloom[i].view,
-					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 					.sampler = r->bloom_mipmap_sampler,
 				}, &bloom_ds_images[2 * i + 0]),
 			};
@@ -3182,7 +3182,7 @@ static void init_data(struct vulkan_renderer *r) {
 				.dstArrayElement = 0,
 				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
 					.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
-					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 					.sampler = r->bloom_mipmap_sampler,
 				}, &bloom_ds_images[2 * i + 0]),
 			};
@@ -3650,6 +3650,42 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	CHECKVK(vkBeginCommandBuffer(f->command_buffer, &(VkCommandBufferBeginInfo){
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	}));
+
+	// Image transitions for the bloom, as early as possible.
+	// transients-color0 is shader-read-only-optimal, which is what we need for the compute shaders already.
+	// so no need to transition that. but we do need to transition the transient bloom images to general for
+	// the compute shader to write to them.
+	{
+		VkImageMemoryBarrier2 bloom_image_barriers[BLOOM_STAGE_COUNT];
+		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+			bloom_image_barriers[i] = (VkImageMemoryBarrier2){
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.image = r->transients.bloom[i].image,
+				.srcStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+				.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+				.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+				.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.newLayout = VK_IMAGE_LAYOUT_GENERAL,
+				.subresourceRange = (VkImageSubresourceRange){
+					.levelCount = 1,
+					.layerCount = 1,
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.baseMipLevel = 0,
+					.baseArrayLayer = 0,
+				},
+				.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			};
+		}
+		vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.dependencyFlags = 0,
+			.imageMemoryBarrierCount = BLOOM_STAGE_COUNT,
+			.pImageMemoryBarriers = bloom_image_barriers,
+		});
+	}
+
 	vkCmdBeginRenderPass(f->command_buffer, &(VkRenderPassBeginInfo){
 		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 		.renderPass = r->render_passes.hdr_pass,
@@ -3815,40 +3851,31 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	// Bloom
 	{
-
-		// transients-color0 is shader-read-only-optimal, which is what we need for the compute shaders already.
-		// so no need to transition that. but we do need to transition the transient bloom images to general for
-		// the compute shader to write to them.
-		{
-			VkImageMemoryBarrier2 bloom_image_barriers[BLOOM_STAGE_COUNT];
-			for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-				bloom_image_barriers[i] = (VkImageMemoryBarrier2){
+		vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
+				(VkImageMemoryBarrier2){
 					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-					.image = r->transients.bloom[i].image,
-					.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-					.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+					.image = r->transients.color_0.image,
+					.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+					.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
 					.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-					.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-					.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+					.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+					.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 					.newLayout = VK_IMAGE_LAYOUT_GENERAL,
 					.subresourceRange = (VkImageSubresourceRange){
-						.levelCount = 1,
-						.layerCount = 1,
 						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.baseMipLevel = 0,
 						.baseArrayLayer = 0,
+						.baseMipLevel = 0,
+						.layerCount = 1,
+						.levelCount = 1,
 					},
 					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
 					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-				};
-			}
-			vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
-				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-				.dependencyFlags = 0,
-				.imageMemoryBarrierCount = BLOOM_STAGE_COUNT,
-				.pImageMemoryBarriers = bloom_image_barriers,
-			});
-		}
+				},
+			},
+		});
 
 		// now we do the downsampling compute.
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.first_downsample_bloom_pipeline);
@@ -3878,7 +3905,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 						.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 						.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
 						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						.newLayout = VK_IMAGE_LAYOUT_GENERAL,
 						.subresourceRange = (VkImageSubresourceRange){
 							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 							.baseArrayLayer = 0,
@@ -3897,7 +3924,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 						.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
 						.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 						.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-						.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 						.newLayout = VK_IMAGE_LAYOUT_GENERAL,
 						.subresourceRange = (VkImageSubresourceRange){
 							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -3930,7 +3957,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			// we do a similar transition to the downsampling stage stuff. the last image (transient-color0) is read by
 			// the loadOp=LOAD in the next renderpass, so we make sure the barrier is correct that way.
 			// we might also want to transition the images back to something else for the next frame.
-			vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+			if (is_last) vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.imageMemoryBarrierCount = 1,
 				.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
