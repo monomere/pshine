@@ -10,27 +10,6 @@ layout (set = 0, binding = 1, rgba16f) uniform image2D o_tex;
 
 layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
-// For downsampling, maybe will use later.
-vec3 sample_13_tap(vec2 uv) {
-	vec3 a = textureOffset(i_tex, uv, ivec2(-2,  2)).rgb;
-	vec3 b = textureOffset(i_tex, uv, ivec2( 0,  2)).rgb;
-	vec3 c = textureOffset(i_tex, uv, ivec2( 2,  2)).rgb;
-	vec3 d = textureOffset(i_tex, uv, ivec2(-2,  0)).rgb;
-	vec3 e = textureOffset(i_tex, uv, ivec2( 0,  0)).rgb;
-	vec3 f = textureOffset(i_tex, uv, ivec2( 2,  0)).rgb;
-	vec3 g = textureOffset(i_tex, uv, ivec2(-2, -2)).rgb;
-	vec3 h = textureOffset(i_tex, uv, ivec2( 0, -2)).rgb;
-	vec3 i = textureOffset(i_tex, uv, ivec2( 2, -2)).rgb;
-	vec3 j = textureOffset(i_tex, uv, ivec2(-1,  1)).rgb;
-	vec3 k = textureOffset(i_tex, uv, ivec2( 1,  1)).rgb;
-	vec3 l = textureOffset(i_tex, uv, ivec2(-1, -1)).rgb;
-	vec3 m = textureOffset(i_tex, uv, ivec2( 1, -1)).rgb;
-	vec3 v = (a + c + g + i) * 0.03125;
-	v += (b + d + f + h) * 0.0625;
-	v += (e + j + k + l + m) * 0.125;
-	return v;
-}
-
 vec3 sample_3x3_tent(vec2 uv) {
 	vec2 o = vec2(1.0, 1.0) / vec2(textureSize(i_tex, 0));
 	vec3 a = texture(i_tex, uv + vec2(-o.x,  o.y)).rgb;
@@ -56,7 +35,7 @@ void main() {
 	ivec2 opos = ivec2(gl_GlobalInvocationID.xy);
 	if (any(greaterThanEqual(opos, ores))) return;
 
-	vec2 uv = vec2(opos) / vec2(ores);
+	vec2 uv = (vec2(opos) + vec2(0.5)) / vec2(ores);
 	vec3 src = sample_3x3_tent(uv);
-	imageStore(o_tex, opos, vec4(imageLoad(o_tex, opos).rgb + src * 0.4, 1.0));
+	imageStore(o_tex, opos, vec4(imageLoad(o_tex, opos).rgb + src, 1.0));
 }

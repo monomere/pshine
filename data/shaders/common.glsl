@@ -3,6 +3,7 @@
 
 const float MAX_FLOAT = 3.402823466e+38;
 const float PI = 3.14159265358979;
+const float EPSILON = 1.19e-07;
 
 #define BUFFER(S, name) _Uniform_##S { S name; }
 #define SAMPLER(T, name) T name

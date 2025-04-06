@@ -10,8 +10,20 @@ layout (set = 0, binding = 1, rgba16f) uniform writeonly image2D o_tex;
 layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
 float karis_average(vec3 v) {
-	float l = luma_from_rgb(pow(v, vec3(1.0 / 2.2)) / 4.0;
+	float l = luma_from_rgb(pow(v, vec3(1.0 / 2.2))) / 4.0;
 	return 1.0 / (1.0 + l);
+}
+
+vec3 quadratic_colour_thresholding(vec3 color, float threshold, float knee) {
+	vec3 curve = vec3(threshold - knee, knee * 2.0, 0.25 / knee);
+	float brightness = luma_from_rgb(color);
+
+	// Under-threshold part: quadratic curve
+	float rq = clamp(brightness - curve.x, 0.0, curve.y);
+	rq = curve.z * rq * rq;
+
+	// Combine and apply the brightness response curve.
+	return color * max(rq, brightness - threshold) / max(brightness, EPSILON);
 }
 
 vec3 sample_13_tap(vec2 uv) {
@@ -28,25 +40,13 @@ vec3 sample_13_tap(vec2 uv) {
 	vec3 k = textureOffset(i_tex, uv, ivec2( 1,  1)).rgb;
 	vec3 l = textureOffset(i_tex, uv, ivec2(-1, -1)).rgb;
 	vec3 m = textureOffset(i_tex, uv, ivec2( 1, -1)).rgb;
-
-	if (is_first_downsample) {
-		vec3 group0 = (a + b + d + e) * (0.125 / 4.0);
-		vec3 group1 = (b + c + e + f) * (0.125 / 4.0);
-		vec3 group2 = (d + e + g + h) * (0.125 / 4.0);
-		vec3 group3 = (e + f + h + i) * (0.125 / 4.0);
-		vec3 group4 = (j + k + l + m) * (0.500 / 4.0);
-		group0 *= karis_average(group0);
-		group1 *= karis_average(group1);
-		group2 *= karis_average(group2);
-		group3 *= karis_average(group3);
-		group4 *= karis_average(group4);
-		return group0 + group1 + group2 + group3 + group4;
-	} else {
-		vec3 v = (a + c + g + i) * 0.03125;
-		v += (b + d + f + h) * 0.0625;
-		v += (e + j + k + l + m) * 0.125;
-		return v;
-	}
+	
+	vec3 center_pixels = d + e + i + j;
+  vec3 top_left = a + b + f + g;
+  vec3 top_right = b + c + g + h;
+  vec3 bottom_left = f + g + k + l;
+  vec3 bottom_right = g + h + l + m;
+	return center_pixels * 0.25 * 0.5 + (top_left + top_right + bottom_left + bottom_right) * 0.25 * 0.125;
 }
 
 vec3 sample_3x3_tent(vec2 uv) {
@@ -61,10 +61,7 @@ vec3 sample_3x3_tent(vec2 uv) {
 	vec3 h = texture(i_tex, uv + vec2(   0, -o.y)).rgb;
 	vec3 i = texture(i_tex, uv + vec2( o.x, -o.y)).rgb;
 
-	vec3 r = e * 0.25;
-	r += (b + d + f + h) * 0.125;
-	r += (a + c + g + i) * 0.0625;
-	return r;
+	return ((a + c + g + i) + (b + d + f + h) * 2.0 + e * 4.0) / 16.0;
 }
 void main() {
 	ivec2 ires = textureSize(i_tex, 0);
@@ -73,7 +70,13 @@ void main() {
 	ivec2 opos = ivec2(gl_GlobalInvocationID.xy);
 	if (any(greaterThanEqual(opos, ores))) return;
 
-	vec2 uv = vec2(opos) / vec2(ores);
-	vec3 src = sample_3x3_tent(uv);
-	imageStore(o_tex, opos, vec4(src * 0.4, 1.0));
+	vec2 uv = (vec2(opos) + vec2(0.5)) / vec2(ores);
+	if (is_first_downsample) {
+		vec3 src = sample_13_tap(uv);
+		vec3 src_thresh = quadratic_colour_thresholding(src, 7.0, 7.0);
+		imageStore(o_tex, opos, vec4(src_thresh, 1.0));
+	} else {
+		vec3 src = sample_3x3_tent(uv);
+		imageStore(o_tex, opos, vec4(src, 1.0));
+	}
 }
