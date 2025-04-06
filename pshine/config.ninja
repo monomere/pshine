@@ -12,6 +12,12 @@ debug = -g
 debugc =
 debugcxx =
 
+libs_math = -lm
+
+libs_glfw = -lglfw
+
 libs_cpptrace = -lcpptrace
 libs_cpptrace =
-libs = -lglfw -lm -Wl,-rpath,/opt/homebrew/lib -Lbuild/giraffe -lgiraffe $libs_cpptrace
+
+libs = $libs_cpptrace $libs_glfw $libs_math -Wl,-rpath,/opt/homebrew/lib
+# -Lbuild/giraffe -lgiraffe 

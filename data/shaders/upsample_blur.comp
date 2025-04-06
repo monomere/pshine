@@ -49,10 +49,6 @@ vec3 sample_3x3_tent(vec2 uv) {
 	return r;
 }
 
-float luma_from_rgb(vec3 rgb) {
-	return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
-}
-
 void main() {
 	ivec2 ires = textureSize(i_tex, 0);
 	ivec2 ores = imageSize(o_tex);

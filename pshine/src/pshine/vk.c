@@ -2618,7 +2618,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			// 	.size = sizeof(struct upsample_blur_push_const_data),
 			// 	.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
 			// }
-		}, NULL, &r->pipelines.upsample_blur_layout);
+		}, NULL, &r->pipelines.downsample_blur_layout);
 		NAME_VK_OBJECT(r, r->pipelines.downsample_blur_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "downsample&blur pipeline layout");
 
 		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/downsample_blur.comp.spv");
@@ -2639,7 +2639,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 				.module = comp_shader_module,
 				.pName = "main",
 			},
-		}, NULL, &r->pipelines.upsample_blur_pipeline);
+		}, NULL, &r->pipelines.downsample_blur_pipeline);
 		NAME_VK_OBJECT(r, r->pipelines.downsample_blur_pipeline, VK_OBJECT_TYPE_PIPELINE, "downsample&blur pipeline");
 		vkDestroyShaderModule(r->device, comp_shader_module, NULL);
 	}

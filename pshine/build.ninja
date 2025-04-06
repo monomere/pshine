@@ -76,5 +76,8 @@ build $builddir/main: ld $
   $builddir/data/shaders/skybox.vert.spv $
   $builddir/data/shaders/skybox.frag.spv $
   $builddir/data/shaders/upsample_blur.comp.spv $
-  || $
-  build/giraffe/libgiraffe.a
+  $builddir/data/shaders/downsample_blur.comp.spv $
+  vk_layer_settings.txt
+# ^ this is a dummy so that i can have a dollar sign after each line.
+# || $
+# build/giraffe/libgiraffe.a
