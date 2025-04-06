@@ -86,7 +86,7 @@ struct atmo_lut_push_const_data {
 	uint32_t samples;
 };
 
-struct upsample_blur_push_const_data {
+struct upsample_bloom_push_const_data {
 	float threshold;
 };
 
@@ -226,11 +226,11 @@ struct vulkan_renderer {
 		// compute pipelines
 		VkPipelineLayout atmo_lut_layout;
 		VkPipeline atmo_lut_pipeline;
-		VkPipelineLayout upsample_blur_layout;
-		VkPipeline upsample_blur_pipeline;
-		VkPipelineLayout downsample_blur_layout;
-		VkPipeline downsample_blur_pipeline;
-		VkPipeline first_downsample_blur_pipeline;
+		VkPipelineLayout upsample_bloom_layout;
+		VkPipeline upsample_bloom_pipeline;
+		VkPipelineLayout downsample_bloom_layout;
+		VkPipeline downsample_bloom_pipeline;
+		VkPipeline first_downsample_bloom_pipeline;
 	} pipelines;
 
 	struct {
@@ -253,8 +253,8 @@ struct vulkan_renderer {
 		VkDescriptorSetLayout blit_layout;
 		VkDescriptorSetLayout rings_layout;
 		VkDescriptorSetLayout skybox_layout;
-		VkDescriptorSetLayout upsample_blur_layout;
-		VkDescriptorSetLayout downsample_blur_layout;
+		VkDescriptorSetLayout upsample_bloom_layout;
+		VkDescriptorSetLayout downsample_bloom_layout;
 	} descriptors;
 
 	struct {
@@ -262,9 +262,9 @@ struct vulkan_renderer {
 		VkDescriptorSet global_descriptor_set;
 		VkDescriptorSet blit_descriptor_set;
 		/// `[i]` reads from `i` and writes to `i - 1`.
-		VkDescriptorSet upsample_blur_descriptor_sets[BLOOM_STAGE_COUNT];
+		VkDescriptorSet upsample_bloom_descriptor_sets[BLOOM_STAGE_COUNT];
 		/// `[i]` reads from `i` and writes to `i + 1`.
-		VkDescriptorSet downsample_blur_descriptor_sets[BLOOM_STAGE_COUNT];
+		VkDescriptorSet downsample_bloom_descriptor_sets[BLOOM_STAGE_COUNT];
 		VkDescriptorSet skybox_descriptor_set;
 	} data;
 
@@ -278,7 +278,7 @@ struct vulkan_renderer {
 	VkSampler atmo_lut_sampler;
 	VkSampler material_texture_sampler;
 	VkSampler skybox_sampler;
-	VkSampler blur_mipmap_sampler;
+	VkSampler bloom_mipmap_sampler;
 
 	struct vulkan_image skybox_image;
 	// PSHINE_DYNA_(struct mesh) meshes;
@@ -2082,7 +2082,7 @@ static void init_transients(struct vulkan_renderer *r) {
 				= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT // for atmosphere rendering and for the tonemap
 				| VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT // for the geometry rendering
 				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT // for the downsample blit operation 
-				| VK_IMAGE_USAGE_STORAGE_BIT // for the blur/upsample&composite bloom shader
+				| VK_IMAGE_USAGE_STORAGE_BIT // for the bloom/upsample&composite bloom shader
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -2119,10 +2119,10 @@ static void init_transients(struct vulkan_renderer *r) {
 				.mipLevels = 1,
 				.tiling = VK_IMAGE_TILING_OPTIMAL,
 				.usage
-					= VK_IMAGE_USAGE_STORAGE_BIT // for the upsample&blur compute shader
+					= VK_IMAGE_USAGE_STORAGE_BIT // for the upsample&bloom compute shader
 					| VK_IMAGE_USAGE_TRANSFER_SRC_BIT // for the downsample op
 					| VK_IMAGE_USAGE_TRANSFER_DST_BIT // for the downsample op
-					| VK_IMAGE_USAGE_SAMPLED_BIT // for the upsample&blur compute shader,
+					| VK_IMAGE_USAGE_SAMPLED_BIT // for the upsample&bloom compute shader,
 			},
 			.view_info = &(VkImageViewCreateInfo){
 				.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -2583,20 +2583,20 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		vkCreatePipelineLayout(r->device, &(VkPipelineLayoutCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 			.setLayoutCount = 1,
-			.pSetLayouts = &r->descriptors.upsample_blur_layout,
+			.pSetLayouts = &r->descriptors.upsample_bloom_layout,
 			.pushConstantRangeCount = 1,
 			.pPushConstantRanges = &(VkPushConstantRange){
 				.offset = 0,
-				.size = sizeof(struct upsample_blur_push_const_data),
+				.size = sizeof(struct upsample_bloom_push_const_data),
 				.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
 			}
-		}, nullptr, &r->pipelines.upsample_blur_layout);
-		NAME_VK_OBJECT(r, r->pipelines.upsample_blur_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "upsample&blur pipeline layout");
+		}, nullptr, &r->pipelines.upsample_bloom_layout);
+		NAME_VK_OBJECT(r, r->pipelines.upsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "upsample&bloom pipeline layout");
 
-		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/upsample_blur.comp.spv");
+		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/bloom_upsample.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-			.layout = r->pipelines.upsample_blur_layout,
+			.layout = r->pipelines.upsample_bloom_layout,
 			.stage = (VkPipelineShaderStageCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 				.pSpecializationInfo = nullptr,
@@ -2604,28 +2604,28 @@ static void init_pipelines(struct vulkan_renderer *r) {
 				.module = comp_shader_module,
 				.pName = "main",
 			},
-		}, nullptr, &r->pipelines.upsample_blur_pipeline);
-		NAME_VK_OBJECT(r, r->pipelines.upsample_blur_pipeline, VK_OBJECT_TYPE_PIPELINE, "upsample&blur pipeline");
+		}, nullptr, &r->pipelines.upsample_bloom_pipeline);
+		NAME_VK_OBJECT(r, r->pipelines.upsample_bloom_pipeline, VK_OBJECT_TYPE_PIPELINE, "upsample&bloom pipeline");
 		vkDestroyShaderModule(r->device, comp_shader_module, nullptr);
 	}
 	{
 		vkCreatePipelineLayout(r->device, &(VkPipelineLayoutCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 			.setLayoutCount = 1,
-			.pSetLayouts = &r->descriptors.downsample_blur_layout,
+			.pSetLayouts = &r->descriptors.downsample_bloom_layout,
 			// .pushConstantRangeCount = 1,
 			// .pPushConstantRanges = &(VkPushConstantRange){
 			// 	.offset = 0,
-			// 	.size = sizeof(struct upsample_blur_push_const_data),
+			// 	.size = sizeof(struct upsample_bloom_push_const_data),
 			// 	.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
 			// }
-		}, nullptr, &r->pipelines.downsample_blur_layout);
-		NAME_VK_OBJECT(r, r->pipelines.downsample_blur_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "downsample&blur pipeline layout");
+		}, nullptr, &r->pipelines.downsample_bloom_layout);
+		NAME_VK_OBJECT(r, r->pipelines.downsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "downsample&bloom pipeline layout");
 
-		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/downsample_bloom.comp.spv");
+		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/bloom_downsample.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-			.layout = r->pipelines.downsample_blur_layout,
+			.layout = r->pipelines.downsample_bloom_layout,
 			.stage = (VkPipelineShaderStageCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 				.pSpecializationInfo = &(VkSpecializationInfo){
@@ -2640,12 +2640,12 @@ static void init_pipelines(struct vulkan_renderer *r) {
 				.module = comp_shader_module,
 				.pName = "main",
 			},
-		}, nullptr, &r->pipelines.first_downsample_blur_pipeline);
-		NAME_VK_OBJECT(r, r->pipelines.first_downsample_blur_pipeline, VK_OBJECT_TYPE_PIPELINE, "first-downsample&blur pipeline");
+		}, nullptr, &r->pipelines.first_downsample_bloom_pipeline);
+		NAME_VK_OBJECT(r, r->pipelines.first_downsample_bloom_pipeline, VK_OBJECT_TYPE_PIPELINE, "first-downsample&bloom pipeline");
 
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-			.layout = r->pipelines.downsample_blur_layout,
+			.layout = r->pipelines.downsample_bloom_layout,
 			.stage = (VkPipelineShaderStageCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 				.pSpecializationInfo = &(VkSpecializationInfo){
@@ -2660,8 +2660,8 @@ static void init_pipelines(struct vulkan_renderer *r) {
 				.module = comp_shader_module,
 				.pName = "main",
 			},
-		}, nullptr, &r->pipelines.downsample_blur_pipeline);
-		NAME_VK_OBJECT(r, r->pipelines.downsample_blur_pipeline, VK_OBJECT_TYPE_PIPELINE, "downsample&blur pipeline");
+		}, nullptr, &r->pipelines.downsample_bloom_pipeline);
+		NAME_VK_OBJECT(r, r->pipelines.downsample_bloom_pipeline, VK_OBJECT_TYPE_PIPELINE, "downsample&bloom pipeline");
 		vkDestroyShaderModule(r->device, comp_shader_module, nullptr);
 	}
 }
@@ -2681,8 +2681,11 @@ static void deinit_pipelines(struct vulkan_renderer *r) {
 	vkDestroyPipelineLayout(r->device, r->pipelines.rings_layout, nullptr);
 	vkDestroyPipeline(r->device, r->pipelines.skybox_pipeline, nullptr);
 	vkDestroyPipelineLayout(r->device, r->pipelines.skybox_layout, nullptr);
-	vkDestroyPipeline(r->device, r->pipelines.upsample_blur_pipeline, nullptr);
-	vkDestroyPipelineLayout(r->device, r->pipelines.upsample_blur_layout, nullptr);
+	vkDestroyPipeline(r->device, r->pipelines.upsample_bloom_pipeline, nullptr);
+	vkDestroyPipelineLayout(r->device, r->pipelines.upsample_bloom_layout, nullptr);
+	vkDestroyPipeline(r->device, r->pipelines.first_downsample_bloom_pipeline, nullptr);
+	vkDestroyPipeline(r->device, r->pipelines.downsample_bloom_pipeline, nullptr);
+	vkDestroyPipelineLayout(r->device, r->pipelines.downsample_bloom_layout, nullptr);
 }
 
 
@@ -2931,8 +2934,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 				.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
 			},
 		}
-	}, nullptr, &r->descriptors.upsample_blur_layout);
-	NAME_VK_OBJECT(r, r->descriptors.upsample_blur_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "upsample&blur descriptor set layout");
+	}, nullptr, &r->descriptors.upsample_bloom_layout);
+	NAME_VK_OBJECT(r, r->descriptors.upsample_bloom_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "upsample&bloom descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -2951,8 +2954,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 				.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
 			},
 		}
-	}, nullptr, &r->descriptors.downsample_blur_layout);
-	NAME_VK_OBJECT(r, r->descriptors.downsample_blur_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "downsample&blur descriptor set layout");
+	}, nullptr, &r->descriptors.downsample_bloom_layout);
+	NAME_VK_OBJECT(r, r->descriptors.downsample_bloom_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "downsample&bloom descriptor set layout");
 }
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
@@ -2966,6 +2969,8 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.blit_layout, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.rings_layout, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.skybox_layout, nullptr);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.downsample_bloom_layout, nullptr);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.upsample_bloom_layout, nullptr);
 }
 
 
@@ -3034,7 +3039,7 @@ static void init_data(struct vulkan_renderer *r) {
 		.mipLodBias = 0.0f,
 		.minLod = 0.0f,
 		.maxLod = 0.0f,
-	}, nullptr, &r->blur_mipmap_sampler);
+	}, nullptr, &r->bloom_mipmap_sampler);
 
 	struct vulkan_buffer_alloc_info common_alloc_info = {
 		.size = 0,
@@ -3096,35 +3101,35 @@ static void init_data(struct vulkan_renderer *r) {
 		}
 	}, 0, nullptr);
 
-	VkDescriptorSetLayout upsample_blur_layout_copies[BLOOM_STAGE_COUNT];
+	VkDescriptorSetLayout upsample_bloom_layout_copies[BLOOM_STAGE_COUNT];
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-		upsample_blur_layout_copies[i] = r->descriptors.upsample_blur_layout;
+		upsample_bloom_layout_copies[i] = r->descriptors.upsample_bloom_layout;
 	}
 
-	VkDescriptorSetLayout downsample_blur_layout_copies[BLOOM_STAGE_COUNT];
+	VkDescriptorSetLayout downsample_bloom_layout_copies[BLOOM_STAGE_COUNT];
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-		downsample_blur_layout_copies[i] = r->descriptors.downsample_blur_layout;
+		downsample_bloom_layout_copies[i] = r->descriptors.downsample_bloom_layout;
 	}
 
 	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		.descriptorPool = r->descriptors.pool,
 		.descriptorSetCount = BLOOM_STAGE_COUNT,
-		.pSetLayouts = upsample_blur_layout_copies,
-	}, r->data.upsample_blur_descriptor_sets));
+		.pSetLayouts = upsample_bloom_layout_copies,
+	}, r->data.upsample_bloom_descriptor_sets));
 
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
-		NAME_VK_OBJECT(r, r->data.upsample_blur_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "upsample&blur #%zu ds", i);
+		NAME_VK_OBJECT(r, r->data.upsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "upsample&bloom #%zu ds", i);
 
 	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		.descriptorPool = r->descriptors.pool,
 		.descriptorSetCount = BLOOM_STAGE_COUNT,
-		.pSetLayouts = downsample_blur_layout_copies,
-	}, r->data.downsample_blur_descriptor_sets));
+		.pSetLayouts = downsample_bloom_layout_copies,
+	}, r->data.downsample_bloom_descriptor_sets));
 
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
-		NAME_VK_OBJECT(r, r->data.downsample_blur_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "downsample&blur #%zu ds", i);
+		NAME_VK_OBJECT(r, r->data.downsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "downsample&bloom #%zu ds", i);
 
 	{
 		// ds[i] reads from i and writes to i-1
@@ -3136,20 +3141,20 @@ static void init_data(struct vulkan_renderer *r) {
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				.dstSet = r->data.upsample_blur_descriptor_sets[i],
+				.dstSet = r->data.upsample_bloom_descriptor_sets[i],
 				.dstBinding = 0,
 				.dstArrayElement = 0,
 				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
 					.imageView = r->transients.bloom[i].view,
 					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					.sampler = r->blur_mipmap_sampler,
+					.sampler = r->bloom_mipmap_sampler,
 				}, &bloom_ds_images[2 * i + 0]),
 			};
 			bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-				.dstSet = r->data.upsample_blur_descriptor_sets[i],
+				.dstSet = r->data.upsample_bloom_descriptor_sets[i],
 				.dstBinding = 1,
 				.dstArrayElement = 0,
 				.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
@@ -3172,20 +3177,20 @@ static void init_data(struct vulkan_renderer *r) {
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				.dstSet = r->data.downsample_blur_descriptor_sets[i],
+				.dstSet = r->data.downsample_bloom_descriptor_sets[i],
 				.dstBinding = 0,
 				.dstArrayElement = 0,
 				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
 					.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
 					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					.sampler = r->blur_mipmap_sampler,
+					.sampler = r->bloom_mipmap_sampler,
 				}, &bloom_ds_images[2 * i + 0]),
 			};
 			bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-				.dstSet = r->data.downsample_blur_descriptor_sets[i],
+				.dstSet = r->data.downsample_bloom_descriptor_sets[i],
 				.dstBinding = 1,
 				.dstArrayElement = 0,
 				.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
@@ -3845,15 +3850,15 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		}
 
 		// now we do the downsampling compute.
-		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.first_downsample_blur_pipeline);
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.first_downsample_bloom_pipeline);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
 			struct vulkan_image *dst_image = &r->transients.bloom[i];
-			vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_blur_layout, 0,
-				1, &r->data.downsample_blur_descriptor_sets[i], 0, nullptr);
+			vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_layout, 0,
+				1, &r->data.downsample_bloom_descriptor_sets[i], 0, nullptr);
 			vkCmdDispatch(f->command_buffer, 128, 128, 1);
 
-			if (i == 1) vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_blur_pipeline);
+			if (i == 1) vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_pipeline);
 
 			// now we need to transition the image from general to read-only-optimal so that the next compute shader invocation
 			// can read from it. this isn't *necessary*, and might even have worse performance (TODO benchmark!) but it's better
@@ -3907,13 +3912,13 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 		// now all the images should be in the correct layout
 
-		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_pipeline);
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_bloom_pipeline);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			bool is_last = i == BLOOM_STAGE_COUNT - 1;
 			struct vulkan_image *dst_image = is_last ? &r->transients.color_0 : &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
-			VkDescriptorSet ds = r->data.upsample_blur_descriptor_sets[BLOOM_STAGE_COUNT - 1 - i];
+			VkDescriptorSet ds = r->data.upsample_bloom_descriptor_sets[BLOOM_STAGE_COUNT - 1 - i];
 			vkCmdBindDescriptorSets(
-				f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_layout, 0,
+				f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_bloom_layout, 0,
 				1, (VkDescriptorSet[]){ ds }, 0, nullptr
 			);
 			vkCmdDispatch(f->command_buffer, 64, 64, 1);

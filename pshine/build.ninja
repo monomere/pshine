@@ -40,8 +40,8 @@ build $builddir/data/shaders/skybox.vert.spv           : glslc data/shaders/skyb
 build $builddir/data/shaders/skybox.frag.spv           : glslc data/shaders/skybox.frag
 build $builddir/data/shaders/atmo_lut.comp.spv         : glslc data/shaders/atmo_lut.comp
 build $builddir/data/shaders/solid_color.frag.spv      : glslc data/shaders/solid_color.frag
-build $builddir/data/shaders/upsample_blur.comp.spv    : glslc data/shaders/upsample_blur.comp
-build $builddir/data/shaders/downsample_bloom.comp.spv : glslc data/shaders/downsample_bloom.comp
+build $builddir/data/shaders/bloom_upsample.comp.spv   : glslc data/shaders/bloom_upsample.comp
+build $builddir/data/shaders/bloom_downsample.comp.spv : glslc data/shaders/bloom_downsample.comp
 
 build $builddir/main: ld $
   $builddir/pshine/vk.c.o $
@@ -76,8 +76,8 @@ build $builddir/main: ld $
   $builddir/data/shaders/rings.frag.spv $
   $builddir/data/shaders/skybox.vert.spv $
   $builddir/data/shaders/skybox.frag.spv $
-  $builddir/data/shaders/upsample_blur.comp.spv $
-  $builddir/data/shaders/downsample_bloom.comp.spv $
+  $builddir/data/shaders/bloom_upsample.comp.spv $
+  $builddir/data/shaders/bloom_downsample.comp.spv $
   vk_layer_settings.txt
 # ^ this is a dummy so that i can have a dollar sign after each line.
 # || $
