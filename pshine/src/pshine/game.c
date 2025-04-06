@@ -705,8 +705,10 @@ void pshine_init_game(struct pshine_game *game) {
 	game->camera_position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
 	game->camera_position.xyz.y = 75.221 * PSHINE_SCS_SCALE;
 	game->camera_position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
-	game->camera_fov = 60.0;
-	game->exposure = 1.0;
+	game->graphics_settings.camera_fov = 60.0;
+	game->graphics_settings.exposure = 1.0;
+	game->graphics_settings.bloom_knee = 7.0;
+	game->graphics_settings.bloom_threshold = 7.0;
 	game->material_smoothness_ = 0.02;
 	game->data_own->is_control_precise = false;
 	*(double3*)game->sun_position.values = double3xyz(0, 0, 0);
@@ -1359,8 +1361,17 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				game->data_own->camera_yaw = 0.0;
 				game->data_own->camera_pitch = 0.0;
 			}
-			ImGui_SliderFloat("FoV", &game->camera_fov, 0.00001f, 179.999f);
-			ImGui_SliderFloat("EV", &game->exposure, -8.0f, 6.0f);
+			if (eximgui_begin_input_box("Graphics")) {
+				ImGui_SliderFloat("FoV", &game->graphics_settings.camera_fov, 0.00001f, 179.999f);
+				ImGui_SliderFloat("EV", &game->graphics_settings.exposure, -8.0f, 6.0f);
+				
+				if (eximgui_begin_input_box("Bloom")) {
+					ImGui_SliderFloat("Threshold", &game->graphics_settings.bloom_threshold, 0.0f, 16.0f);
+					ImGui_SliderFloat("Knee", &game->graphics_settings.bloom_knee, 0.0f, 16.0f);
+				}
+				eximgui_end_input_box();
+			}
+			eximgui_end_input_box();
 
 			// ImGui_Spacing();
 			// ImVec2 begin = ImGui_GetCursorScreenPos();

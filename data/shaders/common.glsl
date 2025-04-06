@@ -61,8 +61,11 @@ struct SkyboxConsts {
 	mat4 view;
 };
 
-struct BlitConsts {
+struct GraphicsSettingsConsts {
+	float bloom_threshold;
+	float bloom_knee;
 	float exposure;
+	float camera_fov;
 };
 
 float luma_from_rgb(vec3 rgb) {

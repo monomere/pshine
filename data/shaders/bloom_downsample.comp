@@ -7,6 +7,8 @@ layout (constant_id = 0) const bool is_first_downsample = false;
 layout (set = 0, binding = 0) uniform sampler2D i_tex;
 layout (set = 0, binding = 1, rgba16f) uniform writeonly image2D o_tex;
 
+layout (push_constant) uniform BUFFER(GraphicsSettingsConsts, u_consts);
+
 layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
 float karis_average(vec3 v) {
@@ -14,7 +16,7 @@ float karis_average(vec3 v) {
 	return 1.0 / (1.0 + l);
 }
 
-vec3 quadratic_colour_thresholding(vec3 color, float threshold, float knee) {
+vec3 quadratic_color_threshold(vec3 color, float threshold, float knee) {
 	vec3 curve = vec3(threshold - knee, knee * 2.0, 0.25 / knee);
 	float brightness = luma_from_rgb(color);
 
@@ -73,7 +75,7 @@ void main() {
 	vec2 uv = (vec2(opos) + vec2(0.5)) / vec2(ores);
 	if (is_first_downsample) {
 		vec3 src = sample_13_tap(uv);
-		vec3 src_thresh = quadratic_colour_thresholding(src, 7.0, 7.0);
+		vec3 src_thresh = quadratic_color_threshold(src, u_consts.bloom_threshold, u_consts.bloom_knee);
 		imageStore(o_tex, opos, vec4(src_thresh, 1.0));
 	} else {
 		vec3 src = sample_3x3_tent(uv);

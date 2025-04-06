@@ -86,14 +86,6 @@ struct atmo_lut_push_const_data {
 	uint32_t samples;
 };
 
-struct upsample_bloom_push_const_data {
-	float threshold;
-};
-
-struct blit_push_const_data {
-	float exposure;
-};
-
 struct vulkan_image {
 	VkImage image;
 	VkImageView view;
@@ -2513,7 +2505,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		.push_constant_ranges = (VkPushConstantRange[]) {
 			(VkPushConstantRange){
 				.offset = 0,
-				.size = sizeof(struct blit_push_const_data),
+				.size = sizeof(struct pshine_graphics_settings),
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
 		},
@@ -2585,11 +2577,13 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			.setLayoutCount = 1,
 			.pSetLayouts = &r->descriptors.upsample_bloom_layout,
 			.pushConstantRangeCount = 1,
-			.pPushConstantRanges = &(VkPushConstantRange){
-				.offset = 0,
-				.size = sizeof(struct upsample_bloom_push_const_data),
-				.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
-			}
+			.pPushConstantRanges = (VkPushConstantRange[]){
+				(VkPushConstantRange){
+					.offset = 0,
+					.size = sizeof(struct pshine_graphics_settings),
+					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+			},
 		}, nullptr, &r->pipelines.upsample_bloom_layout);
 		NAME_VK_OBJECT(r, r->pipelines.upsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "upsample&bloom pipeline layout");
 
@@ -2613,12 +2607,14 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 			.setLayoutCount = 1,
 			.pSetLayouts = &r->descriptors.downsample_bloom_layout,
-			// .pushConstantRangeCount = 1,
-			// .pPushConstantRanges = &(VkPushConstantRange){
-			// 	.offset = 0,
-			// 	.size = sizeof(struct upsample_bloom_push_const_data),
-			// 	.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
-			// }
+			.pushConstantRangeCount = 1,
+			.pPushConstantRanges = (VkPushConstantRange[]){
+				(VkPushConstantRange){
+					.offset = 0,
+					.size = sizeof(struct pshine_graphics_settings),
+					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+			},
 		}, nullptr, &r->pipelines.downsample_bloom_layout);
 		NAME_VK_OBJECT(r, r->pipelines.downsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "downsample&bloom pipeline layout");
 
@@ -3441,7 +3437,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
 	double4x4 proj_mat = {};
-	struct double4x4persp_info persp_info = setdouble4x4persp(&proj_mat, r->game->camera_fov, aspect_ratio, 0.01);
+	struct double4x4persp_info persp_info = setdouble4x4persp(&proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, 0.01);
 	float4x4 proj_mat32 = float4x4_double4x4(proj_mat);
 
 	{
@@ -3856,6 +3852,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 		// now we do the downsampling compute.
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.first_downsample_bloom_pipeline);
+		vkCmdPushConstants(f->command_buffer, r->pipelines.downsample_bloom_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+			0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
 			struct vulkan_image *dst_image = &r->transients.bloom[i];
@@ -3918,6 +3916,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		// now all the images should be in the correct layout
 
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_bloom_pipeline);
+		vkCmdPushConstants(f->command_buffer, r->pipelines.upsample_bloom_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+			0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			bool is_last = i == BLOOM_STAGE_COUNT - 1;
 			struct vulkan_image *dst_image = is_last ? &r->transients.color_0 : &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
@@ -3970,11 +3970,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	}, VK_SUBPASS_CONTENTS_INLINE);
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.blit_pipeline);
-	struct blit_push_const_data blit_data = {
-		.exposure = r->game->exposure,
-	};
 	vkCmdPushConstants(f->command_buffer, r->pipelines.blit_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
-		0, sizeof(blit_data), &blit_data);
+		0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
 	vkCmdBindDescriptorSets(
 		f->command_buffer,
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -4176,7 +4173,7 @@ static void show_gizmos(struct vulkan_renderer *r) {
 	double4x4 proj_mat = {};
 	setdouble4x4iden(&proj_mat);
 	double znear = 0.01;
-	setdouble4x4persp(&proj_mat, r->game->camera_fov, aspect_ratio, znear);
+	setdouble4x4persp(&proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, znear);
 
 	double4x4 screen_mat = view_mat;
 	double4x4mul(&screen_mat, &proj_mat);
