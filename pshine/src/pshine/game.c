@@ -1366,8 +1366,8 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 				ImGui_SliderFloat("EV", &game->graphics_settings.exposure, -8.0f, 6.0f);
 				
 				if (eximgui_begin_input_box("Bloom")) {
-					ImGui_SliderFloat("Threshold", &game->graphics_settings.bloom_threshold, 0.0f, 16.0f);
 					ImGui_SliderFloat("Knee", &game->graphics_settings.bloom_knee, 0.0f, 16.0f);
+					ImGui_SliderFloat("Threshold", &game->graphics_settings.bloom_threshold, game->graphics_settings.bloom_knee, 16.0f);
 				}
 				eximgui_end_input_box();
 			}
