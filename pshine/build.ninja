@@ -26,20 +26,22 @@ build $builddir/vendor/imgui/imgui_draw.cpp.o    : cxx vendor/imgui/imgui_draw.c
 build $builddir/vendor/imgui/imgui_tables.cpp.o  : cxx vendor/imgui/imgui_tables.cpp
 build $builddir/vendor/imgui/imgui_widgets.cpp.o : cxx vendor/imgui/imgui_widgets.cpp
 
-build $builddir/data/shaders/tri.vert.spv         : glslc data/shaders/tri.vert
-build $builddir/data/shaders/tri.frag.spv         : glslc data/shaders/tri.frag
-build $builddir/data/shaders/mesh.vert.spv        : glslc data/shaders/mesh.vert
-build $builddir/data/shaders/mesh.frag.spv        : glslc data/shaders/mesh.frag
-build $builddir/data/shaders/atmo.vert.spv        : glslc data/shaders/atmo.vert
-build $builddir/data/shaders/atmo.frag.spv        : glslc data/shaders/atmo.frag
-build $builddir/data/shaders/blit.vert.spv        : glslc data/shaders/blit.vert
-build $builddir/data/shaders/blit.frag.spv        : glslc data/shaders/blit.frag
-build $builddir/data/shaders/rings.vert.spv       : glslc data/shaders/rings.vert
-build $builddir/data/shaders/rings.frag.spv       : glslc data/shaders/rings.frag
-build $builddir/data/shaders/skybox.vert.spv      : glslc data/shaders/skybox.vert
-build $builddir/data/shaders/skybox.frag.spv      : glslc data/shaders/skybox.frag
-build $builddir/data/shaders/atmo_lut.comp.spv    : glslc data/shaders/atmo_lut.comp
-build $builddir/data/shaders/solid_color.frag.spv : glslc data/shaders/solid_color.frag
+build $builddir/data/shaders/tri.vert.spv              : glslc data/shaders/tri.vert
+build $builddir/data/shaders/tri.frag.spv              : glslc data/shaders/tri.frag
+build $builddir/data/shaders/mesh.vert.spv             : glslc data/shaders/mesh.vert
+build $builddir/data/shaders/mesh.frag.spv             : glslc data/shaders/mesh.frag
+build $builddir/data/shaders/atmo.vert.spv             : glslc data/shaders/atmo.vert
+build $builddir/data/shaders/atmo.frag.spv             : glslc data/shaders/atmo.frag
+build $builddir/data/shaders/blit.vert.spv             : glslc data/shaders/blit.vert
+build $builddir/data/shaders/blit.frag.spv             : glslc data/shaders/blit.frag
+build $builddir/data/shaders/rings.vert.spv            : glslc data/shaders/rings.vert
+build $builddir/data/shaders/rings.frag.spv            : glslc data/shaders/rings.frag
+build $builddir/data/shaders/skybox.vert.spv           : glslc data/shaders/skybox.vert
+build $builddir/data/shaders/skybox.frag.spv           : glslc data/shaders/skybox.frag
+build $builddir/data/shaders/atmo_lut.comp.spv         : glslc data/shaders/atmo_lut.comp
+build $builddir/data/shaders/solid_color.frag.spv      : glslc data/shaders/solid_color.frag
+build $builddir/data/shaders/bloom_upsample.comp.spv   : glslc data/shaders/bloom_upsample.comp
+build $builddir/data/shaders/bloom_downsample.comp.spv : glslc data/shaders/bloom_downsample.comp
 
 build $builddir/main: ld $
   $builddir/pshine/vk.c.o $
@@ -74,6 +76,9 @@ build $builddir/main: ld $
   $builddir/data/shaders/rings.frag.spv $
   $builddir/data/shaders/skybox.vert.spv $
   $builddir/data/shaders/skybox.frag.spv $
-  $builddir/data/shaders/atmo_lut.comp.spv $
-  || $
-  build/giraffe/libgiraffe.a
+  $builddir/data/shaders/bloom_upsample.comp.spv $
+  $builddir/data/shaders/bloom_downsample.comp.spv $
+  vk_layer_settings.txt
+# ^ this is a dummy so that i can have a dollar sign after each line.
+# || $
+# build/giraffe/libgiraffe.a

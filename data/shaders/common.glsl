@@ -3,6 +3,7 @@
 
 const float MAX_FLOAT = 3.402823466e+38;
 const float PI = 3.14159265358979;
+const float EPSILON = 1.19e-07;
 
 #define BUFFER(S, name) _Uniform_##S { S name; }
 #define SAMPLER(T, name) T name
@@ -55,10 +56,20 @@ struct RingsUniforms {
 	float smoothing;
 };
 
-
 struct SkyboxConsts {
 	mat4 proj;
 	mat4 view;
 };
+
+struct GraphicsSettingsConsts {
+	float bloom_threshold;
+	float bloom_knee;
+	float exposure;
+	float camera_fov;
+};
+
+float luma_from_rgb(vec3 rgb) {
+	return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+}
 
 #endif // COMMON_GLSLI_

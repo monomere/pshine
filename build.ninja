@@ -41,9 +41,9 @@ rule owl
 rule python
   command = $python $in $out
 
-import-modname = giraffe
-import-extern-root = giraffe
-subninja ninja/import-extern.ninja
+# import-modname = giraffe
+# import-extern-root = giraffe
+# subninja ninja/import-extern.ninja
 
 import-modname = pshine
 subninja ninja/import.ninja

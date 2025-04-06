@@ -99,11 +99,11 @@ khronos_validation.validate_sync = true
 
 # QueueSubmit Synchronization Validation
 # =====================
-# <LayerIdentifier>.sync_queue_submit
+# <LayerIdentifier>.syncval_queue_submit
 # Enable synchronization validation between submitted command buffers when
 # Synchronization Validation is enabled. This option will increase the
 # synchronization performance cost.
-khronos_validation.sync_queue_submit = true
+khronos_validation.syncval_queue_submit = true
 
 # GPU Base
 # =====================
@@ -158,7 +158,7 @@ khronos_validation.validate_gpu_based = GPU_BASED_NONE
 # =====================
 # <LayerIdentifier>.warn_on_robust_oob
 # Warn on out of bounds accesses even if robustness is enabled
-khronos_validation.warn_on_robust_oob = true
+khronos_validation.gpuav_warn_on_robust_oob = true
 
 # Check Draw/Dispatch/TraceRays Indirect buffers
 # =====================
