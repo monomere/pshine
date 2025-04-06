@@ -260,8 +260,10 @@ struct vulkan_renderer {
 		struct vulkan_buffer global_uniform_buffer;
 		VkDescriptorSet global_descriptor_set;
 		VkDescriptorSet blit_descriptor_set;
+		/// `[i]` reads from `i` and writes to `i - 1`.
 		VkDescriptorSet upsample_blur_descriptor_sets[BLOOM_STAGE_COUNT];
-		VkDescriptorSet downsample_blur_descriptor_set;
+		/// `[i]` reads from `i` and writes to `i + 1`.
+		VkDescriptorSet downsample_blur_descriptor_sets[BLOOM_STAGE_COUNT];
 		VkDescriptorSet skybox_descriptor_set;
 	} data;
 
@@ -2561,7 +2563,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			}
 		}, NULL, &r->pipelines.atmo_lut_layout);
 
-		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/atmo_lut.comp.spv");
+		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/atmo_lut.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
 			.layout = r->pipelines.atmo_lut_layout,
@@ -2603,6 +2605,42 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			},
 		}, NULL, &r->pipelines.upsample_blur_pipeline);
 		NAME_VK_OBJECT(r, r->pipelines.upsample_blur_pipeline, VK_OBJECT_TYPE_PIPELINE, "upsample&blur pipeline");
+		vkDestroyShaderModule(r->device, comp_shader_module, NULL);
+	}
+	{
+		vkCreatePipelineLayout(r->device, &(VkPipelineLayoutCreateInfo){
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.setLayoutCount = 1,
+			.pSetLayouts = &r->descriptors.downsample_blur_layout,
+			// .pushConstantRangeCount = 1,
+			// .pPushConstantRanges = &(VkPushConstantRange){
+			// 	.offset = 0,
+			// 	.size = sizeof(struct upsample_blur_push_const_data),
+			// 	.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
+			// }
+		}, NULL, &r->pipelines.upsample_blur_layout);
+		NAME_VK_OBJECT(r, r->pipelines.downsample_blur_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "downsample&blur pipeline layout");
+
+		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/downsample_blur.comp.spv");
+		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
+			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+			.layout = r->pipelines.downsample_blur_layout,
+			.stage = (VkPipelineShaderStageCreateInfo){
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+				.pSpecializationInfo = &(VkSpecializationInfo){
+					.mapEntryCount = 1,
+					.pMapEntries = (VkSpecializationMapEntry[]){
+						(VkSpecializationMapEntry){ .constantID = 0, .offset = 0, .size = sizeof(uint32_t) },
+					},
+					.dataSize = sizeof(uint32_t),
+					.pData = &(int){ 0 },
+				},
+				.stage = VK_SHADER_STAGE_COMPUTE_BIT,
+				.module = comp_shader_module,
+				.pName = "main",
+			},
+		}, NULL, &r->pipelines.upsample_blur_pipeline);
+		NAME_VK_OBJECT(r, r->pipelines.downsample_blur_pipeline, VK_OBJECT_TYPE_PIPELINE, "downsample&blur pipeline");
 		vkDestroyShaderModule(r->device, comp_shader_module, NULL);
 	}
 }
@@ -2874,6 +2912,26 @@ static void init_descriptors(struct vulkan_renderer *r) {
 		}
 	}, NULL, &r->descriptors.upsample_blur_layout);
 	NAME_VK_OBJECT(r, r->descriptors.upsample_blur_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "upsample&blur descriptor set layout");
+
+	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 2,
+		.pBindings = (VkDescriptorSetLayoutBinding[]){
+			(VkDescriptorSetLayoutBinding){
+				.binding = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+			},
+			(VkDescriptorSetLayoutBinding){
+				.binding = 1,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+				.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+			},
+		}
+	}, NULL, &r->descriptors.downsample_blur_layout);
+	NAME_VK_OBJECT(r, r->descriptors.downsample_blur_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "downsample&blur descriptor set layout");
 }
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
@@ -3017,16 +3075,14 @@ static void init_data(struct vulkan_renderer *r) {
 		}
 	}, 0, NULL);
 
-	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		.descriptorPool = r->descriptors.pool,
-		.descriptorSetCount = 1,
-		.pSetLayouts = &r->descriptors.downsample_blur_layout,
-	}, &r->data.downsample_blur_descriptor_set));
-
 	VkDescriptorSetLayout upsample_blur_layout_copies[BLOOM_STAGE_COUNT];
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 		upsample_blur_layout_copies[i] = r->descriptors.upsample_blur_layout;
+	}
+
+	VkDescriptorSetLayout downsample_blur_layout_copies[BLOOM_STAGE_COUNT];
+	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+		downsample_blur_layout_copies[i] = r->descriptors.downsample_blur_layout;
 	}
 
 	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
@@ -3039,41 +3095,89 @@ static void init_data(struct vulkan_renderer *r) {
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
 		NAME_VK_OBJECT(r, r->data.upsample_blur_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "upsample&blur #%zu ds", i);
 
-	// ds[i] reads from i and writes to i-1
-	// VkDescriptorImageInfo 
-	VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
-	VkDescriptorImageInfo bloom_ds_images[BLOOM_STAGE_COUNT * 2] = {};
-	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-		bloom_ds_writes[2 * i + 0] = (VkWriteDescriptorSet){
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.dstSet = r->data.upsample_blur_descriptor_sets[i],
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
-				.imageView = r->transients.bloom[i].view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.sampler = r->blur_mipmap_sampler,
-			}, &bloom_ds_images[2 * i + 0]),
-		};
-		bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-			.dstSet = r->data.upsample_blur_descriptor_sets[i],
-			.dstBinding = 1,
-			.dstArrayElement = 0,
-			.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
-				.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
-				.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-				.sampler = VK_NULL_HANDLE,
-			}, &bloom_ds_images[2 * i + 1]),
-		};
-		PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
+	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = r->descriptors.pool,
+		.descriptorSetCount = BLOOM_STAGE_COUNT,
+		.pSetLayouts = downsample_blur_layout_copies,
+	}, r->data.downsample_blur_descriptor_sets));
+
+	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
+		NAME_VK_OBJECT(r, r->data.downsample_blur_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "downsample&blur #%zu ds", i);
+
+	{
+		// ds[i] reads from i and writes to i-1
+		// VkDescriptorImageInfo 
+		VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
+		VkDescriptorImageInfo bloom_ds_images[BLOOM_STAGE_COUNT * 2] = {};
+		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+			bloom_ds_writes[2 * i + 0] = (VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.dstSet = r->data.upsample_blur_descriptor_sets[i],
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
+					.imageView = r->transients.bloom[i].view,
+					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					.sampler = r->blur_mipmap_sampler,
+				}, &bloom_ds_images[2 * i + 0]),
+			};
+			bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+				.dstSet = r->data.upsample_blur_descriptor_sets[i],
+				.dstBinding = 1,
+				.dstArrayElement = 0,
+				.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
+					.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
+					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+					.sampler = VK_NULL_HANDLE,
+				}, &bloom_ds_images[2 * i + 1]),
+			};
+			PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
+		}
+		vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
 	}
 
-	vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
+	{
+		// ds[i] reads from i and writes to i+1
+		VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
+		VkDescriptorImageInfo bloom_ds_images[BLOOM_STAGE_COUNT * 2] = {};
+		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+			bloom_ds_writes[2 * i + 0] = (VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.dstSet = r->data.downsample_blur_descriptor_sets[i],
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
+					.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
+					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					.sampler = r->blur_mipmap_sampler,
+				}, &bloom_ds_images[2 * i + 0]),
+			};
+			bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+				.dstSet = r->data.downsample_blur_descriptor_sets[i],
+				.dstBinding = 1,
+				.dstArrayElement = 0,
+				.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
+					.imageView = r->transients.bloom[i].view,
+					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+					.sampler = VK_NULL_HANDLE,
+				}, &bloom_ds_images[2 * i + 1]),
+			};
+			PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
+		}
+
+		vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
+	}
 }
 
 static void init_frame(
@@ -3685,34 +3789,9 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	// Bloom
 	{
 
-		// shader-read-only-optimal is what we need for the compute shaders already.
-		// vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
-		// 	.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-		// 	.dependencyFlags = 0,
-		// 	.imageMemoryBarrierCount = 1,
-		// 	.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
-		// 		(VkImageMemoryBarrier2){
-		// 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-		// 			.image = r->transients.color_0.image,
-		// 			.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-		// 			.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-		// 			.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-		// 			.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-		// 			.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // TODO: when changing finalLayout in rpass (remove useless shader_read_only_optimal transition)
-		// 			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		// 			.subresourceRange = (VkImageSubresourceRange){
-		// 				.levelCount = 1,
-		// 				.layerCount = 1,
-		// 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-		// 				.baseMipLevel = 0,
-		// 				.baseArrayLayer = 0,
-		// 			},
-		// 			.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-		// 			.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-		// 		},
-		// 	}
-		// });
-
+		// transients-color0 is shader-read-only-optimal, which is what we need for the compute shaders already.
+		// so no need to transition that.
+		// but we do need to transition the transient bloom images to general for the compute shader to write to them.
 		{
 			VkImageMemoryBarrier2 bloom_image_barriers[BLOOM_STAGE_COUNT];
 			for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
@@ -3744,103 +3823,65 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			});
 		}
 
-		// struct vulkan_image *down_chain[BLOOM_STAGE_COUNT + 1] = { &r->transients.color_0 };
-		// for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) down_chain[i + 1] = &r->transients.bloom[i];
+		// now we do the downsampling compute.
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_blur_pipeline);
-		vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_blur_layout, 0,
-			1, &r->data.downsample_blur_descriptor_set, 0, nullptr);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
 			struct vulkan_image *dst_image = &r->transients.bloom[i];
-			if (i != 0) vkCmdPipelineBarrier(f->command_buffer,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				0,
-				0, nullptr, 0, nullptr, 1, &(VkImageMemoryBarrier){
-					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-					.image = src_image->image,
-					.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-					.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-					.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-					.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-					.subresourceRange = (VkImageSubresourceRange){
-						.levelCount = 1,
-						.layerCount = 1,
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.baseMipLevel = 0,
-						.baseArrayLayer = 0,
-					},
-					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-				});
-			vkCmdBlitImage(
-				f->command_buffer,
-				src_image->image,
-				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				dst_image->image,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				1,
-				&(VkImageBlit){
-					.srcSubresource = (VkImageSubresourceLayers){
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.baseArrayLayer = 0,
-						.layerCount = 1,
-						.mipLevel = 0,
-					},
-					.srcOffsets[0] = (VkOffset3D){ .x = 0, .y = 0, .z = 0 },
-					.srcOffsets[1] = (VkOffset3D){ .x = src_image->width, .y = src_image->height, .z = 1 },
-					.dstSubresource = (VkImageSubresourceLayers){
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.baseArrayLayer = 0,
-						.layerCount = 1,
-						.mipLevel = 0,
-					},
-					.dstOffsets[0] = (VkOffset3D){ .x = 0, .y = 0, .z = 0 },
-					.dstOffsets[1] = (VkOffset3D){ .x = dst_image->width, .y = dst_image->height, .z = 1 },
-				},
-				VK_FILTER_LINEAR
-			);
-		}
-
-		{
-			VkImageMemoryBarrier2 bloom_image_barriers[BLOOM_STAGE_COUNT + 1] = {};
-			for (size_t i = 0; i < BLOOM_STAGE_COUNT + 1; ++i) {
-				bool is_last = i == BLOOM_STAGE_COUNT;
-				bloom_image_barriers[i] = (VkImageMemoryBarrier2){
-					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-					.image = i == 0 ? r->transients.color_0.image : r->transients.bloom[i - 1].image,
-					.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-					.srcAccessMask = is_last ? VK_ACCESS_2_TRANSFER_WRITE_BIT : VK_ACCESS_2_TRANSFER_READ_BIT,
-					.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-					.dstAccessMask = is_last ? VK_ACCESS_2_MEMORY_READ_BIT : VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
-					.oldLayout = is_last ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL     : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-					.newLayout = is_last ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL,
-					.subresourceRange = (VkImageSubresourceRange){
-						.levelCount = 1,
-						.layerCount = 1,
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.baseMipLevel = 0,
-						.baseArrayLayer = 0,
-					},
-					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-				};
-				// if (frame_number == 1) PSHINE_DEBUG("Wrote image barrier %zu", i);
-			}
+			vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_blur_layout, 0,
+				1, &r->data.downsample_blur_descriptor_sets[i], 0, nullptr);
+			vkCmdDispatch(f->command_buffer, 128, 128, 1);
+			// now we need to transition the image from general to read-only-optimal so that the next compute shader invocation
+			// can read from it. this isn't *necessary*, and might even have worse performance (TODO benchmark!) but it's better
+			// to do it anyway, so that stuff is correct.
 			vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-				.dependencyFlags = 0,
-				.imageMemoryBarrierCount = BLOOM_STAGE_COUNT + 1,
-				.pImageMemoryBarriers = bloom_image_barriers,
+				.imageMemoryBarrierCount = 1 + (i >= 1 ? 1 : 0),
+				.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
+					(VkImageMemoryBarrier2){
+						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+						.image = dst_image->image,
+						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+						.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+						.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						.subresourceRange = (VkImageSubresourceRange){
+							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+							.baseArrayLayer = 0,
+							.baseMipLevel = 0,
+							.layerCount = 1,
+							.levelCount = 1,
+						},
+						.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+						.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+					},
+					// we also can transition the previous image back to general, as it will be written to when upsampling.
+					(VkImageMemoryBarrier2){
+						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+						.image = src_image->image,
+						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+						.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+						.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						.newLayout = VK_IMAGE_LAYOUT_GENERAL,
+						.subresourceRange = (VkImageSubresourceRange){
+							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+							.baseArrayLayer = 0,
+							.baseMipLevel = 0,
+							.layerCount = 1,
+							.levelCount = 1,
+						},
+						.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+						.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+					},
+				},
 			});
 		}
 
-		// struct vulkan_image *up_chain[BLOOM_STAGE_COUNT] = {
-		// 	[BLOOM_STAGE_COUNT - 1] = &r->transients.color_0,
-		// };
-
-		// for (size_t i = 1; i < BLOOM_STAGE_COUNT; ++i)
-		// 	up_chain[BLOOM_STAGE_COUNT - 2 - i] = &r->transients.bloom[i];
+		// now all the images should be in the correct layout
 
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_blur_pipeline);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
@@ -3852,6 +3893,9 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				1, (VkDescriptorSet[]){ ds }, 0, nullptr
 			);
 			vkCmdDispatch(f->command_buffer, 64, 64, 1);
+			// we do a similar transition to the downsampling stage stuff. the last image (transient-color0) is read by
+			// the loadOp=LOAD in the next renderpass, so we make sure the barrier is correct that way.
+			// we might also want to transition the images back to something else for the next frame.
 			vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.imageMemoryBarrierCount = 1,
