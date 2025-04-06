@@ -2992,6 +2992,7 @@ static void init_data(struct vulkan_renderer *r) {
 		.minLod = 0.0f,
 		.maxLod = 0.0f,
 	}, nullptr, &r->atmo_lut_sampler);
+	NAME_VK_OBJECT(r, r->atmo_lut_sampler, VK_OBJECT_TYPE_SAMPLER, "atmo lut sampler");
 	
 	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -3008,6 +3009,7 @@ static void init_data(struct vulkan_renderer *r) {
 		.minLod = 0.0f,
 		.maxLod = 0.0f,
 	}, nullptr, &r->material_texture_sampler);
+	NAME_VK_OBJECT(r, r->atmo_lut_sampler, VK_OBJECT_TYPE_SAMPLER, "material texture sampler");
 	
 	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -3024,6 +3026,7 @@ static void init_data(struct vulkan_renderer *r) {
 		.minLod = 0.0f,
 		.maxLod = 0.0f,
 	}, nullptr, &r->skybox_sampler);
+	NAME_VK_OBJECT(r, r->atmo_lut_sampler, VK_OBJECT_TYPE_SAMPLER, "skybox sampler");
 
 	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -3040,6 +3043,7 @@ static void init_data(struct vulkan_renderer *r) {
 		.minLod = 0.0f,
 		.maxLod = 0.0f,
 	}, nullptr, &r->bloom_mipmap_sampler);
+	NAME_VK_OBJECT(r, r->atmo_lut_sampler, VK_OBJECT_TYPE_SAMPLER, "bloom mipmap sampler");
 
 	struct vulkan_buffer_alloc_info common_alloc_info = {
 		.size = 0,
@@ -3332,6 +3336,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	vkDestroySampler(r->device, r->skybox_sampler, nullptr);
 	vkDestroySampler(r->device, r->atmo_lut_sampler, nullptr);
 	vkDestroySampler(r->device, r->material_texture_sampler, nullptr);
+	vkDestroySampler(r->device, r->bloom_mipmap_sampler, nullptr);
 
 	for (size_t i = 0; i < r->sphere_mesh_count; ++i)
 		destroy_mesh(r, &r->own_sphere_meshes[i]);
