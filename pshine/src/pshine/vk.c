@@ -1436,7 +1436,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 		}
 	}
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__MINGW32__)
 		have_portability_ext = false;
 #endif
 
