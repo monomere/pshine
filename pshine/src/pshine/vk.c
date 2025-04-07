@@ -1448,6 +1448,11 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	if (have_portability_ext)
 		extensions[extension_count_glfw + 1] = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
 
+	bool have_validation = true;
+#ifdef __MINGW32__
+	have_validation = false;
+#endif
+
 	CHECKVK(vkCreateInstance(&(VkInstanceCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 		.flags = have_portability_ext ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR : 0,
@@ -1461,7 +1466,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 		},
 		.enabledExtensionCount = ext_count,
 		.ppEnabledExtensionNames = extensions,
-		.enabledLayerCount = 1, // VALIDATION_LAYERS
+		.enabledLayerCount = have_validation ? 1 : 0, // VALIDATION_LAYERS
 		.ppEnabledLayerNames = (const char *[1]) {
 			"VK_LAYER_KHRONOS_validation"
 		}

@@ -2,7 +2,9 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
+#ifndef __MINGW32__
 #include <sys/resource.h>
+#endif
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -32,9 +34,13 @@ char *pshine_read_file(const char *fname, size_t *size) {
 }
 
 size_t pshine_get_mem_usage() {
+#ifndef __MINGW32__
 	struct rusage usage;
 	getrusage(RUSAGE_SELF, &usage);
 	return usage.ru_maxrss;
+#else
+	return 0;
+#endif // helix
 }
 
 // TODO: PSHINE_USE_CPPTRACE
