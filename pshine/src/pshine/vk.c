@@ -1731,6 +1731,9 @@ static void reinit_swapchain(struct vulkan_renderer *r) {
 				.layerCount = 1,
 			}
 		}, nullptr, &r->swapchain_image_views_own[i]));
+		PSHINE_DEBUG("naming swapchain image");
+		NAME_VK_OBJECT(r, r->swapchain_image_views_own[i], VK_OBJECT_TYPE_IMAGE_VIEW, "swapchain image view #%u", i);
+		PSHINE_DEBUG("named swapchain image");
 	}
 }
 
@@ -2010,7 +2013,9 @@ static void init_sdr_rpass(struct vulkan_renderer *r) {
 		.dependencyCount = sizeof(subpass_dependencies) / sizeof(*subpass_dependencies),
 		.pDependencies = subpass_dependencies,
 	}, nullptr, &r->render_passes.sdr_pass));
+	PSHINE_DEBUG("naming sdr render pass");
 	NAME_VK_OBJECT(r, r->render_passes.sdr_pass, VK_OBJECT_TYPE_RENDER_PASS, "sdr render pass");
+	PSHINE_DEBUG("named");
 }
 
 static void init_rpasses(struct vulkan_renderer *r) {
@@ -2080,6 +2085,7 @@ static void init_transients(struct vulkan_renderer *r) {
 				| VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT // for the geometry rendering
 				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT // for the downsample blit operation 
 				| VK_IMAGE_USAGE_STORAGE_BIT // for the bloom/upsample&composite bloom shader
+				| VK_IMAGE_USAGE_SAMPLED_BIT, // for the downsample compute
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -2136,8 +2142,12 @@ static void init_transients(struct vulkan_renderer *r) {
 		NAME_VK_OBJECT(r, r->transients.bloom[i].image, VK_OBJECT_TYPE_IMAGE, "transient bloom #%zu image", i);
 		NAME_VK_OBJECT(r, r->transients.bloom[i].view, VK_OBJECT_TYPE_IMAGE_VIEW, "transient bloom #%zu image view", i);
 	}
+	PSHINE_DEBUG("initializting transients");
 	NAME_VK_OBJECT(r, r->transients.color_0.image, VK_OBJECT_TYPE_IMAGE, "transient color0 image");
 	NAME_VK_OBJECT(r, r->transients.color_0.view, VK_OBJECT_TYPE_IMAGE_VIEW, "transient color0 image view");
+	NAME_VK_OBJECT(r, r->depth_image.image, VK_OBJECT_TYPE_IMAGE, "transient depth0 image");
+	NAME_VK_OBJECT(r, r->depth_image.view, VK_OBJECT_TYPE_IMAGE_VIEW, "transient depth0 image view");
+	PSHINE_DEBUG("initiadsadsalizting transients");
 }
 
 static void deinit_transients(struct vulkan_renderer *r) {
@@ -3884,13 +3894,13 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 		// now we do the downsampling compute.
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.first_downsample_bloom_pipeline);
-		vkCmdPushConstants(f->command_buffer, r->pipelines.downsample_bloom_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
-			0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
 			struct vulkan_image *dst_image = &r->transients.bloom[i];
-			vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_layout, 0,
-				1, &r->data.downsample_bloom_descriptor_sets[i], 0, nullptr);
+			vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_layout,
+				0, 1, &r->data.downsample_bloom_descriptor_sets[i], 0, nullptr);
+			vkCmdPushConstants(f->command_buffer, r->pipelines.downsample_bloom_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+				0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
 			vkCmdDispatch(f->command_buffer, 128, 128, 1);
 
 			if (i == 1) vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_pipeline);
@@ -3948,8 +3958,6 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		// now all the images should be in the correct layout
 
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_bloom_pipeline);
-		vkCmdPushConstants(f->command_buffer, r->pipelines.upsample_bloom_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
-			0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			bool is_last = i == BLOOM_STAGE_COUNT - 1;
 			struct vulkan_image *dst_image = is_last ? &r->transients.color_0 : &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
@@ -3958,7 +3966,9 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_bloom_layout, 0,
 				1, (VkDescriptorSet[]){ ds }, 0, nullptr
 			);
-			vkCmdDispatch(f->command_buffer, 64, 64, 1);
+			vkCmdPushConstants(f->command_buffer, r->pipelines.upsample_bloom_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+				0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
+			vkCmdDispatch(f->command_buffer, 128, 128, 1);
 			// we do a similar transition to the downsampling stage stuff. the last image (transient-color0) is read by
 			// the loadOp=LOAD in the next renderpass, so we make sure the barrier is correct that way.
 			// we might also want to transition the images back to something else for the next frame.
