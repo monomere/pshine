@@ -834,61 +834,9 @@ static struct vulkan_image load_texture_from_file(
 	return img;
 }
 
-void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *game) {
-	struct vulkan_renderer *r = (void*)renderer;
-	r->game = game;
-	r->as_base.name = "Vulkan Renderer";
-
-	r->key_states = calloc(PSHINE_KEY_COUNT_, sizeof(uint8_t));
-
-	r->lod_ranges[0] = 300'000.0;
-	r->lod_ranges[1] = 25'000.0;
-	r->lod_ranges[2] = 1'500.0;
-	r->lod_ranges[3] = 290.0;
-
-	r->opt_bloom = true;
-
-	init_glfw(r);
-	init_vulkan(r);
-	init_swapchain(r);
-	init_rpasses(r);
-	init_descriptors(r);
-	init_transients(r);
-	init_fbufs(r);
-	init_pipelines(r);
-	init_cmdbufs(r);
-	init_sync(r);
-	init_ubufs(r);
-	init_frames(r);
-	init_imgui(r);
-
-	{
-		VkPhysicalDeviceFeatures features = {};
-		vkGetPhysicalDeviceFeatures(r->physical_device, &features);
-		PSHINE_INFO("GPU 64 bit float support: %s", features.shaderFloat64 ? "true" : "false");
-		PSHINE_INFO("GPU 64 bit int support:   %s", features.shaderInt64 ? "true" : "false");
-	}
-
-	{
-		r->sphere_mesh_count = 5;
-		r->own_sphere_meshes = calloc(r->sphere_mesh_count, sizeof(struct vulkan_mesh));
-		for (size_t lod = 0; lod < r->sphere_mesh_count; ++lod) {
-			struct pshine_mesh_data mesh_data = {
-				.index_count = 0,
-				.indices = nullptr,
-				.vertex_count = 0,
-				.vertices = nullptr,
-				.vertex_type = PSHINE_VERTEX_PLANET
-			};
-			pshine_generate_planet_mesh(nullptr, &mesh_data, lod);
-			create_mesh(r, &mesh_data, &r->own_sphere_meshes[lod]);
-			free(mesh_data.indices);
-			free(mesh_data.vertices);
-		}
-	}
-
-	for (uint32_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+static void init_star_system(struct vulkan_renderer *r, struct pshine_star_system *system) {
+	for (uint32_t i = 0; i < system->body_count; ++i) {
+		struct pshine_celestial_body *b = system->bodies_own[i];
 		PSHINE_DEBUG("creating graphics data for %s", b->name_own);
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
@@ -1154,6 +1102,64 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 				},
 			}, 0, nullptr);
 		}
+	}
+}
+
+void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *game) {
+	struct vulkan_renderer *r = (void*)renderer;
+	r->game = game;
+	r->as_base.name = "Vulkan Renderer";
+
+	r->key_states = calloc(PSHINE_KEY_COUNT_, sizeof(uint8_t));
+
+	r->lod_ranges[0] = 300'000.0;
+	r->lod_ranges[1] = 25'000.0;
+	r->lod_ranges[2] = 1'500.0;
+	r->lod_ranges[3] = 290.0;
+
+	r->opt_bloom = true;
+
+	init_glfw(r);
+	init_vulkan(r);
+	init_swapchain(r);
+	init_rpasses(r);
+	init_descriptors(r);
+	init_transients(r);
+	init_fbufs(r);
+	init_pipelines(r);
+	init_cmdbufs(r);
+	init_sync(r);
+	init_ubufs(r);
+	init_frames(r);
+	init_imgui(r);
+
+	{
+		VkPhysicalDeviceFeatures features = {};
+		vkGetPhysicalDeviceFeatures(r->physical_device, &features);
+		PSHINE_INFO("GPU 64 bit float support: %s", features.shaderFloat64 ? "true" : "false");
+		PSHINE_INFO("GPU 64 bit int support:   %s", features.shaderInt64 ? "true" : "false");
+	}
+
+	{
+		r->sphere_mesh_count = 5;
+		r->own_sphere_meshes = calloc(r->sphere_mesh_count, sizeof(struct vulkan_mesh));
+		for (size_t lod = 0; lod < r->sphere_mesh_count; ++lod) {
+			struct pshine_mesh_data mesh_data = {
+				.index_count = 0,
+				.indices = nullptr,
+				.vertex_count = 0,
+				.vertices = nullptr,
+				.vertex_type = PSHINE_VERTEX_PLANET
+			};
+			pshine_generate_planet_mesh(nullptr, &mesh_data, lod);
+			create_mesh(r, &mesh_data, &r->own_sphere_meshes[lod]);
+			free(mesh_data.indices);
+			free(mesh_data.vertices);
+		}
+	}
+
+	for (size_t i = 0; i < r->game->star_system_count; ++i) {
+		init_star_system(r, &r->game->star_systems_own[i]);
 	}
 
 	PSHINE_DEBUG("Loading environment cubemap");
@@ -3256,9 +3262,12 @@ void deinit_frame(struct vulkan_renderer *r, struct per_frame_data *f) {
 static void init_frames(struct vulkan_renderer *r) {
 	init_data(r);
 	size_t planet_count = 0;
-	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
-		planet_count += b->type == PSHINE_CELESTIAL_BODY_PLANET;
+	for (size_t i = 0; i < r->game->star_system_count; ++i) {
+		struct pshine_star_system *system = &r->game->star_systems_own[i];
+		for (size_t j = 0; j < system->body_count; ++j) {
+			struct pshine_celestial_body *b = system->bodies_own[j];
+			planet_count += b->type == PSHINE_CELESTIAL_BODY_PLANET;
+		}
 	}
 	for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
 		init_frame(r, i, &r->frames[i], planet_count);
@@ -3320,14 +3329,10 @@ static void deinit_imgui(struct vulkan_renderer *r) {
 	ImGui_DestroyContext(ImGui_GetCurrentContext());
 }
 
+static void deinit_star_system(struct vulkan_renderer *r, struct pshine_star_system *system) {
 
-void pshine_deinit_renderer(struct pshine_renderer *renderer) {
-	struct vulkan_renderer *r = (void*)renderer;
-	
-	vkDeviceWaitIdle(r->device);
-
-	for (uint32_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+	for (uint32_t i = 0; i < system->body_count; ++i) {
+		struct pshine_celestial_body *b = system->bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			deallocate_buffer(r, p->graphics_data->uniform_buffer);
@@ -3342,6 +3347,15 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 			deallocate_buffer(r, p->graphics_data->uniform_buffer);
 			free(p->graphics_data);
 		}
+	}
+}
+
+void pshine_deinit_renderer(struct pshine_renderer *renderer) {
+	struct vulkan_renderer *r = (void*)renderer;
+	
+	vkDeviceWaitIdle(r->device);
+	for (size_t i = 0; i < r->game->star_system_count; ++i) {
+		deinit_star_system(r, &r->game->star_systems_own[i]);
 	}
 
 	vkDestroySampler(r->device, r->skybox_sampler, nullptr);
@@ -3461,7 +3475,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
 		cam_y = float3norm(float3cross(cam_z, cam_x));
 		double3 cam_pos = camera_pos_scs;
-		double3 sun_pos = SCSd3_WCSp3(r->game->sun_position);
+		double3 sun_pos = double3v0();
 		struct global_uniform_data new_data = {
 			.camera = float4xyz3w(float3_double3(cam_pos), persp_info.znear),
 			.camera_right = float4xyz3w(cam_x, persp_info.plane.x),
@@ -3475,8 +3489,10 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		vmaUnmapMemory(r->allocator, r->data.global_uniform_buffer.allocation);
 	}
 
-	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+	struct pshine_star_system *current_system = &r->game->star_systems_own[r->game->current_star_system];
+
+	for (size_t i = 0; i < current_system->body_count; ++i) {
+		struct pshine_celestial_body *b = current_system->bodies_own[i];
 
 		// Upload static mesh data.
 		{
@@ -3542,7 +3558,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 			new_data.model_view = float4x4_double4x4(model_view_mat);
 			new_data.model = float4x4_double4x4(model_mat);
 
-			double3 sun_pos = SCSd3_WCSp3(r->game->sun_position);
+			double3 sun_pos = double3v0();
 			double3 body_pos = SCSd3_WCSp3(b->position);
 			new_data.sun = float4xyz3w(float3_double3(double3norm(double3sub(sun_pos, body_pos))), 1.0f);
 
@@ -3591,8 +3607,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		}
 	}
 
-	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+	for (size_t i = 0; i < current_system->body_count; ++i) {
+		struct pshine_celestial_body *b = current_system->bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void*)b;
 			
@@ -3615,7 +3631,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				double3 scs_cam = camera_pos_scs;
 				double3 scs_cam_scaled = double3div(scs_cam, scale_fact);
 
-				double3 sun_pos = SCSd3_WCSp3(r->game->sun_position);
+				double3 sun_pos = double3v0();
 				struct atmo_uniform_data new_data = {
 					.planet = float4xyz3w(
 						float3v(0.0f),
@@ -3722,8 +3738,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.mesh_pipeline);
 
-	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+	for (size_t i = 0; i < current_system->body_count; ++i) {
+		struct pshine_celestial_body *b = current_system->bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			vkCmdBindDescriptorSets(
@@ -3744,8 +3760,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.color_mesh_pipeline);
 
-	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+	for (size_t i = 0; i < current_system->body_count; ++i) {
+		struct pshine_celestial_body *b = current_system->bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
 			struct pshine_star *p = (void *)b;
 			render_celestial_body(r, b, f, current_frame, camera_pos_scs, p->graphics_data->descriptor_set);
@@ -3753,8 +3769,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 	}
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.rings_pipeline);
-	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+	for (size_t i = 0; i < current_system->body_count; ++i) {
+		struct pshine_celestial_body *b = current_system->bodies_own[i];
 		if (!b->rings.has_rings) continue;
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
@@ -3815,8 +3831,8 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		}
 	);
 
-	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+	for (size_t i = 0; i < current_system->body_count; ++i) {
+		struct pshine_celestial_body *b = current_system->bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			if (!p->has_atmosphere) continue;
@@ -4112,10 +4128,13 @@ static void show_utils_window(struct vulkan_renderer *r) {
 	if (ImGui_Begin("Utils", nullptr, 0)) {
 		ImGui_BeginDisabled(r->currently_recomputing_luts);
 		if (ImGui_Button("Recompute Atmo LUTs")) {
-			for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-				struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
-				if (b->type == PSHINE_CELESTIAL_BODY_PLANET)
-					compute_atmo_lut(r, (void*)b, false);
+			for (size_t i = 0; i < r->game->star_system_count; ++i) {
+				struct pshine_star_system *system = &r->game->star_systems_own[i];
+				for (size_t j = 0; j < system->body_count; ++j) {
+					struct pshine_celestial_body *b = system->bodies_own[j];
+					if (b->type == PSHINE_CELESTIAL_BODY_PLANET)
+						compute_atmo_lut(r, (void*)b, false);
+				}
 			}
 		}
 		ImGui_EndDisabled();
@@ -4226,8 +4245,10 @@ static void show_gizmos(struct vulkan_renderer *r) {
 		.znear = znear,
 	};
 
-	for (size_t i = 0; i < r->game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = r->game->celestial_bodies_own[i];
+	struct pshine_star_system *current_system = &r->game->star_systems_own[r->game->current_star_system];
+
+	for (size_t i = 0; i < current_system->body_count; ++i) {
+		struct pshine_celestial_body *b = current_system->bodies_own[i];
 
 		double3 body_pos_scs = SCSd3_WCSp3(b->position);
 		double3 parent_pos_scs = double3v0();

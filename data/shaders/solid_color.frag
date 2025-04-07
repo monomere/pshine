@@ -6,5 +6,5 @@
 layout (location = 0) out vec4 o_color;
 
 void main() {
-	o_color = vec4(vec3(100.0), 1.0);
+	o_color = vec4(vec3(0.8, 0.15, 0.1) * 50.0, 1.0);
 }

@@ -1,16 +1,6 @@
-planets = [
-	"data/celestial/earth.toml",
-	"data/celestial/mars.toml",
-	"data/celestial/moon.toml",
-	"data/celestial/sun.toml",
-	"data/celestial/mercury.toml",
-	"data/celestial/venus.toml",
-	"data/celestial/jupiter.toml",
-	"data/celestial/jupiter/io2.toml",
-	"data/celestial/jupiter/europa2.toml",
-	"data/celestial/jupiter/ganymede2.toml",
-	"data/celestial/jupiter/callisto2.toml",
-	"data/celestial/saturn.toml",
+systems = [
+	"data/KJ666_system.toml",
+	"data/solar_system.toml",
 ]
 
 [environment]

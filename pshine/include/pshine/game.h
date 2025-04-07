@@ -185,6 +185,8 @@ struct pshine_star {
 
 /// A star system. Owns all of its bodies.
 struct pshine_star_system {
+	char *name_own;
+
 	/// Cout of `bodies_own`.
 	size_t body_count;
 
@@ -260,19 +262,35 @@ struct pshine_graphics_settings {
 
 struct pshine_game {
 	struct pshine_game_data *data_own;
-	size_t celestial_body_count;
-	struct pshine_celestial_body **celestial_bodies_own;
+
+	/// Count of `star_systems_own`.
+	size_t star_system_count;
+
+	/// All of the star systems in the game.
+	struct pshine_star_system *star_systems_own;
+
+	/// The closest star system.
+	size_t current_star_system;
+
 	struct pshine_renderer *renderer;
+
 	pshine_point3d camera_position;
 	pshine_vector3d camera_forward;
+
 	struct pshine_graphics_settings graphics_settings;
+
 	float atmo_blend_factor;
-	pshine_vector3d sun_position;
+
+	/// Temporary for debugging.
 	float material_smoothness_;
+
 	float time_scale;
 	double time;
+
 	bool ui_dont_render_gizmos;
 	bool ui_dont_render_windows;
+
+	/// The skybox, etc.
 	struct pshine_environment_info environment;
 };
 

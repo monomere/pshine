@@ -1,0 +1,5 @@
+name = "KJ666"
+planets = [
+	"data/celestial/kj666/kj6.toml",
+	"data/celestial/kj666/kj61.toml",
+]

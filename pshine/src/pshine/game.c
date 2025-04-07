@@ -596,10 +596,49 @@ struct pshine_game_data {
 	bool is_control_precise;
 };
 
+static void load_star_system_config(struct pshine_game *game, struct pshine_star_system *out, const char *fpath) {
+	FILE *fin = fopen(fpath, "rb");
+	if (fin == nullptr) {
+		PSHINE_ERROR("Failed to open star system config file '%s': %s", fpath,
+			strerror(errno));
+		return;
+	}
+	char *errbuf = calloc(1024, 1);
+	toml_table_t *tab = toml_parse_file(fin, errbuf, 1024);
+	fclose(fin);
+	if (tab == nullptr) {
+		PSHINE_ERROR("Failed to parse star system config:\n%s", errbuf);
+		free(errbuf);
+		return;
+	}
+	toml_array_t *arr = toml_array_in(tab, "planets");
+	out->body_count = 0;
+	if (arr != nullptr) {
+		out->body_count = toml_array_nelem(arr);
+		out->bodies_own = calloc(out->body_count, sizeof(*out->bodies_own));
+		for (size_t i = 0; i < out->body_count; ++i) {
+			toml_datum_t body_fpath = toml_string_at(arr, i);
+			if (!body_fpath.ok) {
+				PSHINE_ERROR("star system config planets[%zu] isn't a string", i);
+				continue;
+			}
+			out->bodies_own[i] = load_celestial_body(body_fpath.u.s);
+			free(body_fpath.u.s);
+		}
+	}
+	toml_datum_t name = toml_string_in(tab, "name");
+	if (!name.ok) {
+		PSHINE_ERROR("star system config name isn't a string");
+		out->name_own = pshine_strdup("<config_error>");
+	} else {
+		out->name_own = name.u.s;
+	}
+}
+
 static void load_game_config(struct pshine_game *game, const char *fpath) {
 	FILE *fin = fopen(fpath, "rb");
 	if (fin == nullptr) {
-		PSHINE_ERROR("Failed to open game config file %s: %s", fpath,
+		PSHINE_ERROR("Failed to open game config file '%s': %s", fpath,
 			strerror(errno));
 		return;
 	}
@@ -611,18 +650,18 @@ static void load_game_config(struct pshine_game *game, const char *fpath) {
 		free(errbuf);
 		return;
 	}
-	toml_array_t *arr = toml_array_in(tab, "planets");
-	game->celestial_body_count = 0;
+	toml_array_t *arr = toml_array_in(tab, "systems");
+	game->star_system_count = 0;
 	if (arr != nullptr) {
-		game->celestial_body_count = toml_array_nelem(arr);
-		game->celestial_bodies_own = calloc(game->celestial_body_count, sizeof(struct pshine_celestial_body*));
-		for (size_t i = 0; i < game->celestial_body_count; ++i) {
+		game->star_system_count = toml_array_nelem(arr);
+		game->star_systems_own = calloc(game->star_system_count, sizeof(*game->star_systems_own));
+		for (size_t i = 0; i < game->star_system_count; ++i) {
 			toml_datum_t body_fpath = toml_string_at(arr, i);
 			if (!body_fpath.ok) {
-				PSHINE_ERROR("game config planets[%zu] isn't a string", i);
+				PSHINE_ERROR("game config systems[%zu] isn't a string", i);
 				continue;
 			}
-			game->celestial_bodies_own[i] = load_celestial_body(body_fpath.u.s);
+			load_star_system_config(game, &game->star_systems_own[i], body_fpath.u.s);
 			free(body_fpath.u.s);
 		}
 	}
@@ -647,6 +686,37 @@ static void load_game_config(struct pshine_game *game, const char *fpath) {
 
 static void init_imgui_style();
 
+static void init_star_system(struct pshine_game *game, struct pshine_star_system *system) {
+	for (size_t i = 0; i < system->body_count; ++i) {
+		const char *name = system->bodies_own[i]->tmp_parent_ref_name_own;
+		if (name == nullptr) continue;
+		for (size_t j = 0; j < system->body_count; ++j) {
+			if (strcmp(system->bodies_own[j]->name_own, name) == 0) {
+				system->bodies_own[i]->parent_ref = system->bodies_own[j];
+				PSHINE_DEBUG(
+					"Setting parent_ref of %s to %s",
+					system->bodies_own[i]->name_own,
+					name
+				);
+				break;
+			}
+		}
+		if (system->bodies_own[i]->parent_ref == nullptr) {
+			PSHINE_ERROR(
+				"No celestial body with name '%s' found (setting parent reference for %s)",
+				name,
+				system->bodies_own[i]->name_own
+			);
+		}
+	}
+
+	for (size_t i = 0; i < system->body_count; ++i) {
+		if (!system->bodies_own[i]->is_static) {
+			create_orbit_points(system->bodies_own[i], 1000);
+		}
+	}
+}
+
 void pshine_init_game(struct pshine_game *game) {
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
@@ -657,43 +727,23 @@ void pshine_init_game(struct pshine_game *game) {
 	// game->celestial_bodies_own[1] = load_celestial_body("data/celestial/sun.toml");
 	// game->celestial_bodies_own[0] = load_celestial_body("data/celestial/earth.toml");
 
-	for (size_t i = 0; i < game->celestial_body_count; ++i) {
-		const char *name = game->celestial_bodies_own[i]->tmp_parent_ref_name_own;
-		if (name == nullptr) continue;
-		for (size_t j = 0; j < game->celestial_body_count; ++j) {
-			if (strcmp(game->celestial_bodies_own[j]->name_own, name) == 0) {
-				game->celestial_bodies_own[i]->parent_ref = game->celestial_bodies_own[j];
-				PSHINE_DEBUG(
-					"Setting parent_ref of %s to %s",
-					game->celestial_bodies_own[i]->name_own,
-					name
-				);
-				break;
-			}
-		}
-		if (game->celestial_bodies_own[i]->parent_ref == nullptr) {
-			PSHINE_ERROR(
-				"No celestial body with name '%s' found (setting parent reference for %s)",
-				name,
-				game->celestial_bodies_own[i]->name_own
-			);
-		}
+	for (size_t i = 0; i < game->star_system_count; ++i) {
+		init_star_system(game, &game->star_systems_own[i]);
 	}
 
-	for (size_t i = 0; i < game->celestial_body_count; ++i) {
-		if (!game->celestial_bodies_own[i]->is_static) {
-			create_orbit_points(game->celestial_bodies_own[i], 1000);
-		}
-	}
-	
 	// game->celestial_bodies_own[1] = calloc(1, sizeof(struct pshine_star));
 	// init_star((void*)game->celestial_bodies_own[1]);
 	// game->celestial_bodies_own[0] = calloc(1, sizeof(struct pshine_planet));
 	// init_planet((void*)game->celestial_bodies_own[0], game->celestial_bodies_own[1], 6'371'000.0, double3v0());
 	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
 	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
+
+	if (game->star_system_count <= 0) {
+		PSHINE_PANIC("No star systems present, there's nothing to show; exiting.");
+	}
+	game->current_star_system = 0;
 	game->data_own->selected_body = 0;
-	game->data_own->camera_dist = game->celestial_bodies_own[0]->radius + 165'000'000.0;
+	game->data_own->camera_dist = game->star_systems_own[game->current_star_system].bodies_own[0]->radius + 165'000'000.0;
 	game->camera_position.xyz.z = -game->data_own->camera_dist;
 	game->data_own->camera_yaw = π/2;
 	game->data_own->camera_pitch = 0.0;
@@ -711,7 +761,6 @@ void pshine_init_game(struct pshine_game *game) {
 	game->graphics_settings.bloom_threshold = 7.0;
 	game->material_smoothness_ = 0.02;
 	game->data_own->is_control_precise = false;
-	*(double3*)game->sun_position.values = double3xyz(0, 0, 0);
 
 	eximgui_state_init(&game->data_own->eximgui_state);
 }
@@ -720,10 +769,9 @@ void pshine_post_init_game(struct pshine_game *game) {
 	init_imgui_style();
 }
 
-void pshine_deinit_game(struct pshine_game *game) {
-	eximgui_state_deinit(&game->data_own->eximgui_state);
-	for (size_t i = 0; i < game->celestial_body_count; ++i) {
-		struct pshine_celestial_body *b = game->celestial_bodies_own[i];
+static void deinit_star_system(struct pshine_game *game, struct pshine_star_system *system) {
+	for (size_t i = 0; i < system->body_count; ++i) {
+		struct pshine_celestial_body *b = system->bodies_own[i];
 		if (b == NULL) {
 			PSHINE_WARN("null celestial body");
 			continue;
@@ -744,7 +792,16 @@ void pshine_deinit_game(struct pshine_game *game) {
 #undef FREE_IF_NOTNULL
 		free(b);
 	}
-	free(game->celestial_bodies_own);
+	free(system->bodies_own);
+	free(system->name_own);
+}
+
+void pshine_deinit_game(struct pshine_game *game) {
+	eximgui_state_deinit(&game->data_own->eximgui_state);
+	for (size_t i = 0; i < game->star_system_count; ++i) {
+		deinit_star_system(game, &game->star_systems_own[i]);
+	}
+	free(game->star_systems_own);
 	free(game->data_own);
 }
 
@@ -887,7 +944,7 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 		-cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
 	), game->data_own->camera_dist);
 
-	double3 b_pos = double3vs(game->celestial_bodies_own[game->data_own->selected_body]->position.values);
+	double3 b_pos = double3vs(game->star_systems_own[game->current_star_system].bodies_own[game->data_own->selected_body]->position.values);
 	cam_pos = double3add(cam_pos, b_pos);
 	double3 cam_forward = double3norm(double3sub(b_pos, cam_pos));
 	// double3 cam_forward = double3xyz(-1.0f, 0.0f, 0.0f);
@@ -1227,10 +1284,16 @@ static bool eximgui_input_double3(const char *label, double *vs, double step, co
 	return res;
 }
 
-void pshine_update_game(struct pshine_game *game, float delta_time) {
-	game->time += delta_time * game->time_scale;
-	for (size_t i = 0; i < game->celestial_body_count; ++i) {
-		update_celestial_body(game, delta_time * game->time_scale, game->celestial_bodies_own[i]);
+static void update_star_system(struct pshine_game *game, struct pshine_star_system *system, float delta_time) {
+	for (size_t i = 0; i < system->body_count; ++i) {
+		update_celestial_body(game, delta_time, system->bodies_own[i]);
+	}
+}
+
+void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
+	game->time += actual_delta_time * game->time_scale;
+	for (size_t i = 0; i < game->star_system_count; ++i) {
+		update_star_system(game, &game->star_systems_own[i], actual_delta_time * game->time_scale);
 	}
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_P) && !game->data_own->last_key_states[PSHINE_KEY_P]) {
@@ -1252,9 +1315,9 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 
 	
 	switch (game->data_own->movement_mode) {
-		case MOVEMENT_ARC: update_camera_arc(game, delta_time); break;
-		case MOVEMENT_FLY: update_camera_fly(game, delta_time); break;
-		case MOVEMENT_WALK: update_camera_walk(game, delta_time); break;
+		case MOVEMENT_ARC: update_camera_arc(game, actual_delta_time); break;
+		case MOVEMENT_FLY: update_camera_fly(game, actual_delta_time); break;
+		case MOVEMENT_WALK: update_camera_walk(game, actual_delta_time); break;
 		default:
 			PSHINE_WARN("Unknown movement mode: %d, switching to fly", game->data_own->movement_mode);
 			game->data_own->movement_mode = MOVEMENT_FLY;
@@ -1269,23 +1332,36 @@ void pshine_update_game(struct pshine_game *game, float delta_time) {
 
 	if (!game->ui_dont_render_windows) {
 
-		if (ImGui_Begin("Material", NULL, 0)) {
+		if (ImGui_Begin("Material", nullptr, 0)) {
 			ImGui_DragFloat("Smoothness", &game->material_smoothness_);
 		}
 		ImGui_End();
 
+		if (ImGui_Begin("Star Systems", nullptr, 0)) {
+			for (size_t i = 0; i < game->star_system_count; ++i) {
+				bool selected = i == game->current_star_system;
+				if (ImGui_SelectableBoolPtr(game->star_systems_own[i].name_own, &selected, ImGuiSelectableFlags_None)) {
+					game->current_star_system = i;
+					if (game->star_systems_own[game->current_star_system].body_count <= game->data_own->selected_body) {
+						game->data_own->selected_body = game->star_systems_own[game->current_star_system].body_count;
+					}
+				}
+			}
+		}
+		ImGui_End();
+
+		struct pshine_star_system *current_system = &game->star_systems_own[game->current_star_system];
 		if (ImGui_Begin("Celestial Bodies", nullptr, 0)) {
-			// ImGui_BeginListBox("Celestial Bodies List, ImVec2 size)
-			for (size_t i = 0; i < game->celestial_body_count; ++i) {
+			for (size_t i = 0; i < current_system->body_count; ++i) {
 				bool selected = i == game->data_own->selected_body;
-				if (ImGui_SelectableBoolPtr(game->celestial_bodies_own[i]->name_own, &selected, ImGuiSelectableFlags_None)) {
+				if (ImGui_SelectableBoolPtr(current_system->bodies_own[i]->name_own, &selected, ImGuiSelectableFlags_None)) {
 					game->data_own->selected_body = i;
 				}
 			}
 		}
 		ImGui_End();
 
-		struct pshine_celestial_body *body = game->celestial_bodies_own[game->data_own->selected_body];
+		struct pshine_celestial_body *body = current_system->bodies_own[game->data_own->selected_body];
 
 		if (ImGui_Begin("Orbit", NULL, 0)) {
 			if (!body->is_static) {

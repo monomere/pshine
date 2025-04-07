@@ -1,0 +1,28 @@
+[planet]
+name = "KJ61"
+radius = 1_439_700.0
+parent = "KJ6"
+is_static = false
+mass = 0.035
+mu = 2.0e-4
+average_color = 0xccddfc
+gizmo_color = 0xccd6dc
+
+[rotation]
+speed = 0.4
+axis = [0.0, 1.0, 0.0]
+
+[orbit]
+argument = 0.90831
+eccentricity = 0.50563
+inclination = 0.41
+longitude = 2.34354
+semimajor = 47_910.0
+true_anomaly = 0.0
+
+[surface]
+albedo_texture_path = "data/textures/kj61_2x1k.png"
+lights_texture_path = "data/textures/1x1_black.png"
+bump_texture_path = "data/textures/1x1_black.png"
+spec_texture_path = "data/textures/1x1_black.png"
+
