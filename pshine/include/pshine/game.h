@@ -13,20 +13,40 @@ typedef union pshine_vector3d_ {
 	double values[3];
 } pshine_vector3d;
 
-// Scaled Coordinate Space Scale
-#define PSHINE_SCS_SCALE 6000.0
-// Scaled Coordinate Space Factor (`1.0 / PSHINE_SCS_SCALE`)
-#define PSHINE_SCS_FACTOR (1.0 / PSHINE_SCS_SCALE)
+/// eXtra Scaled Coordinate Space Scale (XCS -> SCS)
+static const double PSHINE_XCS_SCALE = 1048576.0;
 
-#define PSHINE_SPEED_OF_LIGHT 299'792'458.0
+/// eXtra Scaled Coordinate Space Factor (SCS -> XCS) (`1.0 / PSHINE_XCS_SCALE`)
+static const double PSHINE_XCS_FACTOR = (1.0 / PSHINE_XCS_SCALE);
 
-// 1:6000
+/// Scaled Coordinate Space Scale (SCS -> WCS)
+static const double PSHINE_SCS_SCALE = 8192.0;
+
+/// Scaled Coordinate Space Factor (WCS -> SCS) (`1.0 / PSHINE_SCS_SCALE`)
+static const double PSHINE_SCS_FACTOR = 1.0 / PSHINE_SCS_SCALE;
+
+/// eXtra Scaled Coordinate Space Factor (WCS -> XCS) (`PSHINE_XCS_FACTOR * PSHINE_SCS_FACTOR`)
+static const double PSHINE_XCS_WCS_FACTOR = PSHINE_XCS_FACTOR * PSHINE_SCS_FACTOR;
+
+/// eXtra Scaled Coordinate Space Scale (XCS -> SCS)
+static const double PSHINE_XCS_WCS_SCALE = PSHINE_XCS_SCALE * PSHINE_SCS_SCALE;
+
+/// in m/s
+static const double PSHINE_SPEED_OF_LIGHT = 299'792'458.0;
+
+/// ~1:8000000000 (see `PSHINE_XCS_SCALE`)
+typedef union pshine_point3d_xscaled_ {
+	struct { double x, y, z; } xyz;
+	double values[3];
+} pshine_point3d_xscaled;
+
+/// ~1:8000 (see `PSHINE_SCS_SCALE`)
 typedef union pshine_point3d_scaled_ {
 	struct { double x, y, z; } xyz;
 	double values[3];
 } pshine_point3d_scaled;
 
-// 1:1
+/// 1:1
 typedef union pshine_point3d_world_ {
 	struct { double x, y, z; } xyz;
 	double values[3];
@@ -149,6 +169,7 @@ struct pshine_atmosphere_info {
 struct pshine_planet_graphics_data;
 struct pshine_star_graphics_data;
 
+/// A planet celestial body.
 struct pshine_planet {
 	struct pshine_celestial_body as_body;
 	bool has_atmosphere;
@@ -156,9 +177,22 @@ struct pshine_planet {
 	struct pshine_planet_graphics_data *graphics_data;
 };
 
+/// A star celestial body.
 struct pshine_star {
 	struct pshine_celestial_body as_body;
 	struct pshine_star_graphics_data *graphics_data;
+};
+
+/// A star system. Owns all of its bodies.
+struct pshine_star_system {
+	/// Cout of `bodies_own`.
+	size_t body_count;
+
+	/// The celestial bodies of this star system. `[0]` is the star.
+	struct pshine_celestial_body **bodies_own;
+
+	/// Offset from the origin of the galaxy. In XCS.
+	pshine_point3d_xscaled origin_offset;
 };
 
 typedef struct { int32_t x; } pshine_snorm32;
