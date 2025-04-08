@@ -244,7 +244,7 @@ impl Surfgen for KJ621 {
 							.set_attenuation(0.64)))
 			),
 			make_noise_scale(0.0, 0.3, 1.0,
-				make_displacement(382, 0.01, 50.0,
+				make_displacement(382, 0.003, 50.0,
 					tom_bombardil(1024, &BombardmentConfig {
 						radius_bias: 5.2,
 						radius_range: 0.01..=0.9,
@@ -278,7 +278,8 @@ fn main() {
 		noise_image.size().0 as _,
 		noise_image.size().1 as _,
 	);
-	let out = std::fs::File::create("output.png").unwrap();
+	let out = std::fs::File::create(std::env::args().nth(1)
+		.expect("expected an output path")).unwrap();
 	let mut wr = std::io::BufWriter::new(out);
 	for (i, v) in noise_image.iter().enumerate() {
 		buf.as_flat_samples_mut().as_mut_slice()
