@@ -1,5 +1,6 @@
 #![allow(mixed_script_confusables)]
 #![feature(slice_as_chunks)]
+#![allow(unused)]
 
 use core::f64;
 use noise::{utils::NoiseMapBuilder as _, MultiFractal};
@@ -26,7 +27,7 @@ impl Crater {
 	fn get(&self, d: f64) -> f64 {
 		let bowl = 4.0 * d * d - 1.0;
 		let edge = (d - 1.0) * (d - 1.0);
-		let floor = -0.5;
+		let floor = self.floor_height;
 		smin(smin(bowl, edge, 0.5), floor, -0.3)
 	}
 }
@@ -76,7 +77,6 @@ fn make_const_displacement(
 		noise::Constant::new(0.0))
 }
 
-
 fn make_displacement(
 	seed: u32,
 	strength: f64,
@@ -107,24 +107,44 @@ fn lat_lon_to_xyz(lat: f64, lon: f64) -> Vec3f64 {
 	Vec3f64 { x, y, z }
 }
 
+struct BombardmentConfig {
+	radius_range: std::ops::RangeInclusive<f64>,
+	radius_bias: f64,
+	lat_bias: f64,
+	lat_clearance: f64,
+	depth_range: std::ops::RangeInclusive<f64>,
+}
+
+impl Default for BombardmentConfig {
+	fn default() -> Self {
+		Self {
+			radius_range: 0.02..=0.95,
+			radius_bias: 2.3,
+			lat_bias: 1.7,
+			lat_clearance: 0.05, 
+			depth_range: 0.05..=0.8,
+		}
+	}
+}
 
 fn tom_bombardil(
 	crater_count: usize,
-	radius_range: std::ops::RangeInclusive<f64>,
-	radius_bias: f64,
+	config: &BombardmentConfig,
 	rng: &mut impl rand::Rng,
 ) -> impl noise::NoiseFn<f64, 3> {
 	let mut craters = vec![];
 	craters.reserve(crater_count);
 	for _ in 0..crater_count {
-		let lat = rng.random_range(-π/2.0..π/2.0);
+		let lat: f64 = rng.random_range(-1.0..1.0);
+		let lat = lat.abs().powf(config.lat_bias) * lat.signum()
+			* (1.0 - config.lat_clearance) * π/2.0;
 		let lon = rng.random_range(-π..π);
 		let pos = lat_lon_to_xyz(lat, lon);
 		craters.push(Crater {
 			pos,
-			radius: rng.random_range(radius_range.clone())
-				.powf(radius_bias),
-			floor_height: -0.1,
+			radius: rng.random_range(config.radius_range.clone())
+				.powf(config.radius_bias),
+			floor_height: -rng.random_range(config.depth_range.clone()),
 		});
 	}
 	Craters { craters }
@@ -146,7 +166,11 @@ impl Surfgen for KJ61 {
 						noise::Fbm::<noise::Perlin>::new(123123123)))
 					.set_exponent(3.0)),
 			make_noise_scale(0.0, 0.5, 1.0, tom_bombardil(
-				512, 0.05..=0.5, 3.2, &mut rng))
+				512, &BombardmentConfig {
+					radius_bias: 3.2,
+					radius_range: 0.05..=0.5,
+					..Default::default()
+				}, &mut rng))
 		)
 	}
 
@@ -181,7 +205,11 @@ impl Surfgen for KJ62 {
 							.set_attenuation(0.54)))
 			),
 			make_noise_scale(0.0, 0.2, 1.0,
-				tom_bombardil(256, 0.1..=0.7, 3.2, &mut rng))
+				tom_bombardil(256, &BombardmentConfig {
+					radius_bias: 3.2,
+					radius_range: 0.1..=0.7,
+					..Default::default()
+				}, &mut rng))
 		)
 	}
 
@@ -217,7 +245,11 @@ impl Surfgen for KJ621 {
 			),
 			make_noise_scale(0.0, 0.3, 1.0,
 				make_displacement(382, 0.01, 50.0,
-					tom_bombardil(1024, 0.05..=0.9, 5.2, &mut rng)))
+					tom_bombardil(1024, &BombardmentConfig {
+						radius_bias: 5.2,
+						radius_range: 0.01..=0.9,
+						..Default::default()
+					}, &mut rng)))
 		)
 	}
 
