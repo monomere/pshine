@@ -85,16 +85,16 @@ fn make_displacement(
 ) -> impl noise::NoiseFn<f64, 3> {
 	noise::Displace::new(base,
 		make_noise_scale(
-			0.0, freq, strength,
+			0.0, strength, freq,
 			noise::Perlin::new(seed.wrapping_mul(69))),
 		make_noise_scale(
-			0.0, freq, strength,
+			0.0, strength, freq,
 			noise::Perlin::new(seed.wrapping_mul(123))),
 		make_noise_scale(
-			0.0, freq, strength,
+			0.0, strength, freq,
 			noise::Perlin::new(seed.wrapping_mul(231))),
 		make_noise_scale(
-			0.0, freq, strength,
+			0.0, strength, freq,
 			noise::Perlin::new(seed.wrapping_mul(321))))
 }
 
@@ -111,6 +111,7 @@ fn lat_lon_to_xyz(lat: f64, lon: f64) -> Vec3f64 {
 fn tom_bombardil(
 	crater_count: usize,
 	radius_range: std::ops::RangeInclusive<f64>,
+	radius_bias: f64,
 	rng: &mut impl rand::Rng,
 ) -> impl noise::NoiseFn<f64, 3> {
 	let mut craters = vec![];
@@ -121,7 +122,8 @@ fn tom_bombardil(
 		let pos = lat_lon_to_xyz(lat, lon);
 		craters.push(Crater {
 			pos,
-			radius: rng.random_range(radius_range.clone()).powf(3.4),
+			radius: rng.random_range(radius_range.clone())
+				.powf(radius_bias),
 			floor_height: -0.1,
 		});
 	}
@@ -138,13 +140,13 @@ impl Surfgen for KJ61 {
 	fn noise() -> impl noise::NoiseFn<f64, 3> {
 		let mut rng = rand_chacha::ChaCha12Rng::from_seed([37; 32]);
 		noise::Add::new(
-			make_displacement(123123123, 0.01, 20.0,
+			make_displacement(123123123, 20.0, 0.01,
 				noise::Exponent::new(
 					make_noise_scale(0.5, 0.5, 2.0,
 						noise::Fbm::<noise::Perlin>::new(123123123)))
 					.set_exponent(3.0)),
 			make_noise_scale(0.0, 0.5, 1.0, tom_bombardil(
-				512, 0.05..=0.5, &mut rng))
+				512, 0.05..=0.5, 3.2, &mut rng))
 		)
 	}
 
@@ -163,7 +165,7 @@ impl Surfgen for KJ62 {
 		let mut rng = rand_chacha::ChaCha12Rng::from_seed([87; 32]);
 		noise::Add::new(
 			noise::Add::new(
-				make_displacement(54987, 0.01, 20.0,
+				make_displacement(54987, 20.0, 0.01,
 					noise::Exponent::new(
 						make_noise_scale(0.5, 0.5, 1.0,
 							noise::Fbm::<noise::Perlin>::new(829481)
@@ -172,14 +174,14 @@ impl Surfgen for KJ62 {
 								.set_octaves(6)))
 						.set_exponent(3.0)),
 				make_noise_scale(0.0, 0.5, 1.0,
-					make_displacement(482729, 0.02, 10.0,
+					make_displacement(482729, 10.0, 0.02,
 						noise::RidgedMulti::<noise::OpenSimplex>::new(382721)
 							.set_frequency(1.2)
 							.set_lacunarity(1.29)
 							.set_attenuation(0.54)))
 			),
 			make_noise_scale(0.0, 0.2, 1.0,
-				tom_bombardil(256, 0.1..=0.7, &mut rng))
+				tom_bombardil(256, 0.1..=0.7, 3.2, &mut rng))
 		)
 	}
 
@@ -196,23 +198,26 @@ impl Surfgen for KJ621 {
 		let mut rng = rand_chacha::ChaCha12Rng::from_seed([32; 32]);
 		noise::Add::new(
 			noise::Add::new(
-				make_displacement(2, 0.01, 20.0,
+				make_displacement(2, 20.0, 0.01,
 					noise::Exponent::new(
 						make_noise_scale(0.5, 0.5, 1.0,
-							noise::Fbm::<noise::Perlin>::new(93821)
+							noise::Fbm::<noise::Perlin>::new(2232)
 								.set_frequency(0.9)
-								.set_lacunarity(1.6)
-								.set_octaves(5)))
+								.set_lacunarity(1.8)
+								.set_persistence(0.8)
+								.set_octaves(10)))
 						.set_exponent(2.0)),
 				make_noise_scale(0.0, 0.5, 1.0,
-					make_displacement(4312, 0.02, 10.0,
+					make_displacement(4312, 10.0, 0.02,
 						noise::RidgedMulti::<noise::OpenSimplex>::new(5442)
 							.set_frequency(1.0)
 							.set_lacunarity(1.49)
+							.set_persistence(0.5)
 							.set_attenuation(0.64)))
 			),
-			make_noise_scale(0.0, 0.2, 1.0,
-				tom_bombardil(512, 0.05..=0.9, &mut rng))
+			make_noise_scale(0.0, 0.3, 1.0,
+				make_displacement(382, 0.01, 50.0,
+					tom_bombardil(1024, 0.05..=0.9, 5.2, &mut rng)))
 		)
 	}
 
