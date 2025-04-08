@@ -1559,7 +1559,19 @@ static void init_vulkan(struct vulkan_renderer *r) {
 			};
 		}
 
-		PSHINE_INFO("have_portabiliy_ext: %d", have_portability_ext);
+		bool have_portability_ext = false;
+		{
+			uint32_t count = 0;
+			CHECKVK(vkEnumerateDeviceExtensionProperties(r->physical_device, nullptr, &count, nullptr));
+			VkExtensionProperties properties[count];
+			CHECKVK(vkEnumerateDeviceExtensionProperties(r->physical_device, nullptr, &count, properties));
+			for (uint32_t i = 0; i < count; ++i) {
+				if (strcmp(properties[i].extensionName, "VK_KHR_portability_subset") == 0) {
+					have_portability_ext = true;
+					break;
+				}
+			}
+		}
 		// TODO: Check if device actually supports VK_KHR_portability_subset!
 
 		CHECKVK(vkCreateDevice(r->physical_device, &(VkDeviceCreateInfo){
@@ -1582,8 +1594,6 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	}
 
 	volkLoadDevice(r->device);
-
-	
 
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_GRAPHICS], 0, &r->queues[QUEUE_GRAPHICS]);
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_PRESENT], 0, &r->queues[QUEUE_PRESENT]);
@@ -1638,14 +1648,20 @@ static VkSurfaceFormatKHR find_surface_format(struct vulkan_renderer *r) {
 	VkSurfaceFormatKHR found_format;
 	bool found = false;
 	for (uint32_t i = 0; i < format_count; ++i) {
+		PSHINE_INFO("format: %s", pshine_vk_format_string(formats[i].format));
+		PSHINE_INFO("color space: %s", pshine_vk_color_space_string(formats[i].colorSpace));
 		if (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-			if (formats[i].format == VK_FORMAT_B8G8R8A8_SRGB) {
+			if (formats[i].format == VK_FORMAT_B8G8R8A8_SRGB || formats[i].format == VK_FORMAT_B8G8R8A8_UNORM) {
+				found_format = formats[i];
+				found = true;
+			} else if (formats[i].format == VK_FORMAT_R8G8B8A8_SRGB || formats[i].format == VK_FORMAT_B8G8R8A8_UNORM) {
 				found_format = formats[i];
 				found = true;
 			}
 		}
 	}
-	PSHINE_CHECK(found, "did not find good surface format");
+	if (!found) PSHINE_PANIC("did not find good surface format, checked %u formats.", format_count);
+
 	return found_format;
 }
 
@@ -3897,11 +3913,16 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
 			struct vulkan_image *dst_image = &r->transients.bloom[i];
+
 			vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_layout,
-				0, 1, &r->data.downsample_bloom_descriptor_sets[i], 0, nullptr);
+				0, 1, &r->data.downsample_bloom_descriptor_sets[i], 0, nullptr
+			);
+
 			vkCmdPushConstants(f->command_buffer, r->pipelines.downsample_bloom_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
-				0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
-			vkCmdDispatch(f->command_buffer, 128, 128, 1);
+				0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings
+			);
+
+				vkCmdDispatch(f->command_buffer, 128, 128, 1);
 
 			if (i == 1) vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_pipeline);
 

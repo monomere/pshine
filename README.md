@@ -133,6 +133,12 @@ ninja
 
 > requirements: vulkan ≥1.2 (i don't really know which version tho uhh)
 
+**MacOS and MoltenVK:** If you installed MoltenVK and Vulkan through Homebrew,
+add `VK_ICD_FILENAMES=/opt/homebrew/opt/vulkan-tools/lib/mock_icd/VkICD_mock_icd.json`
+and `VK_LAYER_PATH=/opt/homebrew/opt/vulkan-validationlayers/share/vulkan/explicit_layer.d`
+to your environment.
+
+
 ```bash
 build/pshine/main
 ```
