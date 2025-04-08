@@ -75,7 +75,7 @@ void main() {
 	vec2 uv = (vec2(opos) + vec2(0.5)) / vec2(ores);
 	if (is_first_downsample) {
 		vec3 src = sample_13_tap(uv);
-		vec3 src_thresh = quadratic_color_threshold(src, u_consts.bloom_threshold, u_consts.bloom_knee);
+		vec3 src_thresh = quadratic_color_threshold(src, 7.0, 7.0);
 		imageStore(o_tex, opos, vec4(src_thresh, 1.0));
 	} else {
 		vec3 src = sample_3x3_tent(uv);

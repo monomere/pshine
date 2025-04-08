@@ -1,0 +1,28 @@
+[planet]
+name = "KJ621"
+radius = 737_400.0
+parent = "KJ62"
+is_static = false
+mass = 0.0023
+mu = 2.0e-9
+average_color = 0xefefef
+gizmo_color = 0xefefef
+
+[rotation]
+speed = 0.0
+axis = [0.0, 1.0, 0.0]
+
+[orbit]
+argument = 0.0
+eccentricity = 0.09
+inclination = -0.1
+longitude = 1.7
+semimajor = 284.399
+true_anomaly = 0.0
+
+[surface]
+albedo_texture_path = "data/textures/kj621_2x1k.png"
+lights_texture_path = "data/textures/1x1_black.png"
+bump_texture_path = "data/textures/1x1_black.png"
+spec_texture_path = "data/textures/1x1_black.png"
+

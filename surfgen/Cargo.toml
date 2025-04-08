@@ -7,6 +7,8 @@ edition = "2021"
 image = "0.25.6"
 noise = { version = "0.9.0", features = ["image"] }
 num-traits = "0.2.19"
+rand = "0.9.0"
+rand_chacha = "0.9.0"
 vek = { version = "0.17.1", features = ["image"] }
 
 [profile.dev]
