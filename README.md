@@ -2,6 +2,8 @@
 
 <img align="right" src="data/screenshots/atmo-2025-04-06.png" width="50%" />
 
+> Note: take a look at the other branches! :o)
+
 Atmosphere and meshing playground. WIP.
 
 **TODO:**
