@@ -195,13 +195,15 @@ impl Surfgen for KJ62 {
 							noise::Fbm::<noise::Perlin>::new(829481)
 								.set_frequency(0.5)
 								.set_lacunarity(1.0)
+								.set_persistence(0.8)
 								.set_octaves(6)))
 						.set_exponent(3.0)),
 				make_noise_scale(0.0, 0.5, 1.0,
 					make_displacement(482729, 10.0, 0.02,
 						noise::RidgedMulti::<noise::OpenSimplex>::new(382721)
 							.set_frequency(1.2)
-							.set_lacunarity(1.29)
+							.set_lacunarity(2.29)
+							.set_persistence(0.5)
 							.set_attenuation(0.54)))
 			),
 			make_noise_scale(0.0, 0.2, 1.0,
@@ -262,7 +264,7 @@ impl Surfgen for KJ621 {
 }
 
 fn main() {
-	type S = KJ621;
+	type S = KJ62;
 	let final_noise = S::noise();
 
 	let noise_map = noise::utils::SphereMapBuilder::new(final_noise)
