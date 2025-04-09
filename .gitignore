@@ -17,12 +17,20 @@ build
 include/vk_mem_alloc.h
 include/volk.h
 
-# logs
+# Logs
 **/*.log
 
-# temporary stuff, etc.
+# Temporary stuff, etc.
 .local
 
+# MacOS
 **/.DS_Store
 
+# Sometimes I'm lazy.
 nohup.out
+
+# XCode Debug Schemes for MoltenVK debugging.
+*.xcscheme
+
+# This is in the source tree, but writes are ignored.
+ninja/set-platform.ninja

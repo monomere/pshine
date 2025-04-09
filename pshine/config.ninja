@@ -19,5 +19,10 @@ libs_glfw = -lglfw
 libs_cpptrace = -lcpptrace
 libs_cpptrace =
 
-libs = $libs_cpptrace $libs_glfw $libs_math -Wl,-rpath,/opt/homebrew/lib
-# -Lbuild/giraffe -lgiraffe 
+libs_vulkan = -lvulkan
+
+include $mod/config.$platform.ninja
+
+osapi = unix
+
+libs = $libs_cpptrace $libs_glfw $libs_math $libs_vulkan -Wl,-rpath,/opt/homebrew/lib

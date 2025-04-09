@@ -1,5 +1,5 @@
 include ninja/build.llvm.ninja
-platform = unix
+include ninja/set-platform.ninja
 
 ld = $cxx $cxxstdlib $cxxld
 

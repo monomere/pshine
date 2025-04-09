@@ -1287,7 +1287,7 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 				.baseMipLevel = 0,
 				.layerCount = 1,
 				.levelCount = 1,
-			}
+			},
 		}
 	);
 	CHECKVK(vkEndCommandBuffer(cmdbuf));
@@ -1337,7 +1337,7 @@ static void init_atmo_lut_compute(struct vulkan_renderer *r, struct pshine_plane
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
 			.extent = (VkExtent3D){ .width = atmo_lut_extent.width, .height = atmo_lut_extent.height, .depth = 1 },
 			.format = atmo_lut_format,
-			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT
+			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -1391,7 +1391,7 @@ static void key_cb_glfw_(GLFWwindow *window, int key, int scancode, int action, 
 static void init_glfw(struct vulkan_renderer *r) {
 	glfwInitVulkanLoader(vkGetInstanceProcAddr);
 	PSHINE_DEBUG("GLFW version: %s", glfwGetVersionString());
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if !defined(_WIN32) && !defined(__MINGW32__) && !defined(__APPLE__)
 	if (pshine_check_has_option("-x11"))
 		glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
 	else
@@ -1429,6 +1429,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	const char **extensions_glfw = glfwGetRequiredInstanceExtensions(&extension_count_glfw);
 
 	bool have_portability_ext = false;
+#if defined(__APPLE__)
 	{
 		uint32_t count = 0;
 		CHECKVK(vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr));
@@ -1441,34 +1442,40 @@ static void init_vulkan(struct vulkan_renderer *r) {
 			}
 		}
 	}
-
-#if defined(__linux__) || defined(__MINGW32__)
-		have_portability_ext = false;
 #endif
 
 	uint32_t ext_count = extension_count_glfw + 1 + have_portability_ext;
 	const char **extensions = calloc(ext_count, sizeof(const char *));
 	memcpy(extensions, extensions_glfw, sizeof(const char *) * extension_count_glfw);
 	extensions[extension_count_glfw + 0] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-	// extensions[extension_count_glfw + 1] = VK_EXT_DEBUG_REPORT_EXTENSION_NAME;
 	if (have_portability_ext)
 		extensions[extension_count_glfw + 1] = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
 
-	bool have_validation = true;
-#ifdef __MINGW32__
-	have_validation = false;
-#endif
+	bool have_validation = false;
+	
+	{
+		uint32_t count = 0;
+		CHECKVK(vkEnumerateInstanceLayerProperties(&count, nullptr));
+		VkLayerProperties props[count];
+		CHECKVK(vkEnumerateInstanceLayerProperties(&count, props));
+		for (uint32_t i = 0; i < count; ++i) {
+			if (strcmp(props[i].layerName, "VK_LAYER_KHRONOS_validation") == 0) {
+				have_validation = true;
+				break;
+			}
+		}
+	}
 
 	CHECKVK(vkCreateInstance(&(VkInstanceCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 		.flags = have_portability_ext ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR : 0,
 		.pApplicationInfo = &(VkApplicationInfo){
 			.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-			.apiVersion = VK_MAKE_API_VERSION(0, 1, 2, 0),
+			.apiVersion = VK_MAKE_API_VERSION(0, 1, 4, 0),
 			.pApplicationName = "planetshine",
-			.applicationVersion = VK_MAKE_VERSION(0, 1, 0),
+			.applicationVersion = VK_MAKE_VERSION(0, 2, 0),
 			.pEngineName = "planetshine-engine",
-			.engineVersion = VK_MAKE_VERSION(0, 2, 0)
+			.engineVersion = VK_MAKE_VERSION(0, 3, 0)
 		},
 		.enabledExtensionCount = ext_count,
 		.ppEnabledExtensionNames = extensions,
@@ -1519,6 +1526,10 @@ static void init_vulkan(struct vulkan_renderer *r) {
 
 		r->physical_device_properties_own = calloc(1, sizeof(*r->physical_device_properties_own));
 		r->physical_device_properties_own->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		VkPhysicalDeviceMaintenance3Properties *p3 = calloc(1, sizeof(*p3));
+		p3->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES;
+		r->physical_device_properties_own->pNext = p3;
+
 		vkGetPhysicalDeviceProperties2(r->physical_device, r->physical_device_properties_own);
 
 		r->physical_device_features_own = calloc(1, sizeof(*r->physical_device_features_own));
@@ -1565,8 +1576,19 @@ static void init_vulkan(struct vulkan_renderer *r) {
 			};
 		}
 
-		PSHINE_INFO("have_portabiliy_ext: %d", have_portability_ext);
-		// TODO: Check if device actually supports VK_KHR_portability_subset!
+		bool have_portability_ext = false;
+		{
+			uint32_t count = 0;
+			CHECKVK(vkEnumerateDeviceExtensionProperties(r->physical_device, nullptr, &count, nullptr));
+			VkExtensionProperties properties[count];
+			CHECKVK(vkEnumerateDeviceExtensionProperties(r->physical_device, nullptr, &count, properties));
+			for (uint32_t i = 0; i < count; ++i) {
+				if (strcmp(properties[i].extensionName, "VK_KHR_portability_subset") == 0) {
+					have_portability_ext = true;
+					break;
+				}
+			}
+		}
 
 		CHECKVK(vkCreateDevice(r->physical_device, &(VkDeviceCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -1588,8 +1610,9 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	}
 
 	volkLoadDevice(r->device);
-
 	
+	// Sneaky
+	vkCmdPipelineBarrier2 = vkCmdPipelineBarrier2KHR;
 
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_GRAPHICS], 0, &r->queues[QUEUE_GRAPHICS]);
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_PRESENT], 0, &r->queues[QUEUE_PRESENT]);
@@ -1644,14 +1667,20 @@ static VkSurfaceFormatKHR find_surface_format(struct vulkan_renderer *r) {
 	VkSurfaceFormatKHR found_format;
 	bool found = false;
 	for (uint32_t i = 0; i < format_count; ++i) {
+		PSHINE_INFO("format: %s", pshine_vk_format_string(formats[i].format));
+		PSHINE_INFO("color space: %s", pshine_vk_color_space_string(formats[i].colorSpace));
 		if (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
 			if (formats[i].format == VK_FORMAT_B8G8R8A8_SRGB) {
+				found_format = formats[i];
+				found = true;
+			} else if (formats[i].format == VK_FORMAT_R8G8B8A8_SRGB) {
 				found_format = formats[i];
 				found = true;
 			}
 		}
 	}
-	PSHINE_CHECK(found, "did not find good surface format");
+	if (!found) PSHINE_PANIC("did not find good surface format, checked %u formats.", format_count);
+
 	return found_format;
 }
 
@@ -2602,7 +2631,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 				(VkPushConstantRange){
 					.offset = 0,
 					.size = sizeof(struct pshine_graphics_settings),
-					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+					.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
 				},
 			},
 		}, nullptr, &r->pipelines.upsample_bloom_layout);
@@ -2633,7 +2662,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 				(VkPushConstantRange){
 					.offset = 0,
 					.size = sizeof(struct pshine_graphics_settings),
-					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+					.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
 				},
 			},
 		}, nullptr, &r->pipelines.downsample_bloom_layout);
@@ -3709,7 +3738,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
 			};
 		}
-		vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+		vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 			.dependencyFlags = 0,
 			.imageMemoryBarrierCount = BLOOM_STAGE_COUNT,
@@ -3848,7 +3877,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				}
 			);
 			vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
-			vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+			vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 				.imageMemoryBarrierCount = 1,
@@ -3882,7 +3911,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 
 	// Bloom
 	{
-		vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+		vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 			.imageMemoryBarrierCount = 1,
 			.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
@@ -3913,18 +3942,23 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
 			struct vulkan_image *dst_image = &r->transients.bloom[i];
+
 			vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_layout,
-				0, 1, &r->data.downsample_bloom_descriptor_sets[i], 0, nullptr);
-			vkCmdPushConstants(f->command_buffer, r->pipelines.downsample_bloom_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
-				0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
-			vkCmdDispatch(f->command_buffer, 128, 128, 1);
+				0, 1, &r->data.downsample_bloom_descriptor_sets[i], 0, nullptr
+			);
+
+			vkCmdPushConstants(f->command_buffer, r->pipelines.downsample_bloom_layout, VK_SHADER_STAGE_COMPUTE_BIT,
+				0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings
+			);
+
+				vkCmdDispatch(f->command_buffer, 128, 128, 1);
 
 			if (i == 1) vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_pipeline);
 
 			// now we need to transition the image from general to read-only-optimal so that the next compute shader invocation
 			// can read from it. this isn't *necessary*, and might even have worse performance (TODO benchmark!) but it's better
 			// to do it anyway, so that stuff is correct.
-			vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+			vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.imageMemoryBarrierCount = 2,
 				.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
@@ -3982,13 +4016,13 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_bloom_layout, 0,
 				1, (VkDescriptorSet[]){ ds }, 0, nullptr
 			);
-			vkCmdPushConstants(f->command_buffer, r->pipelines.upsample_bloom_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+			vkCmdPushConstants(f->command_buffer, r->pipelines.upsample_bloom_layout, VK_SHADER_STAGE_COMPUTE_BIT,
 				0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
 			vkCmdDispatch(f->command_buffer, 128, 128, 1);
 			// we do a similar transition to the downsampling stage stuff. the last image (transient-color0) is read by
 			// the loadOp=LOAD in the next renderpass, so we make sure the barrier is correct that way.
 			// we might also want to transition the images back to something else for the next frame.
-			if (is_last) vkCmdPipelineBarrier2KHR(f->command_buffer, &(VkDependencyInfo){
+			if (is_last) vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.imageMemoryBarrierCount = 1,
 				.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
