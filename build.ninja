@@ -1,4 +1,8 @@
 include ninja/build.llvm.ninja
+
+# Don't forget to run setup.sh
+# Or edit it yourself, the valid values are:
+# macos, msys, linux, ... (see setup.sh)
 include ninja/set-platform.ninja
 
 ld = $cxx $cxxstdlib $cxxld
