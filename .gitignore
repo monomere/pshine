@@ -32,5 +32,5 @@ nohup.out
 # XCode Debug Schemes for MoltenVK debugging.
 *.xcscheme
 
-# This is in the source tree, but writes are ignored.
+# This is in the source tree, but writes are ignored???
 ninja/set-platform.ninja
