@@ -152,13 +152,13 @@ khronos_validation.validate_gpu_based = GPU_BASED_NONE
 # =====================
 # <LayerIdentifier>.gpuav_descriptor_checks
 # Enable descriptor and buffer out of bounds checking
-#khronos_validation.gpuav_descriptor_checks = true
+khronos_validation.gpuav_descriptor_checks = false
 
 # Generate warning on out of bounds accesses even if buffer robustness is enabled
 # =====================
 # <LayerIdentifier>.warn_on_robust_oob
 # Warn on out of bounds accesses even if robustness is enabled
-khronos_validation.gpuav_warn_on_robust_oob = true
+khronos_validation.gpuav_warn_on_robust_oob = false
 
 # Check Draw/Dispatch/TraceRays Indirect buffers
 # =====================

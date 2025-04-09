@@ -1,0 +1,2 @@
+libs_vulkan = -lvulkan
+libs_glfw = -lglfw3

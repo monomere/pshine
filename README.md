@@ -113,6 +113,9 @@ python vendor/dear_bindings/dear_bindings.py \
   vendor/imgui/backends/imgui_impl_glfw.h
 ```
 
+### Setting the Ninja platform variables
+
+
 ## Building
 
 > requirements: ninja modern gcc-compatible c/c++ compiler, glfw, python (optional), cpptrace/ctrace (temporarily a system dependency)
@@ -134,6 +137,11 @@ ninja
 ## Running
 
 > requirements: vulkan ≥1.2 (i don't really know which version tho uhh)
+
+**MacOS and MoltenVK:** If you installed MoltenVK and Vulkan through Homebrew,
+add `VK_LAYER_PATH=/opt/homebrew/opt/vulkan-validationlayers/share/vulkan/explicit_layer.d`
+to your environment (or maybe not idk).
+
 
 ```bash
 build/pshine/main
