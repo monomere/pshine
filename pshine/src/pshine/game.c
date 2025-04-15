@@ -490,6 +490,15 @@ static struct pshine_celestial_body *load_celestial_body(
 	PSHINE_CHECK(ptab != nullptr, "what the");
 
 	READ_STR_FIELD(ptab, "name", body->name_own);
+	READ_STR_FIELD(ptab, "description", body->desc_own);
+
+	// Remove newlines
+	if (body->desc_own != nullptr) {
+		for (char *found = body->desc_own; (found = strchr(found, '\n')) != nullptr;) {
+			*(found++) = ' ';
+		}
+	}
+
 	READ_STR_FIELD(ptab, "parent", body->tmp_parent_ref_name_own);
 
 	READ_FIELD(ptab, "radius", body->radius, double, d);
@@ -574,6 +583,10 @@ struct ship {
 
 struct eximgui_state {
 	ImGuiStorage storage;
+	ImFont *font_regular;
+	ImFont *font_bold;
+	ImFont *font_italic;
+	ImFont *font_title;
 };
 
 static void eximgui_state_init(struct eximgui_state *st);
@@ -615,7 +628,7 @@ static void load_star_system_config(struct pshine_game *game, struct pshine_star
 	out->body_count = 0;
 	if (arr != nullptr) {
 		out->body_count = toml_array_nelem(arr);
-		out->bodies_own = calloc(out->body_count, sizeof(*out->bodies_own));
+		out->bodies_own = calloc(out->body_count, sizeof(struct pshine_celestial_body *));
 		for (size_t i = 0; i < out->body_count; ++i) {
 			toml_datum_t body_fpath = toml_string_at(arr, i);
 			if (!body_fpath.ok) {
@@ -683,8 +696,6 @@ static void load_game_config(struct pshine_game *game, const char *fpath) {
 	}
 	free(errbuf);
 }
-
-static void init_imgui_style();
 
 static void init_star_system(struct pshine_game *game, struct pshine_star_system *system) {
 	for (size_t i = 0; i < system->body_count; ++i) {
@@ -763,10 +774,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->data_own->is_control_precise = false;
 
 	eximgui_state_init(&game->data_own->eximgui_state);
-}
 
-void pshine_post_init_game(struct pshine_game *game) {
-	init_imgui_style();
 }
 
 static void deinit_star_system(struct pshine_game *game, struct pshine_star_system *system) {
@@ -787,6 +795,7 @@ static void deinit_star_system(struct pshine_game *game, struct pshine_star_syst
 		FREE_IF_NOTNULL(b->surface.lights_texture_path_own);
 		FREE_IF_NOTNULL(b->surface.bump_texture_path_own);
 		FREE_IF_NOTNULL(b->name_own);
+		FREE_IF_NOTNULL(b->desc_own);
 		FREE_IF_NOTNULL(b->tmp_parent_ref_name_own);
 		FREE_IF_NOTNULL(b->orbit.cached_points_own);
 #undef FREE_IF_NOTNULL
@@ -1192,6 +1201,8 @@ static inline ImVec4 rgbint_to_vec4(int r, int g, int b, int a) {
 	return (ImVec4){ r / 255.f, g / 255.f, b / 255.f, a / 255.f };
 }
 
+static struct eximgui_state *g__eximgui_state = nullptr;
+
 static void init_imgui_style() {
 	ImGuiStyle *st = ImGui_GetStyle();
 	st->Colors[ImGuiCol_WindowBg] = rgbint_to_vec4(0x02,0x02,0x02,0xFE);
@@ -1220,7 +1231,29 @@ static void init_imgui_style() {
 	// st->Colors[ImGuiCol_Button] 31478479.308u
 }
 
-static struct eximgui_state *g__eximgui_state = nullptr;
+void pshine_post_init_game(struct pshine_game *game) {
+	ImGuiIO *io = ImGui_GetIO();
+	// ImFontConfig cfg = {};
+	const ImWchar *range = ImFontAtlas_GetGlyphRangesDefault(io->Fonts);
+	float base_font_size = 14.f;
+	g__eximgui_state->font_regular =
+		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Regular.ttf", base_font_size, nullptr, range);
+	g__eximgui_state->font_italic =
+		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Italic.ttf", base_font_size, nullptr, range);
+	g__eximgui_state->font_bold =
+		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Bold.ttf", base_font_size, nullptr, range);
+	g__eximgui_state->font_title =
+		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Bold.ttf", 24.0f, nullptr, range);
+	init_imgui_style();
+}
+
+static void eximgui_begin_frame() {
+	ImGui_PushFont(g__eximgui_state->font_regular);
+}
+
+static void eximgui_end_frame() {
+	ImGui_PopFont();
+}
 
 static void eximgui_state_init(struct eximgui_state *st) {
 	ImVector_Construct(&st->storage);
@@ -1331,6 +1364,7 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 #define SCSd_WCSd(wcs) ((wcs) * PSHINE_SCS_FACTOR)
 
 	if (!game->ui_dont_render_windows) {
+		eximgui_begin_frame();
 
 		if (ImGui_Begin("Material", nullptr, 0)) {
 			ImGui_DragFloat("Smoothness", &game->material_smoothness_);
@@ -1499,5 +1533,24 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 			ImGui_Text("Time: " TIME_FORMAT, TIME_FORMAT_ARGS(time_fmt));
 		}
 		ImGui_End();
+
+		ImGui_PushStyleColor(ImGuiCol_WindowBg, 0x00000030);
+		ImGui_PushStyleColor(ImGuiCol_Border, 0x00000000);
+		if (ImGui_Begin("Info", nullptr,
+			ImGuiWindowFlags_NoTitleBar |
+			// ImGuiWindowFlags_NoResize |
+			ImGuiWindowFlags_NoScrollbar |
+			ImGuiWindowFlags_NoCollapse |
+			ImGuiWindowFlags_NoDocking
+		)) {
+			ImGui_PushFont(g__eximgui_state->font_title);
+			ImGui_Text("%s", body->name_own);
+			ImGui_PopFont();
+			ImGui_TextWrapped("%s", body->desc_own != nullptr ? body->desc_own : "?");
+		}
+		ImGui_End();
+		ImGui_PopStyleColor();
+		ImGui_PopStyleColor();
+		eximgui_end_frame();
 	}
 }

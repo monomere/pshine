@@ -1,0 +1,45 @@
+[planet]
+name = "KJ631"
+description = """
+KJ631 "Primus" is the only moon of KJ63. It's a
+seemingly barren and uninteresting world, apart from
+having a very thin xenon atmosphere, but our
+scientists have a suspicion that this satellite
+hides something liquid beneath its rocky icy surface...
+"""
+radius = 937_400.0
+parent = "KJ63"
+is_static = false
+mass = 0.0033
+mu = 3.1e-9
+average_color = 0xefefef
+gizmo_color = 0xefefef
+
+[rotation]
+speed = 0.01
+axis = [0.8, 1.0, 0.3]
+
+[orbit]
+argument = 0.0
+eccentricity = 0.02
+inclination = -0.4
+longitude = 3.7
+semimajor = 484.399
+true_anomaly = 2.0
+
+[atmosphere]
+height = 10_001.0
+rayleigh_coefs = [20.8, 13.5, 13.1]
+rayleigh_falloff = 13.5
+mie_coef = 30.1
+mie_ext_coef = 2.0
+mie_g_coef = -0.87
+mie_falloff = 18.0
+intensity = 50.0
+
+[surface]
+albedo_texture_path = "data/textures/kj631_2x1k.png"
+lights_texture_path = "data/textures/1x1_black.png"
+bump_texture_path = "data/textures/1x1_black.png"
+spec_texture_path = "data/textures/1x1_black.png"
+

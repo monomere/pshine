@@ -3381,8 +3381,10 @@ static void deinit_star_system(struct vulkan_renderer *r, struct pshine_star_sys
 
 void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	struct vulkan_renderer *r = (void*)renderer;
-	
+
 	vkDeviceWaitIdle(r->device);
+	cImGui_ImplVulkan_DestroyFontsTexture();
+
 	for (size_t i = 0; i < r->game->star_system_count; ++i) {
 		deinit_star_system(r, &r->game->star_systems_own[i]);
 	}
@@ -4339,6 +4341,8 @@ static void show_gizmos(struct vulkan_renderer *r) {
 
 void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer) {
 	struct vulkan_renderer *r = (void*)renderer;
+
+	cImGui_ImplVulkan_CreateFontsTexture();
 	
 	float last_time = glfwGetTime();
 	uint32_t current_frame = 0;

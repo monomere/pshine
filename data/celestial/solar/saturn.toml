@@ -1,5 +1,18 @@
 [planet]
 name = "Saturn"
+description = """
+Saturn is the sixth planet from the Sun and the second largest in the Solar System,
+after Jupiter. It is a gas giant, with an average radius of about nine times that
+of Earth. It has an eighth the average density of Earth, but is over 95 times more
+massive. Even though Saturn is almost as big as Jupiter, Saturn has less than a third
+its mass. Saturn orbits the Sun at a distance of 9.59 AU (1,434 million km), with an
+orbital period of 29.45 years. The planet has a bright and extensive system of rings,
+composed mainly of ice particles, with a smaller amount of rocky debris and dust.
+At least 274 moons orbit the planet, of which 63 are officially named; these do not
+include the hundreds of moonlets in the rings. Titan, Saturn's largest moon and the
+second largest in the Solar System, is larger (but less massive) than the planet
+Mercury and is the only moon in the Solar System that has a substantial atmosphere.
+"""
 radius = 58_232_000.0
 parent = "Sol"
 is_static = false

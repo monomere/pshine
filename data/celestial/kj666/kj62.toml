@@ -1,5 +1,9 @@
 [planet]
 name = "KJ62"
+description = """
+KJ62 "Öt" is a cold and ferrous rocky planet. Its atmosphere
+is thin and full of ammonia and iron (like its surface).
+"""
 radius = 2_014_612.3
 parent = "KJ6"
 is_static = false

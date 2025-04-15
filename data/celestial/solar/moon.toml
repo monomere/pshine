@@ -1,5 +1,12 @@
 [planet]
 name = "Moon"
+description = """
+The Moon is Earth's only natural satellite. It orbits at an average distance of 384,399 km
+(238,854 mi; about 30 times Earth's diameter). The Moon's orbital period (lunar month) and
+rotation period (lunar day) are synchronized by Earth's gravitational pull at 29.5 Earth days,
+making the same side of the Moon always face Earth. The Moon's pull on Earth is the main
+driver of Earth's tides. 
+"""
 radius = 1_737_400.0
 parent = "Earth"
 is_static = false

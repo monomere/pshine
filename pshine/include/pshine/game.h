@@ -150,6 +150,9 @@ struct pshine_celestial_body {
 	/// e.g. "Sun", "Earth".
 	char *name_own;
 
+	/// Description of the celestial body.
+	char *desc_own;
+
 	/// Name of parent_ref, used during initialization, might be invalid.
 	char *tmp_parent_ref_name_own;
 };

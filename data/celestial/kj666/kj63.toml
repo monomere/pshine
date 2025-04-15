@@ -1,0 +1,45 @@
+[planet]
+name = "KJ63"
+description = """
+KJ63 "Timus" is a large purple gas giant in the
+KJ6 star system. It was the first planet to be
+discovered in KJ6! The composition of its atmosphere
+is still largely unknown though; there's at least
+30% of oxygen and 10% of argon.
+"""
+radius = 18_014_612.3
+parent = "KJ6"
+is_static = false
+mass = 0.772
+mu = 4.2e-3
+average_color = 0x8933279
+gizmo_color = 0x893279
+
+[rotation]
+speed = 0.4
+axis = [0.0, 0.3, 1.0]
+
+[atmosphere]
+height = 400_306.0
+rayleigh_coefs = [23.8, 13.5, 33.1]
+rayleigh_falloff = 23.5
+mie_coef = 30.1
+mie_ext_coef = 2.0
+mie_g_coef = -0.87
+mie_falloff = 18.0
+intensity = 100.0
+
+[orbit]
+argument = 1.863
+eccentricity = 0.20563
+inclination = 0.021
+longitude = 1.827
+semimajor = 172_304.0
+true_anomaly = 2.0
+
+[surface]
+albedo_texture_path = "data/textures/kj63_2x1k.png"
+lights_texture_path = "data/textures/1x1_black.png"
+bump_texture_path = "data/textures/1x1_black.png"
+spec_texture_path = "data/textures/1x1_black.png"
+

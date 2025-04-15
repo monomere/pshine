@@ -1,5 +1,6 @@
 [planet]
 name = "KJ61"
+description = "Small and not very interesting. Very hot. Might have some good ores in large amounts though."
 radius = 1_439_700.0
 parent = "KJ6"
 is_static = false
