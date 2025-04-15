@@ -3,13 +3,8 @@ name = "Mars"
 description = """
 Mars is the fourth planet from the Sun. The surface of Mars is orange-red because
 it is covered in iron(III) oxide dust, giving it the nickname "the Red Planet".
-Mars is among the brightest objects in Earth's sky, and its high-contrast albedo
-features have made it a common subject for telescope viewing. It is classified
-as a terrestrial planet and is the second smallest of the Solar System's planets
-with a diameter of 6,779 km (4,212 mi). In terms of orbital motion, a Martian
-solar day (sol) is equal to 24.6 hours, and a Martian solar year is equal to
-1.88 Earth years (687 Earth days). Mars has two natural satellites that are
-small and irregular in shape: Phobos and Deimos. 
+It is classified as a terrestrial planet and is the second smallest of the Solar
+System's planets.
 """
 radius = 3_389_500.0
 parent = "Sol"
@@ -32,6 +27,14 @@ semimajor = 227939.366
 true_anomaly = 0.0
 
 [atmosphere]
+composition = [
+	0.9597, "CO₂",
+	0.0193, "Ar",
+	0.0189, "N₂",
+	0.0015, "O₂",
+	0.0005, "CO",
+	0.0002, "H₂O",
+]
 # P(h) = P₀ exp(-h/H)
 # P(100km) = 1atm exp(-100km/8.5km)  -- atmosphere edge pressure
 # P(x) = 0.00628atm exp(-x/11.1km)  -- edge height for Mars.

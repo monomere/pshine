@@ -472,6 +472,27 @@ static struct pshine_celestial_body *load_celestial_body(
 					READ_FIELD_AT(arr, 2, planet->atmosphere.rayleigh_coefs[2], double, d);
 				}
 			}
+			struct pshine_elemental_composition *composition = &planet->atmosphere.composition;
+			composition->constituent_count = 0;
+			arr = toml_array_in(atab, "composition");
+			if (arr != nullptr) {
+				size_t n = toml_array_nelem(arr);
+				if (n % 2 != 0) {
+					PSHINE_WARN("Invalid celestial body configuration: the length of atmosphere.composition "
+						"must be a multiple of two.");
+					n -= 1;
+				}
+				if (n > 0) {
+					composition->constituent_count = n / 2;
+					// TODO: free
+					composition->constituents_own = calloc(composition->constituent_count,
+						sizeof(*composition->constituents_own));
+					for (size_t i = 0; i < n; i += 2) {
+						READ_FIELD_AT(arr, i + 0, composition->constituents_own[i / 2].fraction, double, d);
+						READ_FIELD_AT(arr, i + 1, composition->constituents_own[i / 2].name_own, string, s);
+					}
+				}
+			}
 			READ_FIELD(atab, "rayleigh_falloff", planet->atmosphere.rayleigh_falloff, double, d);
 			READ_FIELD(atab, "mie_coef", planet->atmosphere.mie_coef, double, d);
 			READ_FIELD(atab, "mie_ext_coef", planet->atmosphere.mie_ext_coef, double, d);
@@ -1234,16 +1255,21 @@ static void init_imgui_style() {
 void pshine_post_init_game(struct pshine_game *game) {
 	ImGuiIO *io = ImGui_GetIO();
 	// ImFontConfig cfg = {};
-	const ImWchar *range = ImFontAtlas_GetGlyphRangesDefault(io->Fonts);
+	static const ImWchar ranges[] =
+	{
+		0x0020, 0x00FF, // Basic Latin + Latin Supplement
+		0x2070, 0x209F, // Superscripts and Subscripts
+		0,
+	};
 	float base_font_size = 14.f;
 	g__eximgui_state->font_regular =
-		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Regular.ttf", base_font_size, nullptr, range);
+		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Regular.ttf", base_font_size, nullptr, ranges);
 	g__eximgui_state->font_italic =
-		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Italic.ttf", base_font_size, nullptr, range);
+		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Italic.ttf", base_font_size, nullptr, ranges);
 	g__eximgui_state->font_bold =
-		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Bold.ttf", base_font_size, nullptr, range);
+		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Bold.ttf", base_font_size, nullptr, ranges);
 	g__eximgui_state->font_title =
-		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Bold.ttf", 24.0f, nullptr, range);
+		ImFontAtlas_AddFontFromFileTTF(io->Fonts, "data/fonts/inter/Inter-Bold.ttf", 24.0f, nullptr, ranges);
 	init_imgui_style();
 }
 
@@ -1536,19 +1562,50 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 
 		ImGui_PushStyleColor(ImGuiCol_WindowBg, 0x00000030);
 		ImGui_PushStyleColor(ImGuiCol_Border, 0x00000000);
+		ImGui_PushStyleColor(ImGuiCol_BorderShadow, 0x00000000);
 		if (ImGui_Begin("Info", nullptr,
-			ImGuiWindowFlags_NoTitleBar |
+			// ImGuiWindowFlags_NoTitleBar |
 			// ImGuiWindowFlags_NoResize |
-			ImGuiWindowFlags_NoScrollbar |
-			ImGuiWindowFlags_NoCollapse |
-			ImGuiWindowFlags_NoDocking
+			// ImGuiWindowFlags_NoScrollbar |
+			// ImGuiWindowFlags_NoCollapse |
+			// ImGuiWindowFlags_NoDocking |
+			// ImGuiWindowFlags_AlwaysAutoResize |
+			0
 		)) {
 			ImGui_PushFont(g__eximgui_state->font_title);
 			ImGui_Text("%s", body->name_own);
 			ImGui_PopFont();
 			ImGui_TextWrapped("%s", body->desc_own != nullptr ? body->desc_own : "?");
+			if (body->type == PSHINE_CELESTIAL_BODY_PLANET) {
+				struct pshine_planet *planet = (void*)body;
+				if (planet->has_atmosphere) {
+					ImGui_PushFont(g__eximgui_state->font_bold);
+					ImGui_Text("Atmospheric composition");
+					ImGui_PopFont();
+					if (ImGui_BeginTable("_AtmosphericCompositionTable", 2,
+						ImGuiTableFlags_Borders |
+						ImGuiTableFlags_RowBg
+					)) {
+						// ImGui_TableSetColumnIndex(0);
+						ImGui_TableSetupColumn("Fraction", 0);
+						// ImGui_TableSetColumnIndex(1);
+						ImGui_TableSetupColumn("Element", 0);
+						ImGui_TableHeadersRow();
+						for (size_t i = 0; i < planet->atmosphere.composition.constituent_count; ++i) {
+							struct pshine_named_constituent c = planet->atmosphere.composition.constituents_own[i];
+							ImGui_TableNextRow();
+							ImGui_TableSetColumnIndex(0);
+							ImGui_Text("%g%%", c.fraction * 100.0f);
+							ImGui_TableSetColumnIndex(1);
+							ImGui_Text("%s", c.name_own);
+						}
+						ImGui_EndTable();
+					}
+				}
+			}
 		}
 		ImGui_End();
+		ImGui_PopStyleColor();
 		ImGui_PopStyleColor();
 		ImGui_PopStyleColor();
 		eximgui_end_frame();

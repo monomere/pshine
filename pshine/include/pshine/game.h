@@ -157,6 +157,16 @@ struct pshine_celestial_body {
 	char *tmp_parent_ref_name_own;
 };
 
+struct pshine_named_constituent {
+	float fraction;
+	char *name_own;
+};
+
+struct pshine_elemental_composition {
+	size_t constituent_count;
+	struct pshine_named_constituent *constituents_own;
+};
+
 struct pshine_atmosphere_info {
 	/// In m
 	double height;
@@ -167,6 +177,7 @@ struct pshine_atmosphere_info {
 	float mie_g_coef;
 	float mie_falloff;
 	float intensity;
+	struct pshine_elemental_composition composition;
 };
 
 struct pshine_planet_graphics_data;

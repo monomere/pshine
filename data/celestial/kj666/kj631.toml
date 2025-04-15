@@ -28,6 +28,11 @@ semimajor = 484.399
 true_anomaly = 2.0
 
 [atmosphere]
+composition = [
+	0.9241, "Xe",
+	0.0284, "Kr",
+	0.0475, "Other",
+]
 height = 10_001.0
 rayleigh_coefs = [20.8, 13.5, 13.1]
 rayleigh_falloff = 13.5

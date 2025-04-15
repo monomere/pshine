@@ -2,7 +2,7 @@
 name = "KJ62"
 description = """
 KJ62 "Öt" is a cold and ferrous rocky planet. Its atmosphere
-is thin and full of ammonia and iron (like its surface).
+is thin and full of particulate ammonia and iron (like its surface).
 """
 radius = 2_014_612.3
 parent = "KJ6"
@@ -17,6 +17,14 @@ speed = 0.4
 axis = [0.0, 1.0, 1.0]
 
 [atmosphere]
+composition = [
+	0.7822, "CO₂",
+	0.1129, "Ar",
+	0.0065, "NH₃ (Ammonia)",
+	0.0021, "FeO",
+	0.0002, "Fe²⁺Fe³⁺₂O₄ (Magetite)",
+	0.0961, "Other",
+]
 height = 40_306.0
 rayleigh_coefs = [33.8, 13.5, 8.1]
 rayleigh_falloff = 23.5

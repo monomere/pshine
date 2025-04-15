@@ -20,6 +20,11 @@ speed = 0.4
 axis = [0.0, 0.3, 1.0]
 
 [atmosphere]
+composition = [
+	0.3182, "O₂",
+	0.1266, "Ar",
+	0.5552, "Other",
+]
 height = 400_306.0
 rayleigh_coefs = [23.8, 13.5, 33.1]
 rayleigh_falloff = 23.5

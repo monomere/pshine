@@ -6,8 +6,7 @@ the closest in mass and size to its orbital neighbour Earth. Venus has by
 far the densest atmosphere of the terrestrial planets, composed mostly of
 carbon dioxide with a thick, global sulfuric acid cloud cover. At the
 surface it has a mean temperature of 737 K (464 °C; 867 °F) and a pressure
-92 times that of Earth's at sea level. These extreme conditions compress
-carbon dioxide into a supercritical state at Venus's surface.
+of 92 atm.
 """
 radius = 6_051_800.0
 parent = "Sol"
@@ -30,6 +29,11 @@ semimajor = 108210.0
 true_anomaly = 0.0
 
 [atmosphere]
+composition = [
+	0.9650, "CO₂",
+	0.0350, "N₂",
+	0.0002, "SO₂",
+]
 height = 258_955.261904
 rayleigh_coefs = [433.8, 423.5, 423.1]
 rayleigh_falloff = 4.5
