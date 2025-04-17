@@ -1473,19 +1473,33 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 				ImGui_SameLine();
 				ImGui_InputDouble("##Movement speed", &game->data_own->move_speed);
 				ImGui_Text("That's %0.3fc", game->data_own->move_speed / PSHINE_SPEED_OF_LIGHT);
-				if (ImGui_Button("Snail")) game->data_own->move_speed = 1000.0;
-				ImGui_SameLine();
-				if (ImGui_Button("Slow")) game->data_own->move_speed = 5.0e5;
-				ImGui_SameLine();
-				if (ImGui_Button("Fast")) game->data_own->move_speed = 5.0e7;
-				ImGui_SameLine();
-				if (ImGui_Button("Light")) game->data_own->move_speed = PSHINE_SPEED_OF_LIGHT;
-				ImGui_SameLine();
-				if (ImGui_Button("166c")) game->data_own->move_speed = 5.0e10;
-				ImGui_SameLine();
-				if (ImGui_Button("1kc")) game->data_own->move_speed = PSHINE_SPEED_OF_LIGHT * 1000.0;
-				ImGui_SameLine();
-				if (ImGui_Button("2kc")) game->data_own->move_speed = PSHINE_SPEED_OF_LIGHT * 2000.0;
+				struct {
+					const char *name;
+					double value;
+				} marks[] = {
+					{ "Crawl", 100.0 },
+					{ "Snail", 1000.0 },
+					{ "Slow", 10000.0 },
+					{ "Fast", 5.0e5 },
+					{ "Faster", 5.0e7 },
+					{ "Light", PSHINE_SPEED_OF_LIGHT },
+					{ "10c", PSHINE_SPEED_OF_LIGHT * 10.0 },
+					{ "166c", 5.0e10 },
+					{ "1kc", PSHINE_SPEED_OF_LIGHT * 1000.0 },
+					{ "2kc", PSHINE_SPEED_OF_LIGHT * 2000.0 },
+				};
+				for (size_t i = 0; i < sizeof(marks)/sizeof(*marks); ++i) {
+					if (ImGui_Button(marks[i].name)) game->data_own->move_speed = marks[i].value;
+					ImGui_SameLine();
+					if (
+						i + 1 >= sizeof(marks)/sizeof(*marks) ||
+						0
+						+ ImGui_GetStyle()->ItemSpacing.x
+						+ ImGui_GetStyle()->ItemInnerSpacing.x * 2.0
+						+ ImGui_CalcTextSize(marks[i + 1].name).x
+						>= ImGui_GetContentRegionAvail().x * 2.0
+					) ImGui_NewLine();
+				}
 			}
 			eximgui_end_input_box();
 			ImGui_Text("Distance from surface: %.3f %s m = %.3fly", d_scaled, si_prefix_english(d_prefix), d / 9.4607e+15);

@@ -7,11 +7,11 @@ discovered in KJ6! The composition of its atmosphere
 is still largely unknown though; there's at least
 30% of oxygen and 10% of argon.
 """
-radius = 18_014_612.3
+radius = 48_014_612.3
 parent = "KJ6"
 is_static = false
-mass = 0.772
-mu = 4.2e-3
+mass = 117.8
+mu = 0.01793
 average_color = 0x8933279
 gizmo_color = 0x893279
 
