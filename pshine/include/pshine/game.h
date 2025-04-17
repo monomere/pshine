@@ -195,6 +195,7 @@ struct pshine_planet {
 struct pshine_star {
 	struct pshine_celestial_body as_body;
 	struct pshine_star_graphics_data *graphics_data;
+	float temperature;
 };
 
 /// A star system. Owns all of its bodies.

@@ -225,6 +225,7 @@ This isn't the full set of resources used unfortunately.
 - [Bevy Bloom Impl.](https://github.com/bevyengine/bevy/blob/main/crates/bevy_core_pipeline/src/bloom/bloom.wgsl)
 - [The COD Post-processing slides](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare/)
 - https://github.com/expenses/bloom
+- https://github.com/hatoo/blackbody
 
 - Amazing resource for orbital mechanics: [https://orbital-mechanics.space/](https://orbital-mechanics.space/)
 - Vulkan discord

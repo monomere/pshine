@@ -2274,6 +2274,7 @@ struct graphics_pipeline_info {
 	bool vertex_input; // TODO: pass vertex attribute here
 	bool lines;
 	bool triangle_strip;
+	// int planet_specialization;
 };
 
 struct vulkan_pipeline {
@@ -2283,6 +2284,18 @@ struct vulkan_pipeline {
 
 static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r, const struct graphics_pipeline_info *info) {
 	VkShaderModule vert_shader_module = create_shader_module_file(r, info->vert_fname);
+	// 	vert_shader_module = ;
+	// 	if (info->planet_specialization) {
+	// 	size_t size = 0;
+	// 	char *src = pshine_read_file(info->vert_fname, &size);
+	// 	CHECKVK(vkCreateShaderModule(r->device, &(VkShaderModuleCreateInfo){
+	// 		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+	// 		.codeSize = size,
+	// 		.pCode = (const uint32_t*)src,
+	// 	}, nullptr, &vert_shader_module));
+	// 	free(src);
+	// } else {
+	// }
 	VkShaderModule frag_shader_module = create_shader_module_file(r, info->frag_fname);
 
 	VkPipelineLayout layout;
@@ -2293,7 +2306,7 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 		.setLayoutCount = info->set_layout_count,
 		.pSetLayouts = info->set_layouts,
 		.pushConstantRangeCount = info->push_constant_range_count,
-		.pPushConstantRanges = info->push_constant_ranges
+		.pPushConstantRanges = info->push_constant_ranges,
 	}, nullptr, &layout));
 
 	PSHINE_DEBUG("info->push_constant_range_count=%u", info->push_constant_range_count);
@@ -2330,8 +2343,8 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 					.format = VK_FORMAT_R32_SFLOAT,
 					.location = 2,
 					.offset = offsetof(struct pshine_planet_vertex, tangent_dia)
-				}
-			}
+				},
+			},
 		},
 		.pInputAssemblyState = &(VkPipelineInputAssemblyStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -2407,14 +2420,26 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 				.stage = VK_SHADER_STAGE_VERTEX_BIT,
 				.module = vert_shader_module,
-				.pName = "main"
+				// .pSpecializationInfo = info->planet_specialization != 0
+				// 	? &(VkSpecializationInfo){
+				// 		.dataSize = sizeof(int32_t),
+				// 		.pData = &(int32_t){ info->planet_specialization },
+				// 		.mapEntryCount = 1,
+				// 		.pMapEntries = &(VkSpecializationMapEntry){
+				// 			.constantID = 0,
+				// 			.offset = 0,
+				// 			.size = sizeof(int32_t),
+				// 		},
+				// 	}
+				// 	: nullptr,
+				.pName = "main",
 			},
 			{
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 				.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
 				.module = frag_shader_module,
-				.pName = "main"
-			}
+				.pName = "main",
+			},
 		},
 		.layout = layout,
 		.renderPass = info->render_pass,
@@ -2432,7 +2457,7 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 
 static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/mesh.vert.spv",
+		.vert_fname = "build/pshine/data/shaders/mesh.2.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/mesh.frag.spv",
 		.render_pass = r->render_passes.hdr_pass,
 		.subpass = 0,
@@ -2454,15 +2479,21 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	PSHINE_DEBUG("created mesh_pipeline");
 
 	struct vulkan_pipeline color_mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/mesh.vert.spv",
+		.vert_fname = "build/pshine/data/shaders/mesh.1.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/solid_color.frag.spv",
 		.render_pass = r->render_passes.hdr_pass,
 		.subpass = 0,
-		.push_constant_range_count = 0,
-		.set_layout_count = 3,
+		.push_constant_range_count = 1,
+		.push_constant_ranges = (VkPushConstantRange[]){
+			(VkPushConstantRange){
+				.offset = 0,
+				.size = sizeof(float4),
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			}
+		},
+		.set_layout_count = 2,
 		.set_layouts = (VkDescriptorSetLayout[]){
 			r->descriptors.global_layout,
-			r->descriptors.material_layout,
 			r->descriptors.static_mesh_layout,
 		},
 		.blend = false,
@@ -3452,35 +3483,23 @@ static inline size_t select_celestial_body_lod(
 	return 0;
 }
 
-static void render_celestial_body(
-	struct vulkan_renderer *r,
-	struct pshine_celestial_body *b,
-	struct per_frame_data *f,
-	uint32_t current_frame,
-	double3 camera_pos_scs,
-	VkDescriptorSet dset
-) {
-	//struct pshine_planet *p = (void *)b;
-	// double3 p_pos_scs = SCSd3_WCSp3(b->position);
-	size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
-	if (lod >= r->sphere_mesh_count) lod = r->sphere_mesh_count - 1;
-	vkCmdBindDescriptorSets(
-		f->command_buffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		r->pipelines.mesh_layout,
-		2,
-		1,
-		&dset,
-		1, (uint32_t[]){
-			get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame
-		}
-	);
-	vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
-	vkCmdBindIndexBuffer(f->command_buffer, r->own_sphere_meshes[lod].index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-	vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
-}
+// static void render_celestial_body(
+// 	struct vulkan_renderer *r,
+// 	struct pshine_celestial_body *b,
+// 	struct per_frame_data *f,
+// 	uint32_t current_frame,
+// 	double3 camera_pos_scs,
+// 	uint32_t dset_index,
+// 	VkDescriptorSet dset
+// ) {
+// }
 
-static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t image_index, size_t frame_number) {
+static void do_frame(
+	struct vulkan_renderer *r,
+	uint32_t current_frame,
+	uint32_t image_index,
+	size_t frame_number
+) {
 	struct per_frame_data *f = &r->frames[current_frame];
 
 	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);
@@ -3785,17 +3804,68 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 				}
 			);
 
-			render_celestial_body(r, b, f, current_frame, camera_pos_scs, p->graphics_data->descriptor_set);
+			size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
+			if (lod >= r->sphere_mesh_count) lod = r->sphere_mesh_count - 1;
+			vkCmdBindDescriptorSets(
+				f->command_buffer,
+				VK_PIPELINE_BIND_POINT_GRAPHICS,
+				r->pipelines.mesh_layout,
+				2,
+				1,
+				&p->graphics_data->descriptor_set,
+				1, (uint32_t[]){
+					get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame
+				}
+			);
+			vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
+			vkCmdBindIndexBuffer(f->command_buffer, r->own_sphere_meshes[lod].index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
 		}
 	}
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.color_mesh_pipeline);
+	vkCmdBindDescriptorSets(
+		f->command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		r->pipelines.mesh_layout,
+		0,
+		1,
+		(VkDescriptorSet[]){ r->data.global_descriptor_set },
+		1, (uint32_t[]){
+			get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+		}
+	);
 
 	for (size_t i = 0; i < current_system->body_count; ++i) {
 		struct pshine_celestial_body *b = current_system->bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
 			struct pshine_star *p = (void *)b;
-			render_celestial_body(r, b, f, current_frame, camera_pos_scs, p->graphics_data->descriptor_set);
+			pshine_color_rgb rgb = pshine_blackbody_temp_to_rgb(p->temperature);
+			float4 color = float4xyz3w(
+				float3add(
+					float3xyz(rgb.rgb.r, rgb.rgb.g, rgb.rgb.b),
+					float3v(0.0f)
+				),
+				p->temperature / 20.0f
+			);
+			vkCmdPushConstants(f->command_buffer, r->pipelines.color_mesh_layout,
+				VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float4), &color);
+			size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
+			if (lod >= r->sphere_mesh_count) lod = r->sphere_mesh_count - 1;
+			vkCmdBindDescriptorSets(
+				f->command_buffer,
+				VK_PIPELINE_BIND_POINT_GRAPHICS,
+				r->pipelines.color_mesh_layout,
+				1,
+				1,
+				&p->graphics_data->descriptor_set,
+				1, (uint32_t[]){
+					get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame
+				}
+			);
+			vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
+			vkCmdBindIndexBuffer(f->command_buffer, r->own_sphere_meshes[lod].index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
 		}
 	}
 
@@ -3839,7 +3909,7 @@ static void do_frame(struct vulkan_renderer *r, uint32_t current_frame, uint32_t
 		
 		vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 			r->pipelines.skybox_layout, 0, 1, &r->data.skybox_descriptor_set, 0, nullptr);
-		
+
 		vkCmdDraw(f->command_buffer, 14, 1, 0, 0);
 	}
 

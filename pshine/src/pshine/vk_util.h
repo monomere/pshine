@@ -1,5 +1,6 @@
 #ifndef PSHINE_IMPL_VK_UTIL_H_
 #define PSHINE_IMPL_VK_UTIL_H_
+#include "math.h"
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan_core.h>
 

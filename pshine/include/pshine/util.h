@@ -257,4 +257,20 @@ static inline char *pshine_vformat_string(const char *fmt, va_list va) {
 	return a;
 }
 
+typedef union pshine_color_xyz_ {
+	struct { float x, y, z; } xyz;
+	float values[3];
+} pshine_color_xyz;
+
+typedef union pshine_color_rgb_ {
+	struct { float r, g, b; } rgb;
+	float values[3];
+} pshine_color_rgb;
+
+/// Convert temperature (Kelvin) into XYZ color whose components are [0.0, ∞).
+pshine_color_xyz pshine_blackbody_temp_to_xyz(float temp);
+
+/// Convert temperature (Kelvin) into RGB color whose components are [0.0, ∞).
+pshine_color_rgb pshine_blackbody_temp_to_rgb(float temp);
+
 #endif // PSHINE_UTIL_H_

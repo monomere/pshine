@@ -4,7 +4,11 @@
 #include "common.glsl"
 
 layout (location = 0) out vec4 o_color;
+struct Vec4 {
+	vec4 v;
+};
+layout (push_constant) uniform BUFFER(Vec4, u_consts);
 
 void main() {
-	o_color = vec4(vec3(2.0) * 50.0, 1.0); // vec3(0.8, 0.15, 0.1)
+	o_color = vec4(u_consts.v.rgb * u_consts.v.w, 1.0);
 }

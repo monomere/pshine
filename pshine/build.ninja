@@ -28,7 +28,10 @@ build $builddir/vendor/imgui/imgui_widgets.cpp.o : cxx vendor/imgui/imgui_widget
 
 build $builddir/data/shaders/tri.vert.spv              : glslc data/shaders/tri.vert
 build $builddir/data/shaders/tri.frag.spv              : glslc data/shaders/tri.frag
-build $builddir/data/shaders/mesh.vert.spv             : glslc data/shaders/mesh.vert
+build $builddir/data/shaders/mesh.2.vert.spv           : glslc data/shaders/mesh.vert
+  defines = -DSET_INDEX=2
+build $builddir/data/shaders/mesh.1.vert.spv           : glslc data/shaders/mesh.vert
+  defines = -DSET_INDEX=1
 build $builddir/data/shaders/mesh.frag.spv             : glslc data/shaders/mesh.frag
 build $builddir/data/shaders/atmo.vert.spv             : glslc data/shaders/atmo.vert
 build $builddir/data/shaders/atmo.frag.spv             : glslc data/shaders/atmo.frag
@@ -66,7 +69,8 @@ build $builddir/main: ld $
   | $
   $builddir/data/shaders/tri.vert.spv $
   $builddir/data/shaders/tri.frag.spv $
-  $builddir/data/shaders/mesh.vert.spv $
+  $builddir/data/shaders/mesh.1.vert.spv $
+  $builddir/data/shaders/mesh.2.vert.spv $
   $builddir/data/shaders/mesh.frag.spv $
   $builddir/data/shaders/atmo.vert.spv $
   $builddir/data/shaders/atmo.frag.spv $

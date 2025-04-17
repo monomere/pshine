@@ -503,6 +503,8 @@ static struct pshine_celestial_body *load_celestial_body(
 	} else if ((ptab = toml_table_in(tab, "star")) != nullptr) {
 		body = calloc(1, sizeof(struct pshine_star));
 		body->type = PSHINE_CELESTIAL_BODY_STAR;
+		struct pshine_star *star = (void*)body;
+		READ_FIELD(ptab, "surface_temperature", star->temperature, double, d);
 	} else {
 		PSHINE_ERROR("Invalid celestial body configuration: no [planet] or [star] tables.");
 		free(errbuf);
@@ -1608,6 +1610,16 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 		ImGui_PopStyleColor();
 		ImGui_PopStyleColor();
 		ImGui_PopStyleColor();
+
+		if (ImGui_Begin("Blackbody Radiation Test", nullptr, 0)) {
+			static float temp = 4200.0;
+			ImGui_SliderFloat("Temp, K", &temp, 1200, 8000);
+			pshine_color_rgb rgb = pshine_blackbody_temp_to_rgb(temp);
+			ImGui_ColorEdit3("Color", rgb.values, ImGuiColorEditFlags_NoInputs
+				| ImGuiColorEditFlags_NoPicker);
+		}
+		ImGui_End();
+
 		eximgui_end_frame();
 	}
 }

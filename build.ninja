@@ -33,7 +33,7 @@ rule cxx
   depfile = $out.d
 
 rule glslc
-  command = $glslc $in -o $out $glslflags -O $debug -MD -MF $out.d
+  command = $glslc $in -o $out $glslflags -O $debug -MD -MF $out.d $defines
   depfile = $out.d
 
 rule ld

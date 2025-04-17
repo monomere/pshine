@@ -3,6 +3,10 @@
 #pragma shader_stage(vertex)
 #include "common.glsl"
 
+#ifndef SET_INDEX
+#define SET_INDEX 2
+#endif
+
 layout (location = 0) in vec3 i_position;
 layout (location = 1) in vec2 i_normal_oct;
 layout (location = 2) in float i_tangent_dia;
@@ -10,7 +14,7 @@ layout (location = 2) in float i_tangent_dia;
 layout (location = 0) out vec3 o_normal;
 
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
-layout (set = 2, binding = 0) uniform readonly BUFFER(StaticMeshUniforms, mesh);
+layout (set = SET_INDEX, binding = 0) uniform readonly BUFFER(StaticMeshUniforms, mesh);
 
 vec2 sign_not_zero(vec2 v) {
 	return vec2((v.x >= 0.0) ? +1.0 : -1.0, (v.y >= 0.0) ? +1.0 : -1.0);
