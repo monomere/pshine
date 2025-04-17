@@ -3,6 +3,9 @@
 #pragma shader_stage(vertex)
 #include "common.glsl"
 
+// The shader is compiled to mesh.1.vert and mesh.2.vert
+// with SET_INDEX set to 1 and 2 accordingly.
+// I would've use specialization constants, but you can't it seems :(
 #ifndef SET_INDEX
 #define SET_INDEX 2
 #endif

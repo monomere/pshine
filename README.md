@@ -172,7 +172,7 @@ Key|Action
 ---|---
 <kbd>A</kbd>/<kbd>D</kbd> | Move left/right
 <kbd>W</kbd>/<kbd>S</kbd> | Move forward/backward
-<kbd>Shift</kbd>/<kbd>Space</kbd> | Move down/up
+<kbd>Q</kbd>/<kbd>E</kbd> | Move down/up
 <kbd>&#8592;</kbd>/<kbd>&#8594;</kbd> | Rotate on global Y axis (yaw)
 <kbd>&#8593;</kbd>/<kbd>&#8595;</kbd> | Rotate on local X axis (pitch)
 

@@ -12,7 +12,7 @@ mass = 332_950.0
 mu = 132.71244
 average_color = 0x97e6fc
 gizmo_color = 0x97e6fc
-surface_temperature = 5772
+surface_temperature = 5772.0
 
 [rotation]
 speed = 0.0

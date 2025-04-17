@@ -840,8 +840,8 @@ void pshine_deinit_game(struct pshine_game *game) {
 static const enum pshine_key
 	K_FORWARD = PSHINE_KEY_W,
 	K_BACKWARD = PSHINE_KEY_S,
-	K_UP = PSHINE_KEY_SPACE,
-	K_DOWN = PSHINE_KEY_LEFT_SHIFT,
+	K_UP = PSHINE_KEY_E,
+	K_DOWN = PSHINE_KEY_Q,
 	K_RIGHT = PSHINE_KEY_D,
 	K_LEFT = PSHINE_KEY_A,
 	K_ZOOM_IN = PSHINE_KEY_Z,
@@ -1292,7 +1292,7 @@ static void eximgui_state_deinit(struct eximgui_state *st) {
 	ImVector_Destruct(&st->storage);
 }
 
-static bool eximgui_begin_input_box(const char *label) {
+static bool eximgui_begin_input_box(const char *label, const char *tooltip) {
 	ImGuiID id = ImGui_GetID(label);
 	bool is_open = ImGuiStorage_GetBool(&g__eximgui_state->storage, id, true);
 	
@@ -1303,6 +1303,7 @@ static bool eximgui_begin_input_box(const char *label) {
 	bool r = ImGui_BeginChild(label, (ImVec2){}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border, 0);
 	ImGui_SetCursorPosY(ImGui_GetCursorPosY() - 5.0f);
 	ImGui_SeparatorText(label);
+	ImGui_SetItemTooltip("%s", tooltip);
 	if (ImGui_IsItemClicked()) {
 		is_open = !is_open;
 		ImGuiStorage_SetBool(&g__eximgui_state->storage, id, is_open);
@@ -1325,9 +1326,9 @@ static void eximgui_end_input_box() {
 }
 
 /// NB: always start label with '##'.
-static bool eximgui_input_double3(const char *label, double *vs, double step, const char *format) {
+static bool eximgui_input_double3(const char *label, const char *tooltip, double *vs, double step, const char *format) {
 	bool res = false;
-	if (eximgui_begin_input_box(label + 2)) {
+	if (eximgui_begin_input_box(label + 2, tooltip)) {
 		ImGui_PushIDInt(0);
 		ImGui_Text("X"); ImGui_SameLine();
 		res |= ImGui_InputDoubleEx(label, &vs[0], step, step * 100.0, format, 0);
@@ -1464,32 +1465,36 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 			double d = double3mag(double3sub(p, double3vs(body->position.values))) - body->radius;
 			enum si_prefix d_prefix = find_optimal_si_prefix(d);
 			double d_scaled = apply_si_prefix(d_prefix, d);
-			eximgui_input_double3("##WCS Position", game->camera_position.values, 1000.0, "%.3fm");
-			if (eximgui_input_double3("##SCS Position", p_scs.vs, 100.0, "%.3fu")) {
+			eximgui_input_double3("##WCS Position", "World coordinate system camera position. In meters.",
+				game->camera_position.values, 1000.0, "%.3fm");
+			if (eximgui_input_double3("##SCS Position", "Scaled coordinate system camera position. 1:8192.",
+				p_scs.vs, 100.0, "%.3fu")) {
 				*(double3*)&game->camera_position.values = double3mul(p_scs, PSHINE_SCS_SCALE);
 			}
-			if (eximgui_begin_input_box("Movement speed")) {
+			if (eximgui_begin_input_box("Movement speed", "The speed at which the camera moves.")) {
 				ImGui_Text("Speed, m/s");
 				ImGui_SameLine();
 				ImGui_InputDouble("##Movement speed", &game->data_own->move_speed);
 				ImGui_Text("That's %0.3fc", game->data_own->move_speed / PSHINE_SPEED_OF_LIGHT);
 				struct {
 					const char *name;
+					const char *tooltip;
 					double value;
 				} marks[] = {
-					{ "Crawl", 100.0 },
-					{ "Snail", 1000.0 },
-					{ "Slow", 10000.0 },
-					{ "Fast", 5.0e5 },
-					{ "Faster", 5.0e7 },
-					{ "Light", PSHINE_SPEED_OF_LIGHT },
-					{ "10c", PSHINE_SPEED_OF_LIGHT * 10.0 },
-					{ "166c", 5.0e10 },
-					{ "1kc", PSHINE_SPEED_OF_LIGHT * 1000.0 },
-					{ "2kc", PSHINE_SPEED_OF_LIGHT * 2000.0 },
+					{ "Crawl", "100 m/s", 100.0 },
+					{ "Snail", "1 km/s", 1000.0 },
+					{ "Slow", "10 km/s", 10000.0 },
+					{ "Fast", "500 km/s", 5.0e5 },
+					{ "Faster", "50 Mm/s", 5.0e7 },
+					{ "Light", "≈300 Mm/s", PSHINE_SPEED_OF_LIGHT },
+					{ "10c", "10 times the speed of light", PSHINE_SPEED_OF_LIGHT * 10.0 },
+					{ "166c", "≈166 times the speed of light", 5.0e10 },
+					{ "1kc", "1000 times the speed of light", PSHINE_SPEED_OF_LIGHT * 1000.0 },
+					{ "2kc", "2000 times the speed of light", PSHINE_SPEED_OF_LIGHT * 2000.0 },
 				};
 				for (size_t i = 0; i < sizeof(marks)/sizeof(*marks); ++i) {
 					if (ImGui_Button(marks[i].name)) game->data_own->move_speed = marks[i].value;
+					ImGui_SetItemTooltip("%s", marks[i].tooltip);
 					ImGui_SameLine();
 					if (
 						i + 1 >= sizeof(marks)/sizeof(*marks) ||
@@ -1508,16 +1513,30 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 				game->data_own->camera_yaw = 0.0;
 				game->data_own->camera_pitch = 0.0;
 			}
+			ImGui_SetItemTooltip("Set the rotation to (0.0, 0.0)");
 			ImGui_SameLine();
+			if (ImGui_Button("Center on target")) {
+				double3 bp_wcs = double3vs(body->position.values);
+				double3 bp_scs = double3mul(bp_wcs, PSHINE_SCS_FACTOR);
+				game->data_own->camera_yaw = π / 2.0 + atan2(
+					p_scs.z - bp_scs.z,
+					p_scs.x - bp_scs.x
+				);
+				// game->data_own->camera_pitch = 0.0;
+			}
+			ImGui_SetItemTooltip("Set the rotation so that the selected body is in the center");
+			ImGui_SameLine();
+			ImGui_BeginDisabled(true);
 			if (ImGui_Button("Reset position")) {
 				game->data_own->camera_yaw = 0.0;
 				game->data_own->camera_pitch = 0.0;
 			}
-			if (eximgui_begin_input_box("Graphics")) {
+			ImGui_EndDisabled();
+			if (eximgui_begin_input_box("Graphics", "Graphics settings.")) {
 				ImGui_SliderFloat("FoV", &game->graphics_settings.camera_fov, 0.00001f, 179.999f);
 				ImGui_SliderFloat("EV", &game->graphics_settings.exposure, -8.0f, 6.0f);
 				
-				if (eximgui_begin_input_box("Bloom")) {
+				if (eximgui_begin_input_box("Bloom", "Bloom effect settings. TBD.")) {
 					ImGui_SliderFloat("Knee", &game->graphics_settings.bloom_knee, 0.0f, 16.0f);
 					ImGui_SliderFloat("Threshold", &game->graphics_settings.bloom_threshold, game->graphics_settings.bloom_knee, 16.0f);
 				}
@@ -1545,22 +1564,34 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 		if (body->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			if (ImGui_Begin("Planet", NULL, 0)) {
 				struct pshine_planet *planet = (struct pshine_planet*)body;
-				if (eximgui_begin_input_box("Atmosphere")) {
+				ImGui_BeginDisabled(!planet->has_atmosphere);
+				if (eximgui_begin_input_box("Atmosphere", "The paramters of the planet's atmosphere. You may need to recalculate the LUT.")) {
 					struct pshine_atmosphere_info *atmo = &planet->atmosphere;
 					ImGui_SliderFloat3("Rayleigh Coefs.", atmo->rayleigh_coefs, 0.001f, 50.0f);
+					ImGui_SetItemTooltip("The Rayleigh scattering coeffitients for Red, Green and Blue.");
 					ImGui_SliderFloat("Rayleigh Falloff.", &atmo->rayleigh_falloff, 0.0001f, 100.0f);
+					ImGui_SetItemTooltip("The falloff factor for Rayleigh scattering.");
 					ImGui_SliderFloat("Mie Coef.", &atmo->mie_coef, 0.001f, 50.0f);
+					ImGui_SetItemTooltip("The coefficient for Mie scattering.");
 					ImGui_SliderFloat("Mie Ext. Coef.", &atmo->mie_ext_coef, 0.001f, 5.0f);
+					ImGui_SetItemTooltip("The external light coefficient for Mie scattering.");
 					ImGui_SliderFloat("Mie 'g' Coef.", &atmo->mie_g_coef, -0.9999f, 0.9999f);
+					ImGui_SetItemTooltip("The 'g' coefficient for Mie scattering.");
 					ImGui_SliderFloat("Mie Falloff.", &atmo->mie_falloff, 0.0001f, 100.0f);
+					ImGui_SetItemTooltip("The falloff factor for Mie scattering.");
 					ImGui_SliderFloat("Intensity", &atmo->intensity, 0.0f, 50.0f);
+					ImGui_SetItemTooltip("The intensity of the atmosphere. Not really a physical property.");
 				}
 				eximgui_end_input_box();
-				if (eximgui_begin_input_box("Rings")) {
+				ImGui_EndDisabled();
+				ImGui_BeginDisabled(!body->rings.has_rings);
+				if (eximgui_begin_input_box("Rings", "Parameters of the planetary rings.")) {
 					struct pshine_rings_info *rings = &body->rings;
 					ImGui_SliderFloat("Shadow smoothing", &rings->shadow_smoothing, -1.0f, 1.0f);
+					ImGui_SetItemTooltip("How \"smooth\" the transition to and from shadow is.");
 				}
 				eximgui_end_input_box();
+				ImGui_EndDisabled();
 			}
 			ImGui_End();
 		}
@@ -1579,7 +1610,7 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 		ImGui_PushStyleColor(ImGuiCol_WindowBg, 0x00000030);
 		ImGui_PushStyleColor(ImGuiCol_Border, 0x00000000);
 		ImGui_PushStyleColor(ImGuiCol_BorderShadow, 0x00000000);
-		if (ImGui_Begin("Info", nullptr,
+		if (ImGui_Begin("Selected celestial body", nullptr,
 			// ImGuiWindowFlags_NoTitleBar |
 			// ImGuiWindowFlags_NoResize |
 			// ImGuiWindowFlags_NoScrollbar |
