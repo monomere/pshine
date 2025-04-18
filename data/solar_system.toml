@@ -1,9 +1,9 @@
 name = "The Solar System"
 planets = [
+	"data/celestial/solar/sun.toml",
 	"data/celestial/solar/earth.toml",
 	"data/celestial/solar/mars.toml",
 	"data/celestial/solar/moon.toml",
-	"data/celestial/solar/sun.toml",
 	"data/celestial/solar/mercury.toml",
 	"data/celestial/solar/venus.toml",
 	"data/celestial/solar/jupiter.toml",

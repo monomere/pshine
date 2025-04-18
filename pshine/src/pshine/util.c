@@ -467,26 +467,25 @@ static const float CIE_Z[CIE_N_SAMPLES] = {
 
 static const float CIE_Y_INTEGRAL = 106.856895;
 
-/// Planck's Law
-static float blackbody_radiation(float λ, float t) {
+float pshine_blackbody_radiation(float λ, float t) {
 	float c1 = 1.19104297e-1; // W m^2 (but times 1e15)
 	float c2 = 0.01439e6; // m K (but times 1e6)
 	λ /= 1e3; // 1e9 to 1e6
 	return c1 / (λ*λ*λ*λ*λ) / expm1(c2 / (λ * t));
 }
 
-/// compute the spectral radience values for wavelengths
+/// compute the spectral radiance values for wavelengths
 /// in CIE_LAMBDA.
 static void blackbody_rads(float t, float Ls[CIE_N_SAMPLES]) {
 	for (size_t i = 0; i < CIE_N_SAMPLES; ++i) {
-		Ls[i] = blackbody_radiation(CIE_LAMBDA[i], t);
+		Ls[i] = pshine_blackbody_radiation(CIE_LAMBDA[i], t);
 	}
 }
 
 static void blackbody_rads_norm(float t, float Ls[CIE_N_SAMPLES]) {
 	blackbody_rads(t, Ls);
 	float λ_max = 2.8977721e-3 / t * 1e9;
-	float max_l = blackbody_radiation(λ_max, t);
+	float max_l = pshine_blackbody_radiation(λ_max, t);
 
 	for (size_t i = 0; i < CIE_N_SAMPLES; ++i) {
 		Ls[i] /= max_l;
@@ -524,4 +523,74 @@ pshine_color_rgb pshine_blackbody_temp_to_rgb(float t) {
 			.b = +0.055648 * xyz.xyz.x - 0.204043 * xyz.xyz.y + 1.057311 * xyz.xyz.z,
 		}
 	};
+}
+
+static const uint64_t pcg32_multiplier = 6364136223846793005u;
+static const uint64_t pcg32_increment  = 1442695040888963407u;
+
+typedef struct pshine_uint128_ { uint64_t lo, hi; } pshine_uint128;
+
+static const pshine_uint128 pcg64_multiplier = { 2549297995355413924ull, 4865540595714422341ull };
+static const pshine_uint128 pcg64_increment  = { 6364136223846793005ull, 1442695040888963407ull };
+
+// thankie https://github.com/rkern/pcg64 :-)
+
+static inline pshine_uint128 pshine_uint128add(pshine_uint128 a, pshine_uint128 b) {
+	return (pshine_uint128){
+		.lo = a.lo + b.lo,
+		.hi = a.hi + b.hi + (a.lo + b.lo < b.lo),
+	};
+}
+
+static inline pshine_uint128 pshine_uint64mul(uint64_t x, uint64_t y) {
+	pshine_uint128 r;
+	uint64_t x0, x1, y0, y1;
+	uint64_t w0, w1, w2, t;
+	r.lo = x * y;
+	x0 = x & 0xFFFFFFFFULL;
+	x1 = x >> 32;
+	y0 = y & 0xFFFFFFFFULL;
+	y1 = y >> 32;
+	w0 = x0 * y0;
+	t = x1 * y0 + (w0 >> 32);
+	w1 = t & 0xFFFFFFFFULL;
+	w2 = t >> 32;
+	w1 += x0 * y1;
+	r.hi = x1 * y1 + w2 + (w1 >> 32);
+}
+
+static inline pshine_uint128 pshine_uint128mul(pshine_uint128 a, pshine_uint128 b) {
+	pshine_uint128 r = pshine_uint64mul(a.lo, b.lo);
+	r.hi += a.hi * b.lo + a.lo * b.hi;
+	return r;
+}
+
+uint32_t pshine_pcg32_random_uint32(struct pshine_pcg32_state *state) {
+	state->state = state->state * pcg32_multiplier + pcg32_increment;
+	uint64_t x = state->state;
+	return pshine_rotr32((uint32_t)((x ^ (x >> 18)) >> 27), x >> 59);
+}
+
+uint64_t pshine_pcg64_random_uint64(struct pshine_pcg64_state *state) {
+	return ((uint64_t)pshine_pcg32_random_uint32((void*)state))
+		| ((uint64_t)pshine_pcg32_random_uint32((void*)state) << 32);
+	// pshine_uint128 x = { state->state[0], state->state[1] };
+	// x = pshine_uint128add(pshine_uint128mul(x, pcg64_multiplier), pcg64_increment);
+	// state->state[0] = x.lo;
+	// state->state[1] = x.hi;
+	// return pshine_rotr64(x.lo ^ x.hi, x.hi >> 58);
+}
+
+void pshine_pcg32_init(struct pshine_pcg32_state *state, uint64_t seed) {
+	state->state = seed + pcg32_increment;
+	(void)pshine_pcg32_random_uint32(state);
+}
+
+void pshine_pcg64_init(struct pshine_pcg64_state *state, uint64_t seed_lo, uint64_t seed_hi) {
+	seed_lo += 9287139213ull;
+	seed_hi += 4908321ull;
+	pshine_uint128 r = pshine_uint128add((pshine_uint128){seed_lo, seed_hi}, pcg64_increment);
+	state->state[0] = r.lo;
+	state->state[1] = r.hi;
+	(void)pshine_pcg64_random_uint64(state);
 }

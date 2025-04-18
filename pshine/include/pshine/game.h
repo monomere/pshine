@@ -2,6 +2,7 @@
 #define PSHINE_GAME_H_
 #include <stdint.h>
 #include <stddef.h>
+#include <pshine/util.h>
 
 typedef union pshine_point3d_ {
 	struct { double x, y, z; } xyz;
@@ -289,7 +290,7 @@ struct pshine_game {
 
 	struct pshine_renderer *renderer;
 
-	pshine_point3d camera_position;
+	pshine_point3d_world camera_position;
 	pshine_vector3d camera_forward;
 
 	struct pshine_graphics_settings graphics_settings;
@@ -307,6 +308,8 @@ struct pshine_game {
 
 	/// The skybox, etc.
 	struct pshine_environment_info environment;
+
+	struct pshine_pcg64_state rng64;
 };
 
 /// This is ran at the start of the game, before the renderer is initialized.

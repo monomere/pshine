@@ -752,6 +752,10 @@ static void init_star_system(struct pshine_game *game, struct pshine_star_system
 }
 
 void pshine_init_game(struct pshine_game *game) {
+	{
+		struct pshine_timeval now = pshine_timeval_now();
+		pshine_pcg64_init(&game->rng64, now.sec, now.nsec);
+	}
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
 	load_game_config(game, "data/config.toml");
@@ -1361,6 +1365,115 @@ static void update_star_system(struct pshine_game *game, struct pshine_star_syst
 	}
 }
 
+static void spectrometry_gui(struct pshine_game *game, float actual_delta_time) {
+	if (ImGui_Begin("Spectrometry", nullptr, 0)) {
+		struct pshine_celestial_body *star_body = game->star_systems_own[game->current_star_system].bodies_own[0];
+		if (star_body->type != PSHINE_CELESTIAL_BODY_STAR) {
+			ImGui_PushStyleColor(ImGuiCol_Text, ImGui_ColorConvertFloat4ToU32((ImVec4){1.0, 0.2, 0.2, 1.0}));
+			ImGui_Text("Configuration error: the first specified celestial body must be the star.");
+			ImGui_Text("Multi-star system support TBD.");
+			ImGui_PopStyleColor();
+			ImGui_End();
+			return;
+		}
+
+		struct pshine_star *star = (void*)star_body;
+		double dist2 = double3mag2(double3sub(
+			double3mul(double3vs(game->camera_position.values), PSHINE_XCS_WCS_FACTOR),
+			double3mul(double3vs(star_body->position.values), PSHINE_XCS_WCS_FACTOR)
+		));
+
+		float temp = star->temperature;
+		// ImGui_SliderFloat("Temp, K", &temp, 1200, 8000);
+
+		enum : size_t { SAMPLE_COUNT = 50 };
+		
+		double value_min = -0.0004f; // -9999.0f; // TODO
+		double value_max = 0.01f; // -9999.0f; // TODO
+		double values[SAMPLE_COUNT];
+		const float λ_min = 240.0f;
+		const float λ_max = 840.0f; // 2.8977721e-3 / temp * 1e9;
+		const float λ_step = (λ_max - λ_min) / SAMPLE_COUNT;
+		{
+			for (size_t i = 0; i < SAMPLE_COUNT; ++i) {
+				values[i] = (double)pshine_blackbody_radiation(λ_min + λ_step * i, temp) / dist2;
+				// introduce some noise
+				values[i] += ((double)pshine_pcg64_random_float(&game->rng64) * 2.0 - 1.0) * 0.0001 / sqrt(dist2);
+				values[i] += (pshine_pcg64_random_float(&game->rng64) * 2.0 - 1.0) * 0.0001;
+				if (values[i] > value_max) value_max = values[i];
+			}
+		}
+
+		const ImGuiStyle *style = ImGui_GetStyle();
+		const ImVec2 cursor_pos = ImGui_GetCursorScreenPos();
+		const ImVec2 plot_off = {
+			cursor_pos.x + style->ItemSpacing.x + 50.0f,
+			cursor_pos.y + style->ItemSpacing.y,
+		};
+		const ImVec2 plot_size = {
+			ImGui_GetContentRegionAvail().x - 2.0 * style->ItemSpacing.x - 50.0f,
+			200.0f - 2.0 * style->ItemSpacing.y,
+		};
+
+		static ImVec2 old_plot_positions[SAMPLE_COUNT];
+		static ImVec2 plot_positions[SAMPLE_COUNT];
+
+		float pt_step_x = plot_size.x / SAMPLE_COUNT;
+		float pt_scale_y = plot_size.y / (value_max - value_min);
+		{
+			for (size_t i = 0; i < SAMPLE_COUNT; ++i) {
+				plot_positions[i].x = plot_off.x + pt_step_x * i;
+				plot_positions[i].y = plot_off.y + plot_size.y - (values[i] - value_min) * pt_scale_y;
+			}
+		}
+
+		ImDrawList *drawlist = ImGui_GetWindowDrawList();
+
+		{
+			size_t i = 0;
+			for (float λ = λ_min; λ < λ_max; (λ += 10.0f), ++i) {
+				const float x = plot_off.x + plot_size.x * ((λ - λ_min) / (λ_max - λ_min));
+				ImDrawList_AddLine(drawlist, (ImVec2){ x, plot_off.y }, (ImVec2){ x, plot_off.y + plot_size.y },
+					i % 4 == 0 ? 0x10FFFFFF : 0x05FFFFFF);
+				if (i % 8 == 0) {
+					char s[32] = {};
+					snprintf(s, sizeof s, "%.4g", λ);
+					ImDrawList_AddText(drawlist, (ImVec2){ x, plot_off.y + plot_size.y }, 0x10FFFFFF, s);
+				}
+			}
+			i = 0;
+			for (float l = 0.0f; l < value_max; (l += 2.0f * (value_max - value_min) / 50.0f), ++i) {
+				ImDrawList_AddLine(drawlist, (ImVec2){
+					plot_off.x,
+					plot_off.y + plot_size.y - l * pt_scale_y,
+				}, (ImVec2){
+					plot_off.x + plot_size.x,
+					plot_off.y + plot_size.y - l * pt_scale_y,
+				}, i % 2 == 0 ? 0x10FFFFFF : 0x05FFFFFF);
+				if (i % 8 == 0) {
+					char s[32] = {};
+					snprintf(s, sizeof s, "%g", l - value_min);
+					ImDrawList_AddText(drawlist, (ImVec2){
+						plot_off.x - 50.0f,
+						plot_off.y + plot_size.y - l * pt_scale_y
+					}, 0x10FFFFFF, s);
+				}
+			}
+		}
+
+		ImDrawList_PushClipRect(drawlist, plot_off,
+			(ImVec2){ plot_off.x + plot_size.x, plot_off.y + plot_size.y }, false);
+		ImDrawList_AddPolyline(drawlist, plot_positions, SAMPLE_COUNT, 0xFFFFFFFF, ImDrawFlags_None, 2.0f);
+		ImDrawList_AddPolyline(drawlist, old_plot_positions, SAMPLE_COUNT, 0x02FFFFFF, ImDrawFlags_None, 1.0f);
+		ImDrawList_PopClipRect(drawlist);
+
+		for (size_t i = 0; i < SAMPLE_COUNT; ++i) {
+			old_plot_positions[i] = plot_positions[i];
+		}
+	}
+	ImGui_End();
+}
+
 void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 	game->time += actual_delta_time * game->time_scale;
 	for (size_t i = 0; i < game->star_system_count; ++i) {
@@ -1673,6 +1786,8 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 				| ImGuiColorEditFlags_NoPicker);
 		}
 		ImGui_End();
+	
+		spectrometry_gui(game, actual_delta_time);
 
 		eximgui_end_frame();
 	}

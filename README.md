@@ -226,6 +226,10 @@ This isn't the full set of resources used unfortunately.
 - [The COD Post-processing slides](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare/)
 - https://github.com/expenses/bloom
 - https://github.com/hatoo/blackbody
+- https://www.corsix.org/content/higher-quality-random-floats
+- https://dotat.at/@/2023-06-23-random-double.html
+- https://en.wikipedia.org/wiki/Permuted_congruential_generator
+- https://github.com/rkern/pcg64
 
 - Amazing resource for orbital mechanics: [https://orbital-mechanics.space/](https://orbital-mechanics.space/)
 - Vulkan discord

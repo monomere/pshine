@@ -15,10 +15,10 @@ axis = [0.0, 1.0, 0.0]
 
 [orbit]
 argument = 0.90831
-eccentricity = 0.50563
+eccentricity = 0.10563
 inclination = 0.41
 longitude = 2.34354
-semimajor = 47_910.0
+semimajor = 17_910.0
 true_anomaly = 0.0
 
 [surface]

@@ -267,10 +267,66 @@ typedef union pshine_color_rgb_ {
 	float values[3];
 } pshine_color_rgb;
 
+/// Planck's Law. `λ` is the wavelength in nm. `t` is the temperature in Kelvin.
+/// The result is in units of `W / sr·m²·nm`.
+float pshine_blackbody_radiation(float λ, float t);
+
 /// Convert temperature (Kelvin) into XYZ color whose components are [0.0, ∞).
 pshine_color_xyz pshine_blackbody_temp_to_xyz(float temp);
 
 /// Convert temperature (Kelvin) into RGB color whose components are [0.0, ∞).
 pshine_color_rgb pshine_blackbody_temp_to_rgb(float temp);
+
+
+struct pshine_pcg32_state {
+	uint64_t state;
+};
+
+struct pshine_pcg64_state {
+	uint64_t state[2];
+};
+
+// static uint64_t       state      = 0x4d595df4d0f33173;		// Or something seed-dependent
+// static uint64_t const multiplier = 6364136223846793005u;
+// static uint64_t const increment  = 1442695040888963407u;	// Or an arbitrary odd constant
+
+static inline uint32_t pshine_rotr32(uint32_t x, unsigned r) { return x >> r | x << (-r & 31); }
+static inline uint64_t pshine_rotr64(uint64_t x, unsigned r) { return x >> r | x << (-r & 63); }
+
+/// Generate pseudo-random 32-bit number, with a roughly uniform distribution.
+uint32_t pshine_pcg32_random_uint32(struct pshine_pcg32_state *state);
+/// Initialize the random number generator with a provided seed.
+void pshine_pcg32_init(struct pshine_pcg32_state *state, uint64_t seed);
+
+/// Generate pseudo-random 64-bit number, with a roughly uniform distribution.
+uint64_t pshine_pcg64_random_uint64(struct pshine_pcg64_state *state);
+/// Initialize the random number generator with a provided seed. The seed is a 128-bit number.
+void pshine_pcg64_init(struct pshine_pcg64_state *state, uint64_t seed_lo, uint64_t seed_hi);
+
+static inline double pshine_pcg64_random_double(struct pshine_pcg64_state *rng) {
+	double d;
+	uint64_t x = pshine_pcg64_random_uint64(rng);
+	uint64_t e = __builtin_ctzll(x) - 11ull;
+	if ((int64_t)e >= 0) e = __builtin_ctzll(pshine_pcg64_random_uint64(rng));
+	x = (((x >> 11) + 1) >> 1) - ((e - 1011ull) << 52);
+	memcpy(&d, &x, sizeof(d));
+	return d;
+}
+
+static inline float pshine_pcg64_random_float(struct pshine_pcg64_state *rng) {
+	return (float)pshine_pcg64_random_double(rng);
+}
+
+// TODO
+// static inline float pshine_pcg32_random_float(struct pshine_pcg32_state *rng) {
+// 	double d;
+// 	uint64_t x = pshine_pcg64_random_uint64(rng);
+// 	uint64_t e = __builtin_ctzll(x) - 11ull;
+// 	if ((int64_t)e >= 0) e = __builtin_ctzll(pshine_pcg64_random_uint64(rng));
+// 	x = (((x >> 11) + 1) >> 1) - ((e - 1011ull) << 52);
+// 	memcpy(&d, &x, sizeof(d));
+// 	return d;
+// 	return (float)(pshine_pcg32_random_uint32(rng) >> 11) * 0x1.0p-53;
+// }
 
 #endif // PSHINE_UTIL_H_
