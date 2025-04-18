@@ -3358,8 +3358,10 @@ static void init_imgui(struct vulkan_renderer *r) {
 	ImGuiContext *ctx = ImGui_CreateContext(nullptr);
 	ImGui_SetCurrentContext(ctx);
 	ImGuiIO *io = ImGui_GetIO();
-	io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	// io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+	io->ConfigDockingTransparentPayload = true;
 
 	ImGui_StyleColorsDark(nullptr);
 

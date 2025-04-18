@@ -840,8 +840,8 @@ void pshine_deinit_game(struct pshine_game *game) {
 static const enum pshine_key
 	K_FORWARD = PSHINE_KEY_W,
 	K_BACKWARD = PSHINE_KEY_S,
-	K_UP = PSHINE_KEY_E,
-	K_DOWN = PSHINE_KEY_Q,
+	K_UP = PSHINE_KEY_Q,
+	K_DOWN = PSHINE_KEY_E,
 	K_RIGHT = PSHINE_KEY_D,
 	K_LEFT = PSHINE_KEY_A,
 	K_ZOOM_IN = PSHINE_KEY_Z,
@@ -1228,7 +1228,7 @@ static struct eximgui_state *g__eximgui_state = nullptr;
 
 static void init_imgui_style() {
 	ImGuiStyle *st = ImGui_GetStyle();
-	st->Colors[ImGuiCol_WindowBg] = rgbint_to_vec4(0x02,0x02,0x02,0xFE);
+	st->Colors[ImGuiCol_WindowBg] = rgbint_to_vec4(0x02, 0x02, 0x02, 0xFE);
 	st->Colors[ImGuiCol_Button] = rgbint_to_vec4(0x0C, 0x0C, 0x0C, 0xFF);
 	st->Colors[ImGuiCol_ButtonHovered] = rgbint_to_vec4(0x0E, 0x0E, 0x0E, 0xFF);
 	st->Colors[ImGuiCol_ButtonActive] = rgbint_to_vec4(0x0A, 0x0A, 0x0A, 0xFF);
@@ -1237,6 +1237,13 @@ static void init_imgui_style() {
 	st->Colors[ImGuiCol_FrameBgActive] = rgbint_to_vec4(0x0A, 0x0A, 0x0A, 0xFF);
 	st->Colors[ImGuiCol_SliderGrab] = rgbint_to_vec4(0x30, 0x30, 0x30, 0xFF);
 	st->Colors[ImGuiCol_SliderGrabActive] = rgbint_to_vec4(0x2C, 0x2C, 0x2C, 0xFF);
+	st->Colors[ImGuiCol_Tab] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
+	st->Colors[ImGuiCol_TabActive] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
+	st->Colors[ImGuiCol_TabHovered] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
+	st->Colors[ImGuiCol_TabSelectedOverline] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_TabDimmedSelectedOverline] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
+	st->Colors[ImGuiCol_TabDimmedSelected] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
+	st->Colors[ImGuiCol_TabDimmed] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
 	st->Colors[ImGuiCol_TitleBg] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
 	st->Colors[ImGuiCol_TitleBgActive] = rgbint_to_vec4(0x0A, 0x0A, 0x0A, 0xFF);
 	st->Colors[ImGuiCol_TitleBgCollapsed] = rgbint_to_vec4(0, 0, 0, 0xE0);
@@ -1250,6 +1257,7 @@ static void init_imgui_style() {
 	st->Colors[ImGuiCol_BorderShadow] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
 	st->Colors[ImGuiCol_SeparatorHovered] = rgbint_to_vec4(0x1F, 0x11, 0x11, 0xFF);
 	st->Colors[ImGuiCol_SeparatorActive] = rgbint_to_vec4(0x1F, 0x11, 0x11, 0xFF);
+	st->Colors[ImGuiCol_DockingEmptyBg] = rgbint_to_vec4(0x1F, 0x11, 0x11, 0x00);
 	// st->FrameRounding = 3.0f;
 	// st->Colors[ImGuiCol_Button] 31478479.308u
 }
@@ -1276,6 +1284,7 @@ void pshine_post_init_game(struct pshine_game *game) {
 }
 
 static void eximgui_begin_frame() {
+	ImGui_DockSpaceOverViewportEx(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode, nullptr);
 	ImGui_PushFont(g__eximgui_state->font_regular);
 }
 
@@ -1295,7 +1304,7 @@ static void eximgui_state_deinit(struct eximgui_state *st) {
 static bool eximgui_begin_input_box(const char *label, const char *tooltip) {
 	ImGuiID id = ImGui_GetID(label);
 	bool is_open = ImGuiStorage_GetBool(&g__eximgui_state->storage, id, true);
-	
+
 	ImGui_PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0);
 	ImGui_PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0);
 	ImGui_PushStyleVar(ImGuiStyleVar_SeparatorTextBorderSize, 1.0);
