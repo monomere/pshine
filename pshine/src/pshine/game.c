@@ -1365,6 +1365,105 @@ static void update_star_system(struct pshine_game *game, struct pshine_star_syst
 	}
 }
 
+struct eximgui_plot_info {
+	float x_min, x_max;
+	size_t x_ticks, y_ticks;
+	size_t y_count;
+	const float *ys;
+	bool auto_y_range;
+	bool extend_by_auto_range;
+	float y_min, y_max;
+};
+
+static void eximgui_plot(const struct eximgui_plot_info *info) {
+	const float x_min = info->x_min;
+	const float x_max = info->x_max;
+	const float x_d = x_max - x_min;
+	
+	float y_min = float_pinfty, y_max = float_ninfty;
+	if (!info->auto_y_range) {
+		y_min = info->y_min;
+		y_max = info->y_max;
+	}
+	if (info->auto_y_range || info->extend_by_auto_range) {
+		for (size_t i = 0; i < info->y_count; ++i) {
+			if (info->ys[i] >= y_max) y_max = info->ys[i];
+			if (info->ys[i] <= y_min) y_min = info->ys[i];
+		}
+	}
+	const float y_d = y_max - y_min;
+
+	const ImGuiStyle *style = ImGui_GetStyle();
+	const ImVec2 cursor_pos = ImGui_GetCursorScreenPos();
+
+	const float left_margin = 50.0f;
+
+	const ImVec2 off = {
+		cursor_pos.x + style->ItemSpacing.x + left_margin,
+		cursor_pos.y + style->ItemSpacing.y,
+	};
+	const ImVec2 size = {
+		ImGui_GetContentRegionAvail().x - 2.0 * style->ItemSpacing.x - left_margin,
+		200.0f - 2.0 * style->ItemSpacing.y,
+	};
+
+	ImVec2 line_pts[info->y_count];
+	float pt_step_x = size.x / info->y_count;
+	float pt_scale_x = size.x / x_d;
+	float pt_scale_y = size.y / y_d;
+	for (size_t i = 0; i < info->y_count; ++i) {
+		line_pts[i].x = off.x + pt_step_x * i;
+		line_pts[i].y = off.y + size.y - (info->ys[i] - y_min) * pt_scale_y;
+	}
+
+	ImDrawList *drawlist = ImGui_GetWindowDrawList();
+
+	{
+		size_t i = 0;
+		const float Δx = x_d / info->x_ticks;
+		for (float x = x_min; x < x_max; x += Δx, ++i) {
+			const float gui_x = off.x + size.x * (x - x_min) / x_d;
+			ImDrawList_AddLine(drawlist, (ImVec2){ gui_x, off.y }, (ImVec2){ gui_x, off.y + size.y },
+				i % 4 == 0 ? 0x10FFFFFF : 0x05FFFFFF);
+			if (i % 8 == 0) {
+				char s[32] = {};
+				snprintf(s, sizeof s, "%g", x);
+				ImDrawList_AddText(drawlist, (ImVec2){
+					gui_x,
+					off.y + size.y + style->ItemInnerSpacing.y
+				}, 0x10FFFFFF, s);
+			}
+		}
+		i = 0;
+		const float Δy = y_d / info->y_ticks;
+		for (
+			float y = y_min;
+			y < y_max;
+			y += Δy, ++i
+		) {
+			const float gui_y = off.y + size.y - size.y * (y - y_min) / y_d;
+			ImDrawList_AddLine(drawlist, (ImVec2){ off.x, gui_y }, (ImVec2){ off.x + size.x, gui_y },
+				i % 2 == 0 ? 0x10FFFFFF : 0x05FFFFFF);
+			if (i % 8 == 0) {
+				char s[32] = {};
+				snprintf(s, sizeof s, "%.3g", y);
+				ImVec2 text_size = ImGui_CalcTextSize(s);
+				ImDrawList_AddText(drawlist, (ImVec2){
+					off.x - text_size.x - style->ItemInnerSpacing.x,
+					gui_y - text_size.y * 0.5
+				}, 0x10FFFFFF, s);
+			}
+		}
+	}
+
+	ImDrawList_PushClipRect(drawlist, off,
+		(ImVec2){ off.x + size.x, off.y + size.y }, false);
+	ImDrawList_AddPolyline(drawlist, line_pts, info->y_count, 0xFFFFFFFF, ImDrawFlags_None, 2.0f);
+	// ImDrawList_AddPolyline(drawlist, old_plot_positions, info->y_count, 0x02FFFFFF, ImDrawFlags_None, 1.0f);
+	ImDrawList_PopClipRect(drawlist);
+
+}
+
 static void spectrometry_gui(struct pshine_game *game, float actual_delta_time) {
 	if (ImGui_Begin("Spectrometry", nullptr, 0)) {
 		struct pshine_celestial_body *star_body = game->star_systems_own[game->current_star_system].bodies_own[0];
@@ -1387,89 +1486,113 @@ static void spectrometry_gui(struct pshine_game *game, float actual_delta_time) 
 		// ImGui_SliderFloat("Temp, K", &temp, 1200, 8000);
 
 		enum : size_t { SAMPLE_COUNT = 50 };
-		
-		double value_min = -0.0004f; // -9999.0f; // TODO
-		double value_max = 0.01f; // -9999.0f; // TODO
-		double values[SAMPLE_COUNT];
+		float values[SAMPLE_COUNT];
 		const float λ_min = 240.0f;
-		const float λ_max = 840.0f; // 2.8977721e-3 / temp * 1e9;
+		const float λ_max = 1840.0f; // 2.8977721e-3 / temp * 1e9;
 		const float λ_step = (λ_max - λ_min) / SAMPLE_COUNT;
-		{
-			for (size_t i = 0; i < SAMPLE_COUNT; ++i) {
-				values[i] = (double)pshine_blackbody_radiation(λ_min + λ_step * i, temp) / dist2;
-				// introduce some noise
-				values[i] += ((double)pshine_pcg64_random_float(&game->rng64) * 2.0 - 1.0) * 0.0001 / sqrt(dist2);
-				values[i] += (pshine_pcg64_random_float(&game->rng64) * 2.0 - 1.0) * 0.0001;
-				if (values[i] > value_max) value_max = values[i];
-			}
-		}
-
-		const ImGuiStyle *style = ImGui_GetStyle();
-		const ImVec2 cursor_pos = ImGui_GetCursorScreenPos();
-		const ImVec2 plot_off = {
-			cursor_pos.x + style->ItemSpacing.x + 50.0f,
-			cursor_pos.y + style->ItemSpacing.y,
-		};
-		const ImVec2 plot_size = {
-			ImGui_GetContentRegionAvail().x - 2.0 * style->ItemSpacing.x - 50.0f,
-			200.0f - 2.0 * style->ItemSpacing.y,
-		};
-
-		static ImVec2 old_plot_positions[SAMPLE_COUNT];
-		static ImVec2 plot_positions[SAMPLE_COUNT];
-
-		float pt_step_x = plot_size.x / SAMPLE_COUNT;
-		float pt_scale_y = plot_size.y / (value_max - value_min);
-		{
-			for (size_t i = 0; i < SAMPLE_COUNT; ++i) {
-				plot_positions[i].x = plot_off.x + pt_step_x * i;
-				plot_positions[i].y = plot_off.y + plot_size.y - (values[i] - value_min) * pt_scale_y;
-			}
-		}
-
-		ImDrawList *drawlist = ImGui_GetWindowDrawList();
-
-		{
-			size_t i = 0;
-			for (float λ = λ_min; λ < λ_max; (λ += 10.0f), ++i) {
-				const float x = plot_off.x + plot_size.x * ((λ - λ_min) / (λ_max - λ_min));
-				ImDrawList_AddLine(drawlist, (ImVec2){ x, plot_off.y }, (ImVec2){ x, plot_off.y + plot_size.y },
-					i % 4 == 0 ? 0x10FFFFFF : 0x05FFFFFF);
-				if (i % 8 == 0) {
-					char s[32] = {};
-					snprintf(s, sizeof s, "%.4g", λ);
-					ImDrawList_AddText(drawlist, (ImVec2){ x, plot_off.y + plot_size.y }, 0x10FFFFFF, s);
-				}
-			}
-			i = 0;
-			for (float l = 0.0f; l < value_max; (l += 2.0f * (value_max - value_min) / 50.0f), ++i) {
-				ImDrawList_AddLine(drawlist, (ImVec2){
-					plot_off.x,
-					plot_off.y + plot_size.y - l * pt_scale_y,
-				}, (ImVec2){
-					plot_off.x + plot_size.x,
-					plot_off.y + plot_size.y - l * pt_scale_y,
-				}, i % 2 == 0 ? 0x10FFFFFF : 0x05FFFFFF);
-				if (i % 8 == 0) {
-					char s[32] = {};
-					snprintf(s, sizeof s, "%g", l - value_min);
-					ImDrawList_AddText(drawlist, (ImVec2){
-						plot_off.x - 50.0f,
-						plot_off.y + plot_size.y - l * pt_scale_y
-					}, 0x10FFFFFF, s);
-				}
-			}
-		}
-
-		ImDrawList_PushClipRect(drawlist, plot_off,
-			(ImVec2){ plot_off.x + plot_size.x, plot_off.y + plot_size.y }, false);
-		ImDrawList_AddPolyline(drawlist, plot_positions, SAMPLE_COUNT, 0xFFFFFFFF, ImDrawFlags_None, 2.0f);
-		ImDrawList_AddPolyline(drawlist, old_plot_positions, SAMPLE_COUNT, 0x02FFFFFF, ImDrawFlags_None, 1.0f);
-		ImDrawList_PopClipRect(drawlist);
 
 		for (size_t i = 0; i < SAMPLE_COUNT; ++i) {
-			old_plot_positions[i] = plot_positions[i];
+			values[i] = (double)pshine_blackbody_radiation(λ_min + λ_step * i, temp) / dist2;
+			// introduce some noise
+			// values[i] += ((double)pshine_pcg64_random_float(&game->rng64) * 2.0 - 1.0) * 0.0001 / sqrt(dist2);
+			// values[i] += (pshine_pcg64_random_float(&game->rng64) * 2.0 - 1.0) * 0.0001;
 		}
+
+		eximgui_plot(&(struct eximgui_plot_info){
+			.y_count = SAMPLE_COUNT,
+			.ys = values,
+			.x_min = λ_min,
+			.x_max = λ_max,
+			.x_ticks = 30,
+			.y_ticks = 30,
+			.auto_y_range = false,
+			.extend_by_auto_range = true,
+			.y_min = -0.0004,
+			.y_max = 0.05,
+		});
+		
+		// double value_norm_min = -0.02f;
+		// double value_norm_max = 1.0f;
+		// double value_max = -9999.99f;
+		// {
+		// }
+
+		// ImGui_Text("%f", value_max);
+
+		// const ImGuiStyle *style = ImGui_GetStyle();
+		// const ImVec2 cursor_pos = ImGui_GetCursorScreenPos();
+		// const ImVec2 plot_off = {
+		// 	cursor_pos.x + style->ItemSpacing.x + 50.0f,
+		// 	cursor_pos.y + style->ItemSpacing.y,
+		// };
+		// const ImVec2 plot_size = {
+		// 	ImGui_GetContentRegionAvail().x - 2.0 * style->ItemSpacing.x - 50.0f,
+		// 	200.0f - 2.0 * style->ItemSpacing.y,
+		// };
+
+		// static ImVec2 old_plot_positions[SAMPLE_COUNT];
+		// static ImVec2 plot_positions[SAMPLE_COUNT];
+
+		// float pt_step_x = plot_size.x / SAMPLE_COUNT;
+		// float pt_scale_y = plot_size.y / (value_norm_max - value_norm_min);
+		// {
+		// 	for (size_t i = 0; i < SAMPLE_COUNT; ++i) {
+		// 		plot_positions[i].x = plot_off.x + pt_step_x * i;
+		// 		plot_positions[i].y = plot_off.y + plot_size.y - (values[i] / value_max - value_norm_min) * pt_scale_y;
+		// 	}
+		// }
+
+		// ImDrawList *drawlist = ImGui_GetWindowDrawList();
+
+		// {
+		// 	size_t i = 0;
+		// 	for (float λ = λ_min; λ < λ_max; (λ += 10.0f), ++i) {
+		// 		const float x = plot_off.x + plot_size.x * ((λ - λ_min) / (λ_max - λ_min));
+		// 		ImDrawList_AddLine(drawlist, (ImVec2){ x, plot_off.y }, (ImVec2){ x, plot_off.y + plot_size.y },
+		// 			i % 4 == 0 ? 0x10FFFFFF : 0x05FFFFFF);
+		// 		if (i % 8 == 0) {
+		// 			char s[32] = {};
+		// 			snprintf(s, sizeof s, "%g", λ);
+		// 			ImDrawList_AddText(drawlist, (ImVec2){
+		// 				x,
+		// 				plot_off.y + plot_size.y + style->ItemInnerSpacing.y
+		// 			}, 0x10FFFFFF, s);
+		// 		}
+		// 	}
+		// 	i = 0;
+		// 	for (
+		// 		float l = value_norm_min * value_max;
+		// 		l < value_max;
+		// 		(l += 2.0f * (value_max - value_min) / 50.0f), ++i
+		// 	) {
+		// 		ImDrawList_AddLine(drawlist, (ImVec2){
+		// 			plot_off.x,
+		// 			plot_off.y + plot_size.y - (l / value_max - value_norm_min) * pt_scale_y,
+		// 		}, (ImVec2){
+		// 			plot_off.x + plot_size.x,
+		// 			plot_off.y + plot_size.y - (l / value_max - value_norm_max) * pt_scale_y,
+		// 		}, i % 2 == 0 ? 0x10FFFFFF : 0x05FFFFFF);
+		// 		if (i % 8 == 0) {
+		// 			char s[32] = {};
+		// 			snprintf(s, sizeof s, "%.3g", l - value_norm_min);
+		// 			ImVec2 text_size = ImGui_CalcTextSize(s);
+		// 			ImDrawList_AddText(drawlist, (ImVec2){
+		// 				plot_off.x - text_size.x - style->ItemInnerSpacing.x,
+		// 				plot_off.y + plot_size.y - l * pt_scale_y - text_size.y * 0.5
+		// 			}, 0x10FFFFFF, s);
+		// 		}
+		// 	}
+		// }
+
+		// ImDrawList_PushClipRect(drawlist, plot_off,
+		// 	(ImVec2){ plot_off.x + plot_size.x, plot_off.y + plot_size.y }, false);
+		// ImDrawList_AddPolyline(drawlist, plot_positions, SAMPLE_COUNT, 0xFFFFFFFF, ImDrawFlags_None, 2.0f);
+		// ImDrawList_AddPolyline(drawlist, old_plot_positions, SAMPLE_COUNT, 0x02FFFFFF, ImDrawFlags_None, 1.0f);
+		// ImDrawList_PopClipRect(drawlist);
+
+		// for (size_t i = 0; i < SAMPLE_COUNT; ++i) {
+		// 	old_plot_positions[i] = plot_positions[i];
+		// }
 	}
 	ImGui_End();
 }
@@ -1642,6 +1765,11 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 				double3 bp_scs = double3mul(bp_wcs, PSHINE_SCS_FACTOR);
 				game->data_own->camera_yaw = π / 2.0 + atan2(
 					p_scs.z - bp_scs.z,
+					p_scs.x - bp_scs.x
+				);
+				// TODO: this is a bit weird.
+				game->data_own->camera_pitch = -atan2(
+					p_scs.y - bp_scs.y,
 					p_scs.x - bp_scs.x
 				);
 				// game->data_own->camera_pitch = 0.0;

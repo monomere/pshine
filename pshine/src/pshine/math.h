@@ -12,6 +12,8 @@
 static const double π = 3.141592653589793;
 static const double euler = 2.718281828459045;
 static const double τ = 6.283185307179586;
+static const float float_pinfty = +0x1.fffffep+127f;
+static const float float_ninfty = -0x1.fffffep+127f;
 
 
 

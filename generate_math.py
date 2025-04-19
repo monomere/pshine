@@ -16,6 +16,8 @@ CONSTS = f"""
 static const double π = {math.pi};
 static const double euler = {math.e};
 static const double τ = {math.tau};
+static const float float_pinfty = +0x1.fffffep+127f;
+static const float float_ninfty = -0x1.fffffep+127f;
 """.strip()
 
 Q = (43,20)

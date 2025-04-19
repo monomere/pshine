@@ -47,4 +47,3 @@ albedo_texture_path = "data/textures/kj63_2x1k.png"
 lights_texture_path = "data/textures/1x1_black.png"
 bump_texture_path = "data/textures/1x1_black.png"
 spec_texture_path = "data/textures/1x1_black.png"
-
