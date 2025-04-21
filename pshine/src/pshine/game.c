@@ -929,7 +929,7 @@ static void update_camera_fly(struct pshine_game *game, float delta_time) {
 	//  cosb   0   sinb    0        cosasinb
 	//   0     1    0    -sina  =    -sina
 	// -sinb   0   cosb   cosa      cosacosb
-	
+
 	double3 cam_forward = double3x3mulv(&mat, double3xyz(0.0, 0.0, 1.0));
 	// double3 cam_forward = double3xyz(
 	// 	cos(game->data_own->camera_pitch) * sin(game->data_own->camera_yaw),
@@ -1409,7 +1409,7 @@ static void eximgui_plot(const struct eximgui_plot_info *info) {
 
 	ImVec2 line_pts[info->y_count];
 	float pt_step_x = size.x / info->y_count;
-	float pt_scale_x = size.x / x_d;
+	// float pt_scale_x = size.x / x_d;
 	float pt_scale_y = size.y / y_d;
 	for (size_t i = 0; i < info->y_count; ++i) {
 		line_pts[i].x = off.x + pt_step_x * i;
@@ -1505,7 +1505,7 @@ static void spectrometry_gui(struct pshine_game *game, float actual_delta_time) 
 			.x_max = λ_max,
 			.x_ticks = 30,
 			.y_ticks = 30,
-			.auto_y_range = false,
+			.auto_y_range = true,
 			.extend_by_auto_range = true,
 			.y_min = -0.0004,
 			.y_max = 0.05,
@@ -1593,6 +1593,86 @@ static void spectrometry_gui(struct pshine_game *game, float actual_delta_time) 
 		// for (size_t i = 0; i < SAMPLE_COUNT; ++i) {
 		// 	old_plot_positions[i] = plot_positions[i];
 		// }
+	}
+	ImGui_End();
+}
+
+static void science_gui(struct pshine_game *game, float actual_delta_time) {
+	spectrometry_gui(game, actual_delta_time);
+
+	if (ImGui_Begin("Gravity", nullptr, 0)) {
+		ImGui_PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0);
+		ImGui_PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0);
+		ImGui_PushStyleColor(ImGuiCol_ChildBg, 0xFF050505);
+		ImVec2 size = { 100, 100 };
+		if (ImGui_BeginChild("Superposition", size, ImGuiChildFlags_Border, 0)) {
+			double3 sum = double3v0();
+			for (size_t i = 0; i < game->star_systems_own[game->current_star_system].body_count; ++i) {
+				struct pshine_celestial_body *body = game->star_systems_own[game->current_star_system].bodies_own[i];
+				double3 d = double3sub(
+					double3mul(double3vs(game->camera_position.values), PSHINE_XCS_WCS_FACTOR),
+					double3mul(double3vs(body->position.values), PSHINE_XCS_WCS_FACTOR)
+				);
+				sum = double3add(sum, double3div(d, double3mag2(d) / body->gravitational_parameter));
+			}
+			float3 dir = float3_double3(double3norm(sum));
+			ImDrawList *drawlist = ImGui_GetWindowDrawList();
+			float radius = 40.0f;
+			ImGuiStyle *style = ImGui_GetStyle();
+			ImVec2 off = ImGui_GetCursorScreenPos();
+			off.x -= style->WindowPadding.x;
+			off.y -= style->WindowPadding.y;
+			ImVec2 center = { off.x + size.x / 2, off.y + size.y / 2 };
+			ImDrawList_AddCircle(
+				drawlist,
+				center,
+				radius,
+				0x10FFFFFF
+			);
+			
+
+			float3x3 mat = {};
+			setfloat3x3rotation(&mat, 0.0, -game->data_own->camera_pitch, 0.0);
+			{
+				float3x3 mat2 = {};
+				setfloat3x3rotation(&mat2, -game->data_own->camera_yaw, 0.0, 0.0);
+				float3x3mul(&mat, &mat2);
+			}
+			dir = float3x3mulv(&mat, dir);
+			float2 pdir = float2xy(-dir.x, dir.y);
+
+			float2 arrow_end = float2xy(pdir.x * radius, pdir.y * radius);
+			float2 arrow_end_n = float2norm(arrow_end);
+			
+			ImDrawList_AddLine(
+				drawlist,
+				center,
+				(ImVec2){ center.x + arrow_end.x, center.y + arrow_end.y },
+				0xFF0000FF
+			);
+			ImDrawList_AddLine(
+				drawlist,
+				(ImVec2){ center.x + arrow_end.x, center.y + arrow_end.y },
+				(ImVec2){
+					center.x + arrow_end.x + arrow_end_n.y * 5 - arrow_end_n.x * 5,
+					center.y + arrow_end.y - arrow_end_n.x * 5 - arrow_end_n.y * 5,
+				},
+				0xFF0000FF
+			);
+			ImDrawList_AddLine(
+				drawlist,
+				(ImVec2){ center.x + arrow_end.x, center.y + arrow_end.y },
+				(ImVec2){
+					center.x + arrow_end.x - arrow_end_n.y * 5 - arrow_end_n.x * 5,
+					center.y + arrow_end.y + arrow_end_n.x * 5 - arrow_end_n.y * 5,
+				},
+				0xFF0000FF
+			);
+		}
+		ImGui_EndChild();
+		ImGui_PopStyleColor();
+		ImGui_PopStyleVar();
+		ImGui_PopStyleVar();
 	}
 	ImGui_End();
 }
@@ -1915,7 +1995,7 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 		}
 		ImGui_End();
 	
-		spectrometry_gui(game, actual_delta_time);
+		science_gui(game, actual_delta_time);
 
 		eximgui_end_frame();
 	}
