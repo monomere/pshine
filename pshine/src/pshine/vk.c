@@ -609,7 +609,7 @@ static void create_mesh(
 	size_t vertex_size = mesh_data->vertex_type == PSHINE_VERTEX_PLANET
 		? sizeof(struct pshine_planet_vertex)
 		: sizeof(struct pshine_static_mesh_vertex);
-	
+
 	mesh->vertex_buffer = allocate_buffer(
 		r,
 		&(struct vulkan_buffer_alloc_info){
@@ -622,7 +622,7 @@ static void create_mesh(
 		0, mesh_data->index_count * sizeof(uint32_t), mesh_data->indices);
 	write_to_buffer_staged(r, &mesh->vertex_buffer,
 		0, mesh_data->vertex_count * vertex_size, mesh_data->vertices);
-	
+
 	mesh->vertex_count = mesh_data->vertex_count;
 	mesh->index_count = mesh_data->index_count;
 	mesh->vertex_type = mesh_data->vertex_type;
@@ -726,7 +726,7 @@ static struct vulkan_image load_texture_from_file(
 			return r->image_cache.ptr[i].image;
 		}
 	}
-	
+
 	// Figure out the image extent.
 	VkExtent2D size = {};
 	if (flags & VULKAN_LOAD_TEXTURE_CUBEMAP) {
@@ -827,7 +827,7 @@ static struct vulkan_image load_texture_from_file(
 		}, format, size.width * size.height * format_channels * bytes_per_channel, data);
 		free(data);
 	}
-	
+
 	size_t idx = PSHINE_DYNA_ALLOC(r->image_cache);
 	r->image_cache.ptr[idx].fpath_own = pshine_strdup(fpath);
 	r->image_cache.ptr[idx].image = img;
@@ -841,7 +841,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			p->graphics_data = calloc(1, sizeof(struct pshine_planet_graphics_data));
-			
+
 			// Static mesh descriptors
 			CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -849,7 +849,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 				.descriptorSetCount = 1,
 				.pSetLayouts = &r->descriptors.static_mesh_layout,
 			}, &p->graphics_data->descriptor_set));
-			
+
 			// Material descriptors
 			CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -1249,7 +1249,7 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 		0, nullptr
 	);
 	vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.atmo_lut_pipeline);
-	
+
 	double scs_atmo_h = SCSd_WCSd(planet->atmosphere.height);
 	double scs_body_r = SCSd_WCSd(planet->as_body.radius);
 	double scs_body_r_scaled = scs_body_r / (scs_body_r + scs_atmo_h);
@@ -1452,7 +1452,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 		extensions[extension_count_glfw + 1] = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
 
 	bool have_validation = false;
-	
+
 	{
 		uint32_t count = 0;
 		CHECKVK(vkEnumerateInstanceLayerProperties(&count, nullptr));
@@ -1610,7 +1610,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	}
 
 	volkLoadDevice(r->device);
-	
+
 	// Sneaky
 	vkCmdPipelineBarrier2 = vkCmdPipelineBarrier2KHR;
 
@@ -1792,7 +1792,7 @@ static void init_swapchain(struct vulkan_renderer *r) {
 
 }
 
-static void deinit_swapchain(struct vulkan_renderer *r) {	
+static void deinit_swapchain(struct vulkan_renderer *r) {
 	for (uint32_t i = 0; i < r->swapchain_image_count; ++i)
 		vkDestroyImageView(r->device, r->swapchain_image_views_own[i], nullptr);
 
@@ -1819,7 +1819,7 @@ static void init_hdr_rpass(struct vulkan_renderer *r) {
 	};
 
 	VkSubpassDependency subpass_dependencies[] = {
-		
+
 		// synchronize previous geometry_subpass transient_color_attachment write
 		// before current geometry_subpass transient_color_attachment write.
 		(VkSubpassDependency){
@@ -2118,7 +2118,7 @@ static void init_transients(struct vulkan_renderer *r) {
 			.usage
 				= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT // for atmosphere rendering and for the tonemap
 				| VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT // for the geometry rendering
-				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT // for the downsample blit operation 
+				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT // for the downsample blit operation
 				| VK_IMAGE_USAGE_STORAGE_BIT // for the bloom/upsample&composite bloom shader
 				| VK_IMAGE_USAGE_SAMPLED_BIT, // for the downsample compute
 		},
@@ -2310,7 +2310,7 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 	}, nullptr, &layout));
 
 	PSHINE_DEBUG("info->push_constant_range_count=%u", info->push_constant_range_count);
-	
+
 	if (info->layout_name != nullptr)
 		NAME_VK_OBJECT(r, layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, info->layout_name);
 
@@ -2445,7 +2445,7 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 		.renderPass = info->render_pass,
 		.subpass = info->subpass
 	}, nullptr, &pipeline));
-	
+
 	if (info->pipeline_name != nullptr)
 		NAME_VK_OBJECT(r, pipeline, VK_OBJECT_TYPE_PIPELINE, info->pipeline_name);
 
@@ -2576,7 +2576,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	r->pipelines.atmo_pipeline = atmo_pipeline.pipeline;
 	r->pipelines.atmo_layout = atmo_pipeline.layout;
 	PSHINE_DEBUG("created atmo_pipeline");
-	
+
 	struct vulkan_pipeline blit_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/blit.frag.spv",
@@ -3070,7 +3070,7 @@ static void init_data(struct vulkan_renderer *r) {
 		.maxLod = 0.0f,
 	}, nullptr, &r->atmo_lut_sampler);
 	NAME_VK_OBJECT(r, r->atmo_lut_sampler, VK_OBJECT_TYPE_SAMPLER, "atmo lut sampler");
-	
+
 	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
@@ -3087,7 +3087,7 @@ static void init_data(struct vulkan_renderer *r) {
 		.maxLod = 0.0f,
 	}, nullptr, &r->material_texture_sampler);
 	NAME_VK_OBJECT(r, r->atmo_lut_sampler, VK_OBJECT_TYPE_SAMPLER, "material texture sampler");
-	
+
 	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
@@ -3214,7 +3214,7 @@ static void init_data(struct vulkan_renderer *r) {
 
 	{
 		// ds[i] reads from i and writes to i-1
-		// VkDescriptorImageInfo 
+		// VkDescriptorImageInfo
 		VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
 		VkDescriptorImageInfo bloom_ds_images[BLOOM_STAGE_COUNT * 2] = {};
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
@@ -3663,7 +3663,7 @@ static void do_frame(
 		struct pshine_celestial_body *b = current_system->bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void*)b;
-			
+
 			// float3 wavelengths = float3rgb(
 			// 	powf(400.0f / p->atmosphere.wavelengths[0], 4) * p->atmosphere.scattering_strength,
 			// 	powf(400.0f / p->atmosphere.wavelengths[1], 4) * p->atmosphere.scattering_strength,
@@ -3892,7 +3892,7 @@ static void do_frame(
 		}
 	}
 
-	
+
 	// Skybox
 	{
 		float4x4 data[2] = {
@@ -3908,7 +3908,7 @@ static void do_frame(
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.skybox_pipeline);
 		vkCmdPushConstants(f->command_buffer, r->pipelines.skybox_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
 			sizeof(float4x4) * 2, &data);
-		
+
 		vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 			r->pipelines.skybox_layout, 0, 1, &r->data.skybox_descriptor_set, 0, nullptr);
 
@@ -3979,7 +3979,7 @@ static void do_frame(
 			});
 		}
 	}
-	
+
 	// //:---[ BLOOM ]--------------://
 	vkCmdEndRenderPass(f->command_buffer);
 
@@ -4105,7 +4105,8 @@ static void do_frame(
 						.image = dst_image->image,
 						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 						.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
-						.dstStageMask = is_last ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+						.dstStageMask = is_last ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+							: VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 						.dstAccessMask = is_last ? VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT : VK_ACCESS_2_MEMORY_READ_BIT,
 						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 						.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -4177,7 +4178,7 @@ static void render(struct vulkan_renderer *r, uint32_t current_frame, size_t fra
 			f->sync.image_avail_semaphore, VK_NULL_HANDLE,
 			&image_index
 		));
-	} else if (acquireImageRes != VK_SUCCESS) {	
+	} else if (acquireImageRes != VK_SUCCESS) {
 		CHECKVK(acquireImageRes);
 	}
 	CHECKVK(vkResetCommandBuffer(f->command_buffer, 0));
@@ -4367,7 +4368,7 @@ static void show_gizmos(struct vulkan_renderer *r) {
 				double3mag2(double3sub(camera_pos_scs, body_pos_scs)));
 			if (d < 0.01) should_render_name = false;
 		}
-		
+
 		// Planet name
 		if (should_render_name) {
 			double4 pos_ndc = project_world_to_ndc(&giz, body_pos_scs);
@@ -4415,11 +4416,11 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 	struct vulkan_renderer *r = (void*)renderer;
 
 	cImGui_ImplVulkan_CreateFontsTexture();
-	
+
 	float last_time = glfwGetTime();
 	uint32_t current_frame = 0;
 	size_t frame_number = 0, frames_since_dt_reset = 0;
-	
+
 	float delta_time_sum = 0.0f;
 
 	while (!glfwWindowShouldClose(r->window)) {
@@ -4447,7 +4448,7 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 			set_gpu_mem_usage(r, &stats);
 			show_stats_window(r, &stats);
 		}
-		show_gizmos(r);		
+		show_gizmos(r);
 		show_utils_window(r);
 		ImGui_Render();
 		render(r, current_frame, frame_number);

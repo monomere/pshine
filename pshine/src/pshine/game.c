@@ -389,7 +389,7 @@ static void create_orbit_points(
 ) {
 	body->orbit.cached_point_count = count;
 	body->orbit.cached_points_own = calloc(count, sizeof(pshine_point3d_scaled));
-	
+
 	// Copy the orbit info because the true anomaly is changed
 	// by the propagator.
 	struct pshine_orbit_info o2 = body->orbit;
@@ -451,7 +451,7 @@ static struct pshine_celestial_body *load_celestial_body(
 	// no need for pshine_strdup, as dat.u.s is allocated by tomlc99.
 #define READ_STR_FIELD(tab, NAME, FIELD_NAME) \
 	dat = toml_string_in(tab, NAME); if (dat.ok) FIELD_NAME = dat.u.s
-	
+
 	if ((ptab = toml_table_in(tab, "planet")) != nullptr) {
 		body = calloc(1, sizeof(struct pshine_planet));
 		body->type = PSHINE_CELESTIAL_BODY_PLANET;
@@ -878,7 +878,7 @@ static void update_camera_walk(struct pshine_game *game, float delta_time) {
 		double3x3mul(&mat, &mat2);
 	}
 
-	
+
 	double3 cam_forward = double3x3mulv(&mat, double3xyz(0.0, 0.0, 1.0));
 	// double3 cam_forward = double3xyz(
 	// 	cos(game->data_own->camera_pitch) * sin(game->data_own->camera_yaw),
@@ -1379,7 +1379,7 @@ static void eximgui_plot(const struct eximgui_plot_info *info) {
 	const float x_min = info->x_min;
 	const float x_max = info->x_max;
 	const float x_d = x_max - x_min;
-	
+
 	float y_min = float_pinfty, y_max = float_ninfty;
 	if (!info->auto_y_range) {
 		y_min = info->y_min;
@@ -1510,7 +1510,7 @@ static void spectrometry_gui(struct pshine_game *game, float actual_delta_time) 
 			.y_min = -0.0004,
 			.y_max = 0.05,
 		});
-		
+
 		// double value_norm_min = -0.02f;
 		// double value_norm_max = 1.0f;
 		// double value_max = -9999.99f;
@@ -1629,7 +1629,7 @@ static void science_gui(struct pshine_game *game, float actual_delta_time) {
 				radius,
 				0x10FFFFFF
 			);
-			
+
 
 			float3x3 mat = {};
 			setfloat3x3rotation(&mat, 0.0, -game->data_own->camera_pitch, 0.0);
@@ -1643,7 +1643,7 @@ static void science_gui(struct pshine_game *game, float actual_delta_time) {
 
 			float2 arrow_end = float2xy(pdir.x * radius, pdir.y * radius);
 			float2 arrow_end_n = float2norm(arrow_end);
-			
+
 			ImDrawList_AddLine(
 				drawlist,
 				center,
@@ -1700,7 +1700,7 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 
 	}
 
-	
+
 	switch (game->data_own->movement_mode) {
 		case MOVEMENT_ARC: update_camera_arc(game, actual_delta_time); break;
 		case MOVEMENT_FLY: update_camera_fly(game, actual_delta_time); break;
@@ -1865,12 +1865,24 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 			if (eximgui_begin_input_box("Graphics", "Graphics settings.")) {
 				ImGui_SliderFloat("FoV", &game->graphics_settings.camera_fov, 0.00001f, 179.999f);
 				ImGui_SliderFloat("EV", &game->graphics_settings.exposure, -8.0f, 6.0f);
-				
+
 				if (eximgui_begin_input_box("Bloom", "Bloom effect settings. TBD.")) {
 					ImGui_SliderFloat("Knee", &game->graphics_settings.bloom_knee, 0.0f, 16.0f);
 					ImGui_SliderFloat("Threshold", &game->graphics_settings.bloom_threshold, game->graphics_settings.bloom_knee, 16.0f);
 				}
 				eximgui_end_input_box();
+			}
+			eximgui_end_input_box();
+			if (eximgui_begin_input_box("Presets", "Preset times, positions and rotations with good views")) {
+				if (ImGui_Button("KJ63 system view##Preset_0")) {
+					game->time = 126000.0;
+					game->current_star_system = 0;
+					game->data_own->camera_yaw = 6.088;
+					game->data_own->camera_pitch = -0.227;
+					game->camera_position.xyz.x = -117766076861.631;
+					game->camera_position.xyz.y = 159655341.412;
+					game->camera_position.xyz.z = 69706944591.439;
+				}
 			}
 			eximgui_end_input_box();
 
@@ -1994,7 +2006,7 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 				| ImGuiColorEditFlags_NoPicker);
 		}
 		ImGui_End();
-	
+
 		science_gui(game, actual_delta_time);
 
 		eximgui_end_frame();
