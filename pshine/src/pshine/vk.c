@@ -1667,8 +1667,8 @@ static VkSurfaceFormatKHR find_surface_format(struct vulkan_renderer *r) {
 	VkSurfaceFormatKHR found_format;
 	bool found = false;
 	for (uint32_t i = 0; i < format_count; ++i) {
-		PSHINE_INFO("format: %s", pshine_vk_format_string(formats[i].format));
-		PSHINE_INFO("color space: %s", pshine_vk_color_space_string(formats[i].colorSpace));
+		// PSHINE_INFO("format: %s", pshine_vk_format_string(formats[i].format));
+		// PSHINE_INFO("color space: %s", pshine_vk_color_space_string(formats[i].colorSpace));
 		if (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
 			if (formats[i].format == VK_FORMAT_B8G8R8A8_SRGB) {
 				found_format = formats[i];
@@ -1714,8 +1714,8 @@ static VkFormat find_optimal_format(
 }
 
 static void reinit_swapchain(struct vulkan_renderer *r) {
-	vkDeviceWaitIdle(r->device);
-	vkDestroySwapchainKHR(r->device, r->swapchain, nullptr);
+	// vkDeviceWaitIdle(r->device);
+	// if (r->swapchain != VK_NULL_HANDLE) vkDestroySwapchainKHR(r->device, r->swapchain, nullptr);
 	int width, height;
 	glfwGetFramebufferSize(r->window, &width, &height);
 	r->swapchain_extent.width = width;
@@ -1740,13 +1740,13 @@ static void reinit_swapchain(struct vulkan_renderer *r) {
 		.oldSwapchain = VK_NULL_HANDLE,
 	}, nullptr, &r->swapchain));
 
-	for (size_t i = 0; i < r->swapchain_image_count; ++i) {
-		vkDestroyImageView(r->device, r->swapchain_image_views_own[i], nullptr);
-	}
-	free(r->swapchain_image_views_own);
+	// for (size_t i = 0; i < r->swapchain_image_count; ++i) {
+	// 	vkDestroyImageView(r->device, r->swapchain_image_views_own[i], nullptr);
+	// }
+	// free(r->swapchain_image_views_own);
 
 	r->swapchain_image_count = 0;
-	free(r->swapchain_images_own);
+	// free(r->swapchain_images_own);
 	CHECKVK(vkGetSwapchainImagesKHR(r->device, r->swapchain, &r->swapchain_image_count, nullptr));
 	r->swapchain_images_own = calloc(r->swapchain_image_count, sizeof(VkImage));
 	CHECKVK(vkGetSwapchainImagesKHR(r->device, r->swapchain, &r->swapchain_image_count, r->swapchain_images_own));
@@ -1766,9 +1766,7 @@ static void reinit_swapchain(struct vulkan_renderer *r) {
 				.layerCount = 1,
 			}
 		}, nullptr, &r->swapchain_image_views_own[i]));
-		PSHINE_DEBUG("naming swapchain image");
 		NAME_VK_OBJECT(r, r->swapchain_image_views_own[i], VK_OBJECT_TYPE_IMAGE_VIEW, "swapchain image view #%u", i);
-		PSHINE_DEBUG("named swapchain image");
 	}
 }
 
@@ -1845,8 +1843,8 @@ static void init_hdr_rpass(struct vulkan_renderer *r) {
 		(VkSubpassDependency){
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
 			.dstSubpass = atmosphere_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, //  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, // VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT, // earlier write/read
+			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT, // earlier write/read
 			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // current write
 		},
@@ -2177,12 +2175,12 @@ static void init_transients(struct vulkan_renderer *r) {
 		NAME_VK_OBJECT(r, r->transients.bloom[i].image, VK_OBJECT_TYPE_IMAGE, "transient bloom #%zu image", i);
 		NAME_VK_OBJECT(r, r->transients.bloom[i].view, VK_OBJECT_TYPE_IMAGE_VIEW, "transient bloom #%zu image view", i);
 	}
-	PSHINE_DEBUG("initializting transients");
+	// PSHINE_DEBUG("initializting transients");
 	NAME_VK_OBJECT(r, r->transients.color_0.image, VK_OBJECT_TYPE_IMAGE, "transient color0 image");
 	NAME_VK_OBJECT(r, r->transients.color_0.view, VK_OBJECT_TYPE_IMAGE_VIEW, "transient color0 image view");
 	NAME_VK_OBJECT(r, r->depth_image.image, VK_OBJECT_TYPE_IMAGE, "transient depth0 image");
 	NAME_VK_OBJECT(r, r->depth_image.view, VK_OBJECT_TYPE_IMAGE_VIEW, "transient depth0 image view");
-	PSHINE_DEBUG("initiadsadsalizting transients");
+	// PSHINE_DEBUG("initiadsadsalizting transients");
 }
 
 static void deinit_transients(struct vulkan_renderer *r) {
@@ -2237,6 +2235,55 @@ static void deinit_fbufs(struct vulkan_renderer *r) {
 	free(r->sdr_framebuffers_own);
 }
 
+static void init_view_dep_data(struct vulkan_renderer *r, bool resize);
+
+static void handle_swapchain_resize(struct vulkan_renderer *r) {
+	vkDeviceWaitIdle(r->device);
+	deinit_fbufs(r);
+	deinit_transients(r);
+	deinit_swapchain(r);
+	reinit_swapchain(r);
+	init_transients(r);
+	init_fbufs(r);
+	init_view_dep_data(r, true);
+	for (size_t i = 0; i < r->game->star_system_count; ++i) {
+		struct pshine_star_system *system = &r->game->star_systems_own[i];
+		for (size_t j = 0; j < system->body_count; ++j) {
+			struct pshine_celestial_body *body = system->bodies_own[j];
+			if (body->type == PSHINE_CELESTIAL_BODY_PLANET) {
+				struct pshine_planet *p = (void*)body;
+				vkUpdateDescriptorSets(r->device, 2, (VkWriteDescriptorSet[]){
+					(VkWriteDescriptorSet){
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+						.descriptorCount = 1,
+						.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+						.dstSet = p->graphics_data->atmo_descriptor_set,
+						.dstBinding = 1,
+						.dstArrayElement = 0,
+						.pImageInfo = &(VkDescriptorImageInfo){
+							.imageLayout = VK_IMAGE_LAYOUT_GENERAL, // SHADER_READ_ONLY_OPTIMAL
+							.imageView = r->transients.color_0.view,
+							.sampler = VK_NULL_HANDLE,
+						}
+					},
+					(VkWriteDescriptorSet){
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+						.descriptorCount = 1,
+						.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+						.dstSet = p->graphics_data->atmo_descriptor_set,
+						.dstBinding = 2,
+						.dstArrayElement = 0,
+						.pImageInfo = &(VkDescriptorImageInfo){
+							.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+							.imageView = r->depth_image.view,
+							.sampler = VK_NULL_HANDLE
+						}
+					},
+				}, 0, nullptr);
+			}
+		}
+	}
+}
 
 // Pipelines
 
@@ -2355,20 +2402,22 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 		},
 		.pViewportState = &(VkPipelineViewportStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-			.pViewports = &(VkViewport){
-				.width = r->swapchain_extent.width,
-				.height = r->swapchain_extent.height,
-				.x = 0.0f,
-				.y = 0.0f,
-				.minDepth = 0.0f,
-				.maxDepth = 1.0f,
-			},
 			.viewportCount = 1,
+			// Dynamic
+			// .pViewports = &(VkViewport){
+			// 	.width = r->swapchain_extent.width,
+			// 	.height = r->swapchain_extent.height,
+			// 	.x = 0.0f,
+			// 	.y = 0.0f,
+			// 	.minDepth = 0.0f,
+			// 	.maxDepth = 1.0f,
+			// },
 			.scissorCount = 1,
-			.pScissors = &(VkRect2D){
-				.offset = { 0, 0 },
-				.extent = r->swapchain_extent,
-			},
+			// Dynamic
+			// .pScissors = &(VkRect2D){
+			// 	.offset = { 0, 0 },
+			// 	.extent = r->swapchain_extent,
+			// },
 		},
 		.pRasterizationState = &(VkPipelineRasterizationStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -2439,6 +2488,14 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 				.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
 				.module = frag_shader_module,
 				.pName = "main",
+			},
+		},
+		.pDynamicState = &(VkPipelineDynamicStateCreateInfo){
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+			.dynamicStateCount = 2,
+			.pDynamicStates = (VkDynamicState[]){
+				VK_DYNAMIC_STATE_VIEWPORT,
+				VK_DYNAMIC_STATE_SCISSOR,
 			},
 		},
 		.layout = layout,
@@ -3051,6 +3108,131 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 }
 
 
+/// Initialize data that's dependent on the swapchain (stuff that we need to redo when resizing the window)
+static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
+	vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[1]){
+		(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+			.dstSet = r->data.blit_descriptor_set,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.pImageInfo = &(VkDescriptorImageInfo){
+				.imageView = r->transients.color_0.view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.sampler = VK_NULL_HANDLE,
+			}
+		}
+	}, 0, nullptr);
+
+	VkDescriptorSetLayout upsample_bloom_layout_copies[BLOOM_STAGE_COUNT];
+	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+		upsample_bloom_layout_copies[i] = r->descriptors.upsample_bloom_layout;
+	}
+
+	VkDescriptorSetLayout downsample_bloom_layout_copies[BLOOM_STAGE_COUNT];
+	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+		downsample_bloom_layout_copies[i] = r->descriptors.downsample_bloom_layout;
+	}
+
+	if (!resize) {
+		CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+			.descriptorPool = r->descriptors.pool,
+			.descriptorSetCount = BLOOM_STAGE_COUNT,
+			.pSetLayouts = upsample_bloom_layout_copies,
+		}, r->data.upsample_bloom_descriptor_sets));
+
+		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
+			NAME_VK_OBJECT(r, r->data.upsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "upsample&bloom #%zu ds", i);
+
+		CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+			.descriptorPool = r->descriptors.pool,
+			.descriptorSetCount = BLOOM_STAGE_COUNT,
+			.pSetLayouts = downsample_bloom_layout_copies,
+		}, r->data.downsample_bloom_descriptor_sets));
+
+		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
+			NAME_VK_OBJECT(r, r->data.downsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "downsample&bloom #%zu ds", i);
+	}
+
+	{
+		// ds[i] reads from i and writes to i-1
+		// VkDescriptorImageInfo
+		VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
+		VkDescriptorImageInfo bloom_ds_images[BLOOM_STAGE_COUNT * 2] = {};
+		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+			bloom_ds_writes[2 * i + 0] = (VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.dstSet = r->data.upsample_bloom_descriptor_sets[i],
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
+					.imageView = r->transients.bloom[i].view,
+					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+					.sampler = r->bloom_mipmap_sampler,
+				}, &bloom_ds_images[2 * i + 0]),
+			};
+			bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+				.dstSet = r->data.upsample_bloom_descriptor_sets[i],
+				.dstBinding = 1,
+				.dstArrayElement = 0,
+				.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
+					.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
+					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+					.sampler = VK_NULL_HANDLE,
+				}, &bloom_ds_images[2 * i + 1]),
+			};
+			// PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
+		}
+		vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
+	}
+
+	{
+		// ds[i] reads from i and writes to i+1
+		VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
+		VkDescriptorImageInfo bloom_ds_images[BLOOM_STAGE_COUNT * 2] = {};
+		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
+			bloom_ds_writes[2 * i + 0] = (VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.dstSet = r->data.downsample_bloom_descriptor_sets[i],
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
+					.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
+					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+					.sampler = r->bloom_mipmap_sampler,
+				}, &bloom_ds_images[2 * i + 0]),
+			};
+			bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+				.dstSet = r->data.downsample_bloom_descriptor_sets[i],
+				.dstBinding = 1,
+				.dstArrayElement = 0,
+				.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
+					.imageView = r->transients.bloom[i].view,
+					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+					.sampler = VK_NULL_HANDLE,
+				}, &bloom_ds_images[2 * i + 1]),
+			};
+			// PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
+		}
+
+		vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
+	}
+}
+
 // Game data
 
 static void init_data(struct vulkan_renderer *r) {
@@ -3166,125 +3348,7 @@ static void init_data(struct vulkan_renderer *r) {
 	}, &r->data.blit_descriptor_set));
 	NAME_VK_OBJECT(r, r->data.blit_descriptor_set, VK_OBJECT_TYPE_DESCRIPTOR_SET, "blit ds");
 
-	vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[1]){
-		(VkWriteDescriptorSet){
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
-			.dstSet = r->data.blit_descriptor_set,
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.pImageInfo = &(VkDescriptorImageInfo){
-				.imageView = r->transients.color_0.view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.sampler = VK_NULL_HANDLE,
-			}
-		}
-	}, 0, nullptr);
-
-	VkDescriptorSetLayout upsample_bloom_layout_copies[BLOOM_STAGE_COUNT];
-	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-		upsample_bloom_layout_copies[i] = r->descriptors.upsample_bloom_layout;
-	}
-
-	VkDescriptorSetLayout downsample_bloom_layout_copies[BLOOM_STAGE_COUNT];
-	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-		downsample_bloom_layout_copies[i] = r->descriptors.downsample_bloom_layout;
-	}
-
-	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		.descriptorPool = r->descriptors.pool,
-		.descriptorSetCount = BLOOM_STAGE_COUNT,
-		.pSetLayouts = upsample_bloom_layout_copies,
-	}, r->data.upsample_bloom_descriptor_sets));
-
-	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
-		NAME_VK_OBJECT(r, r->data.upsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "upsample&bloom #%zu ds", i);
-
-	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		.descriptorPool = r->descriptors.pool,
-		.descriptorSetCount = BLOOM_STAGE_COUNT,
-		.pSetLayouts = downsample_bloom_layout_copies,
-	}, r->data.downsample_bloom_descriptor_sets));
-
-	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
-		NAME_VK_OBJECT(r, r->data.downsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "downsample&bloom #%zu ds", i);
-
-	{
-		// ds[i] reads from i and writes to i-1
-		// VkDescriptorImageInfo
-		VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
-		VkDescriptorImageInfo bloom_ds_images[BLOOM_STAGE_COUNT * 2] = {};
-		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-			bloom_ds_writes[2 * i + 0] = (VkWriteDescriptorSet){
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				.dstSet = r->data.upsample_bloom_descriptor_sets[i],
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
-					.imageView = r->transients.bloom[i].view,
-					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-					.sampler = r->bloom_mipmap_sampler,
-				}, &bloom_ds_images[2 * i + 0]),
-			};
-			bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-				.dstSet = r->data.upsample_bloom_descriptor_sets[i],
-				.dstBinding = 1,
-				.dstArrayElement = 0,
-				.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
-					.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
-					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-					.sampler = VK_NULL_HANDLE,
-				}, &bloom_ds_images[2 * i + 1]),
-			};
-			PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
-		}
-		vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
-	}
-
-	{
-		// ds[i] reads from i and writes to i+1
-		VkWriteDescriptorSet bloom_ds_writes[BLOOM_STAGE_COUNT * 2] = {};
-		VkDescriptorImageInfo bloom_ds_images[BLOOM_STAGE_COUNT * 2] = {};
-		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-			bloom_ds_writes[2 * i + 0] = (VkWriteDescriptorSet){
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				.dstSet = r->data.downsample_bloom_descriptor_sets[i],
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.pImageInfo = (bloom_ds_images[2 * i + 0] = (VkDescriptorImageInfo){
-					.imageView = i == 0 ? r->transients.color_0.view : r->transients.bloom[i - 1].view,
-					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-					.sampler = r->bloom_mipmap_sampler,
-				}, &bloom_ds_images[2 * i + 0]),
-			};
-			bloom_ds_writes[2 * i + 1] = (VkWriteDescriptorSet){
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-				.dstSet = r->data.downsample_bloom_descriptor_sets[i],
-				.dstBinding = 1,
-				.dstArrayElement = 0,
-				.pImageInfo = (bloom_ds_images[2 * i + 1] = (VkDescriptorImageInfo){
-					.imageView = r->transients.bloom[i].view,
-					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-					.sampler = VK_NULL_HANDLE,
-				}, &bloom_ds_images[2 * i + 1]),
-			};
-			PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
-		}
-
-		vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
-	}
+	init_view_dep_data(r, false);
 }
 
 static void init_frame(
@@ -3789,6 +3853,15 @@ static void do_frame(
 	// vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.mesh_pipeline);
+	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+		.x = 0.0f,
+		.y = 0.0f,
+		.width = (float)r->swapchain_extent.width,
+		.height = (float)r->swapchain_extent.height,
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f,
+	});
+	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
 
 	for (size_t i = 0; i < current_system->body_count; ++i) {
 		struct pshine_celestial_body *b = current_system->bodies_own[i];
@@ -3826,6 +3899,15 @@ static void do_frame(
 	}
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.color_mesh_pipeline);
+	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+		.x = 0.0f,
+		.y = 0.0f,
+		.width = (float)r->swapchain_extent.width,
+		.height = (float)r->swapchain_extent.height,
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f,
+	});
+	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
 	vkCmdBindDescriptorSets(
 		f->command_buffer,
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -3872,6 +3954,15 @@ static void do_frame(
 	}
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.rings_pipeline);
+	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+		.x = 0.0f,
+		.y = 0.0f,
+		.width = (float)r->swapchain_extent.width,
+		.height = (float)r->swapchain_extent.height,
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f,
+	});
+	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
 	for (size_t i = 0; i < current_system->body_count; ++i) {
 		struct pshine_celestial_body *b = current_system->bodies_own[i];
 		if (!b->rings.has_rings) continue;
@@ -3906,6 +3997,15 @@ static void do_frame(
 		data[1].v4s[3].z = 0.0f;
 
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.skybox_pipeline);
+		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = (float)r->swapchain_extent.width,
+			.height = (float)r->swapchain_extent.height,
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f,
+		});
+		vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
 		vkCmdPushConstants(f->command_buffer, r->pipelines.skybox_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
 			sizeof(float4x4) * 2, &data);
 
@@ -3921,6 +4021,15 @@ static void do_frame(
 	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.atmo_pipeline);
+	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+		.x = 0.0f,
+		.y = 0.0f,
+		.width = (float)r->swapchain_extent.width,
+		.height = (float)r->swapchain_extent.height,
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f,
+	});
+	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
 
 	vkCmdBindDescriptorSets(
 		f->command_buffer,
@@ -4137,6 +4246,15 @@ static void do_frame(
 	}, VK_SUBPASS_CONTENTS_INLINE);
 
 	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.blit_pipeline);
+	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+		.x = 0.0f,
+		.y = 0.0f,
+		.width = (float)r->swapchain_extent.width,
+		.height = (float)r->swapchain_extent.height,
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f,
+	});
+	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
 	vkCmdPushConstants(f->command_buffer, r->pipelines.blit_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
 		0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
 	vkCmdBindDescriptorSets(
@@ -4423,11 +4541,24 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 
 	float delta_time_sum = 0.0f;
 
+	int last_width = 0, last_height = 0;
+	glfwGetFramebufferSize(r->window, &last_width, &last_height);
 	while (!glfwWindowShouldClose(r->window)) {
 		++frame_number; ++frames_since_dt_reset;
 		float current_time = glfwGetTime();
 		float delta_time = current_time - last_time;
 		glfwPollEvents();
+
+		int current_width = 0, current_height = 0;
+		glfwGetFramebufferSize(r->window, &current_width, &current_height);
+
+		if (current_width != last_width || current_height != last_height) {
+			handle_swapchain_resize(r);
+		}
+
+		last_width = current_width;
+		last_height = current_height;
+
 		cImGui_ImplVulkan_NewFrame();
 		cImGui_ImplGlfw_NewFrame();
 		ImGui_NewFrame();
