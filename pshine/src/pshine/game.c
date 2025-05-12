@@ -413,12 +413,10 @@ static void create_orbit_points(
 	double T = 2 * π / u; // Orbital period.
 	double ti = T / (double)body->orbit.cached_point_count;
 
-	double time = 0.0;
 	for (size_t i = 0; i < body->orbit.cached_point_count; ++i) {
-		propagate_orbit(time, μ, &o2);
+		propagate_orbit(ti, μ, &o2);
 		double3 pos = double3mul(kepler_orbit_to_state_vector(&o2), PSHINE_SCS_FACTOR);
 		*(double3*)&body->orbit.cached_points_own[i] = pos;
-		time += ti;
 	}
 }
 
@@ -990,7 +988,7 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 }
 
 static void propagate_orbit(
-	double time,
+	double delta_time,
 	double gravitational_parameter,
 	struct pshine_orbit_info *orbit
 ) {
@@ -1075,15 +1073,15 @@ static void propagate_orbit(
 	// Once we find a good enough χ, we can figure out the anomalies that
 	// we need, and change our orbit.
 
-	// double Δt = delta_time; // Change in time.
+	double Δt = delta_time; // Change in time.
 	double μ = gravitational_parameter;
 	double a = orbit->semimajor; // The semimajor axis.
 	double e = orbit->eccentricity; // The eccentricity.
 
 	// Solve for χ using Newton's Method:
-	// game->time += Δt; // TODO: figure out t from the orbital params.
-	// game->time = fmod(game->time, T);
-	double tsqrtμ = time * sqrt(μ);
+	orbit->time += Δt; // TODO: figure out t from the orbital params.
+	// orbit->time = fmod(orbit->time, T);
+	double tsqrtμ = orbit->time * sqrt(μ);
 	double χ = tsqrtμ/fabs(a);
 	double sqrtp = sqrt(a*(1.0 - e*e));
 	{
@@ -1216,8 +1214,9 @@ static double3 kepler_orbit_to_state_vector(
 
 static void update_celestial_body(struct pshine_game *game, float delta_time, struct pshine_celestial_body *body) {
 	if (!body->is_static) {
-		propagate_orbit(game->time, body->parent_ref->gravitational_parameter, &body->orbit);
+		propagate_orbit(delta_time, body->parent_ref->gravitational_parameter, &body->orbit);
 		body->rotation += body->rotation_speed * delta_time;
+		body->rotation = fmod(body->rotation, 2 * π);
 		double3 position = kepler_orbit_to_state_vector(&body->orbit);
 		position = double3add(position, double3vs(body->parent_ref->position.values));
 		*(double3*)&body->position = position;

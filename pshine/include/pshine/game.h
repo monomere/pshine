@@ -56,13 +56,16 @@ typedef union pshine_point3d_world_ {
 /// Defines a Keplerian orbit. Also contains the cached
 /// points along the orbit path, for rendering the trajectory.
 struct pshine_orbit_info {
-	float
+	double
 		inclination, // inclination, rad (i)
 		longitude, // longitude of the ascending node, rad (Ω)
 		argument, // argument of periapsis, rad (ω)
 		eccentricity, // eccentricity, 1 (e)
 		semimajor, // semimajor axis, Mm (megameters) (a)
 		true_anomaly; // true anomaly, rad (ν)
+
+	/// the current time in seconds modulo the orbital period.
+	double time;
 
 	/// Count of `this->cached_points_own`.
 	size_t cached_point_count;
