@@ -837,7 +837,7 @@ static struct vulkan_image load_texture_from_file(
 static void init_star_system(struct vulkan_renderer *r, struct pshine_star_system *system) {
 	for (uint32_t i = 0; i < system->body_count; ++i) {
 		struct pshine_celestial_body *b = system->bodies_own[i];
-		PSHINE_DEBUG("creating graphics data for %s", b->name_own);
+		// PSHINE_DEBUG("creating graphics data for %s", b->name_own);
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void *)b;
 			p->graphics_data = calloc(1, sizeof(struct pshine_planet_graphics_data));
@@ -1137,7 +1137,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 		VkPhysicalDeviceFeatures features = {};
 		vkGetPhysicalDeviceFeatures(r->physical_device, &features);
 		PSHINE_INFO("GPU 64 bit float support: %s", features.shaderFloat64 ? "true" : "false");
-		PSHINE_INFO("GPU 64 bit int support:   %s", features.shaderInt64 ? "true" : "false");
+		PSHINE_INFO("GPU 64 bit int support:   %s", features.shaderInt64   ? "true" : "false");
 	}
 
 	{
@@ -1494,10 +1494,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	{
 		uint32_t physical_device_count = 0;
 		CHECKVK(vkEnumeratePhysicalDevices(r->instance, &physical_device_count, nullptr));
-		PSHINE_DEBUG("physical_device_count=%u", physical_device_count);
 		VkPhysicalDevice *physical_devices = malloc(sizeof(VkPhysicalDevice) * physical_device_count);
-		PSHINE_DEBUG("physical_devices=%p", physical_devices);
-		PSHINE_DEBUG("r->instance=%p, vkEnumeratePhysicalDevices=%p", r->instance, vkEnumeratePhysicalDevices);
 		CHECKVK(vkEnumeratePhysicalDevices(r->instance, &physical_device_count, physical_devices));
 		r->physical_device = physical_devices[0]; // TODO: physical device selection
 		free(physical_devices);
@@ -1567,7 +1564,6 @@ static void init_vulkan(struct vulkan_renderer *r) {
 
 		float queuePriority = 1.0f;
 		for (uint32_t i = 0; i < queue_create_info_count; ++i) {
-			PSHINE_DEBUG("VkDeviceQueueCreateInfo[%d] -> %d", i, unique_queue_family_indices[i]);
 			queue_create_infos[i] = (VkDeviceQueueCreateInfo){
 				.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
 				.pQueuePriorities = &queuePriority,
@@ -2046,9 +2042,7 @@ static void init_sdr_rpass(struct vulkan_renderer *r) {
 		.dependencyCount = sizeof(subpass_dependencies) / sizeof(*subpass_dependencies),
 		.pDependencies = subpass_dependencies,
 	}, nullptr, &r->render_passes.sdr_pass));
-	PSHINE_DEBUG("naming sdr render pass");
 	NAME_VK_OBJECT(r, r->render_passes.sdr_pass, VK_OBJECT_TYPE_RENDER_PASS, "sdr render pass");
-	PSHINE_DEBUG("named");
 }
 
 static void init_rpasses(struct vulkan_renderer *r) {
@@ -2356,8 +2350,6 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 		.pPushConstantRanges = info->push_constant_ranges,
 	}, nullptr, &layout));
 
-	PSHINE_DEBUG("info->push_constant_range_count=%u", info->push_constant_range_count);
-
 	if (info->layout_name != nullptr)
 		NAME_VK_OBJECT(r, layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, info->layout_name);
 
@@ -2533,7 +2525,6 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	});
 	r->pipelines.mesh_pipeline = mesh_pipeline.pipeline;
 	r->pipelines.mesh_layout = mesh_pipeline.layout;
-	PSHINE_DEBUG("created mesh_pipeline");
 
 	struct vulkan_pipeline color_mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/mesh.1.vert.spv",
@@ -3411,11 +3402,13 @@ static void deinit_frames(struct vulkan_renderer *r) {
 // ImGui
 
 static void check_vk_result_imgui(VkResult res) { CHECKVK(res); }
+
 static PFN_vkVoidFunction vulkan_loader_func_imgui(const char *name, void *user) {
 	struct vulkan_renderer *r = user;
 	PFN_vkVoidFunction instanceAddr = vkGetInstanceProcAddr(r->instance, name);
+	if (instanceAddr) return instanceAddr;
 	PFN_vkVoidFunction deviceAddr = vkGetDeviceProcAddr(r->device, name);
-	return deviceAddr ? deviceAddr : instanceAddr;
+	return deviceAddr;
 }
 
 static void init_imgui(struct vulkan_renderer *r) {

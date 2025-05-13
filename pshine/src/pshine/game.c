@@ -725,11 +725,11 @@ static void init_star_system(struct pshine_game *game, struct pshine_star_system
 		for (size_t j = 0; j < system->body_count; ++j) {
 			if (strcmp(system->bodies_own[j]->name_own, name) == 0) {
 				system->bodies_own[i]->parent_ref = system->bodies_own[j];
-				PSHINE_DEBUG(
-					"Setting parent_ref of %s to %s",
-					system->bodies_own[i]->name_own,
-					name
-				);
+				// PSHINE_DEBUG(
+				// 	"Setting parent_ref of %s to %s",
+				// 	system->bodies_own[i]->name_own,
+				// 	name
+				// );
 				break;
 			}
 		}
