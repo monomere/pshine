@@ -1,4 +1,5 @@
 systems = [
+	"data/test_system.toml",
 	"data/KJ666_system.toml",
 	"data/solar_system.toml",
 ]

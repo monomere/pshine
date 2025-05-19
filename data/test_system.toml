@@ -1,0 +1,5 @@
+name = "Test"
+planets = [
+	"data/celestial/test/test_sun.toml",
+	"data/celestial/test/test.toml",
+]

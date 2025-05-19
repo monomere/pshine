@@ -423,6 +423,7 @@ static void create_orbit_points(
 static struct pshine_celestial_body *load_celestial_body(
 	const char *fpath
 ) {
+	PSHINE_DEBUG("loading celestial body from '%s'", fpath);
 	FILE *fin = fopen(fpath, "rb");
 	if (fin == nullptr) {
 		PSHINE_ERROR("Failed to open celestial body file %s: %s", fpath,
@@ -631,6 +632,7 @@ struct pshine_game_data {
 };
 
 static void load_star_system_config(struct pshine_game *game, struct pshine_star_system *out, const char *fpath) {
+	PSHINE_DEBUG("loading star system from '%s'", fpath);
 	FILE *fin = fopen(fpath, "rb");
 	if (fin == nullptr) {
 		PSHINE_ERROR("Failed to open star system config file '%s': %s", fpath,
@@ -1991,6 +1993,12 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 					}
 				}
 			}
+			eximgui_input_double3("##WCS Position", "World coordinate system body position. In meters.",
+				body->position.values, 1000.0, "%.3fm");
+			// if (eximgui_input_double3("##SCS Position", "Scaled coordinate system camera position. 1:8192.",
+			// 	p_scs.vs, 100.0, "%.3fu")) {
+			// 	*(double3*)&game->camera_position.values = double3mul(p_scs, PSHINE_SCS_SCALE);
+			// }
 		}
 		ImGui_End();
 		ImGui_PopStyleColor();
