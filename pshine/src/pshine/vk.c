@@ -141,12 +141,14 @@ struct pshine_planet_graphics_data {
 	struct vulkan_image ring_slice_texture;
 };
 
+struct swapchain_image_sync_data {
+	VkSemaphore image_avail_semaphore;
+	VkSemaphore render_finish_semaphore;
+	VkFence in_flight_fence;
+};
+
 struct per_frame_data {
-	struct {
-		VkSemaphore image_avail_semaphore;
-		VkSemaphore render_finish_semaphore;
-		VkFence in_flight_fence;
-	} sync;
+	struct swapchain_image_sync_data sync;
 	VkCommandBuffer command_buffer;
 };
 
@@ -261,6 +263,7 @@ struct vulkan_renderer {
 	} data;
 
 	struct per_frame_data frames[FRAMES_IN_FLIGHT];
+	// struct swapchain_image_sync_data image_sync_data[FRAMES_IN_FLIGHT];
 
 	VmaAllocator allocator;
 
@@ -3368,13 +3371,18 @@ static void init_frame(
 	CHECKVK(vkCreateSemaphore(r->device, &(VkSemaphoreCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 	}, nullptr, &f->sync.image_avail_semaphore));
+	NAME_VK_OBJECT(r, f->sync.image_avail_semaphore, VK_OBJECT_TYPE_SEMAPHORE, "image avail semaphore for frame %u", frame_index);
+
 	CHECKVK(vkCreateSemaphore(r->device, &(VkSemaphoreCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 	}, nullptr, &f->sync.render_finish_semaphore));
+	NAME_VK_OBJECT(r, f->sync.render_finish_semaphore, VK_OBJECT_TYPE_SEMAPHORE, "render finish semaphore for frame %u", frame_index);
+
 	CHECKVK(vkCreateFence(r->device, &(VkFenceCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
 		.flags = VK_FENCE_CREATE_SIGNALED_BIT
 	}, nullptr, &f->sync.in_flight_fence));
+	NAME_VK_OBJECT(r, f->sync.in_flight_fence, VK_OBJECT_TYPE_FENCE, "in flight fence for frame %u", frame_index);
 }
 
 void deinit_frame(struct vulkan_renderer *r, struct per_frame_data *f) {
@@ -4536,9 +4544,14 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 	cImGui_ImplVulkan_CreateFontsTexture();
 
 	float last_time = glfwGetTime();
-	uint32_t current_frame = 0;
-	size_t frame_number = 0, frames_since_dt_reset = 0;
 
+	/// This is mod `FRAMES_IN_FLIGHT`.
+	uint32_t current_frame = 0;
+	/// This is the total count.
+	size_t frame_number = 0;
+
+	/// This is for computing the average dt.
+	size_t frames_since_dt_reset = 0;
 	float delta_time_sum = 0.0f;
 
 	int last_width = 0, last_height = 0;
