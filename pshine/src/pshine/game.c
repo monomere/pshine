@@ -390,8 +390,8 @@ static void create_orbit_points(
 	body->orbit.cached_point_count = count;
 	body->orbit.cached_points_own = calloc(count, sizeof(pshine_point3d_scaled));
 
-	// Copy the orbit info because the true anomaly is changed
-	// by the propagator.
+	// Copy the orbit info because the true anomaly
+	// and time are changed by the propagator.
 	struct pshine_orbit_info o2 = body->orbit;
 
 	double e = body->orbit.eccentricity;
@@ -411,10 +411,10 @@ static void create_orbit_points(
 	}
 
 	double T = 2 * π / u; // Orbital period.
-	double ti = T / (double)body->orbit.cached_point_count;
+	double dt = T / (double)body->orbit.cached_point_count;
 
 	for (size_t i = 0; i < body->orbit.cached_point_count; ++i) {
-		propagate_orbit(ti, μ, &o2);
+		propagate_orbit(dt, μ, &o2);
 		double3 pos = double3mul(kepler_orbit_to_state_vector(&o2), PSHINE_SCS_FACTOR);
 		*(double3*)&body->orbit.cached_points_own[i] = pos;
 	}
