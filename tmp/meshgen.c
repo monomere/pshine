@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "../pshine/include/pshine/util.h"
+#include <pshine/util.h>
 #include "../pshine/src/pshine/math.h"
 
 typedef struct {
@@ -107,15 +107,6 @@ void generate_sphere_mesh(size_t n, struct pshine_mesh_data *m) {
 			// vtxs[i].tangent_dia = encode_tangent(float3vs(vtxs[i].position), float3 tangent);
 		}
 
-/*
-
-
- o    o/  \o   \o/    o  .
-/O\  /O    O\   O   -'O`-|
-/ \  / \  / \  / \   / \ |
-
-*/
-
 		memcpy(vertices + nvtx, vtxs, sizeof(vtxs));
 		nvtx += 6;
 	}
@@ -209,21 +200,33 @@ void generate_sphere_mesh(size_t n, struct pshine_mesh_data *m) {
 	}
 }
 
+		// fprintf(fout, "f %u %u %u\n",
+		// 	a + 1, b + 1, c + 1);
+
+
+
 void output_obj_file(FILE* fout, struct pshine_mesh_data *m) {
 	for (size_t i = 0; i < m->vertex_count; ++i) {
-		float3 p = float3vs(m->vertices[i].position);
+		float3 p = float3norm(float3vs(m->vertices[i].position));
 		fprintf(fout, "v %.3f %.3f %.3f\n", p.x, p.y, p.z);
+	}
+	fprintf(fout, "vt 0 0\n");
+	for (size_t i = 0; i < m->vertex_count; ++i) {
+		// use position as the normal, since we're making a sphere
+		float3 p = float3norm(float3vs(m->vertices[i].position));
+		fprintf(fout, "vn %.3f %.3f %.3f\n", p.x, p.y, p.z);
 	}
 	for (size_t i = 0; i < m->index_count; i += 3) {
 		uint32_t a = m->indices[i + 0];
 		uint32_t b = m->indices[i + 1];
 		uint32_t c = m->indices[i + 2];
-		fprintf(fout, "f %u %u %u\n", a + 1, b + 1, c + 1);
+		fprintf(fout, "f %u/1/%u %u/1/%u %u/1/%u\n",
+			a + 1, a + 1, b + 1, b + 1, c + 1, c + 1);
 	}
 }
 
 int main() {
 	struct pshine_mesh_data m = {};
-	generate_sphere_mesh(32, &m);
+	generate_sphere_mesh(8, &m);
 	output_obj_file(stdout, &m);
 }

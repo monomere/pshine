@@ -1,0 +1,18 @@
+platform = unix
+cc = clang
+ld = clang
+
+cflags = -std=c23 -O2 -D_DEFAULT_SOURCE -I../pshine/include
+libs = -O2 -lm
+
+rule cc
+  command = $cc $cflags -c -o $out -MD -MF $out.d $in
+  depfile = $out.d
+
+rule ld
+  command = $cc $libs -o $out $in
+
+build build/meshgen.c.o: cc meshgen.c
+build build/pshine_util.c.o: cc ../pshine/src/pshine/util.c
+build build/pshine_$platform.c.o: cc ../pshine/src/pshine/$platform.c
+build build/meshgen: ld build/meshgen.c.o build/pshine_util.c.o build/pshine_$platform.c.o
