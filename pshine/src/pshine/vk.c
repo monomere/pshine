@@ -144,11 +144,16 @@ struct pshine_planet_graphics_data {
 	struct vulkan_image ring_slice_texture;
 };
 
-struct std_material_images {
+struct vulkan_std_material_images {
 	struct vulkan_image diffuse;
 	struct vulkan_image emissive;
 	struct vulkan_image normal;
-	struct vulkan_image metallic_roughness_ao;
+	struct vulkan_image ao_metallic_roughness;
+};
+
+struct vulkan_std_material {
+	struct vulkan_std_material_images images;
+	VkDescriptorSet descriptor_set;
 };
 
 struct vulkan_mesh_model {
@@ -158,9 +163,7 @@ struct vulkan_mesh_model {
 		struct vulkan_mesh mesh;
 	} *parts_own;
 	size_t material_count;
-	struct vulkan_mesh_model_material {
-		struct vulkan_image image;
-	} *materials_own;
+	struct vulkan_std_material *materials_own;
 };
 
 static void load_mesh_model_from_gltf(
@@ -873,6 +876,90 @@ static struct vulkan_image load_texture_from_file(
 	return img;
 }
 
+struct vulkan_image_create_info {
+	const char *name;
+	VkExtent2D size;
+	VkFormat format;
+	size_t data_size;
+	const void *data;
+};
+
+static struct vulkan_image create_image(
+	struct vulkan_renderer *r,
+	const struct vulkan_image_create_info *info
+) {
+	struct vulkan_image img = allocate_image(r, &(struct vulkan_image_alloc_info){
+		.allocation_flags = 0,
+		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+		.preferred_memory_property_flags = 0,
+		.required_memory_property_flags = 0,
+		.out_allocation_info = nullptr,
+		.image_info = &(VkImageCreateInfo){
+			.imageType = VK_IMAGE_TYPE_2D,
+			.arrayLayers = 1,
+			.mipLevels = 1,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.extent = (VkExtent3D){
+				.width = info->size.width,
+				.height = info->size.height,
+				.depth = 1,
+			},
+			.format = info->format,
+			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			.flags = 0,
+		},
+		.view_info = &(VkImageViewCreateInfo){
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = info->format,
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.baseMipLevel = 0,
+				.layerCount = 1,
+				.levelCount = 1,
+			}
+		},
+	});
+
+	NAME_VK_OBJECT(r, img.image, VK_OBJECT_TYPE_IMAGE, "%s image", info->name);
+	NAME_VK_OBJECT(r, img.view, VK_OBJECT_TYPE_IMAGE_VIEW, "%s image view", info->name);
+
+	write_to_image_staged(
+		r,
+		&img,
+		(VkOffset3D){},
+		(VkExtent3D){ .width = info->size.width, .height = info->size.height, .depth = 1 },
+		info->format,
+		info->data_size,
+		info->data
+	);
+
+	return img;
+}
+
+static struct vulkan_image create_image_from_cgltf_texture_view(
+	struct vulkan_renderer *r,
+	cgltf_texture_view *v,
+	int desired_channels,
+	VkFormat format
+) {
+	cgltf_buffer_view *buf = v->texture->image->buffer_view;
+	int width, height, channels;
+	stbi_uc *data = stbi_load_from_memory(
+		buf->buffer->data,
+		buf->size, &width, &height, &channels, desired_channels
+	);
+	return create_image(r, &(struct vulkan_image_create_info){
+		.name = v->texture->name,
+		.size = (VkExtent2D){ .width = (uint32_t)width, .height = (uint32_t)height },
+		.format = format,
+		.data = data,
+		.data_size = (size_t)width * (size_t)height * desired_channels,
+	});
+}
+
 static void load_mesh_model_from_gltf(
 	struct vulkan_renderer *r,
 	const char *fpath,
@@ -1011,6 +1098,8 @@ static void load_mesh_model_from_gltf(
 				default: PSHINE_PANIC("Bad index accessor component type, expected integers.");
 			}
 
+			out->parts_own[current_part].material_index = data->materials - prim->material;
+
 			create_mesh(r, &(struct pshine_mesh_data){
 				.vertex_type = PSHINE_VERTEX_STATIC_MESH,
 				.vertex_count = vertex_count,
@@ -1018,6 +1107,47 @@ static void load_mesh_model_from_gltf(
 				.index_count = index_count,
 				.indices = indices,
 			}, &out->parts_own[current_part].mesh);
+		}
+	}
+
+	out->material_count = data->materials_count;
+	out->materials_own = calloc(out->material_count, sizeof(*out->materials_own));
+	for (size_t i = 0; i < data->materials_count; ++i) {
+		out->materials_own[i].images.normal
+			= create_image_from_cgltf_texture_view(r, &data->materials[i].normal_texture, 3, VK_FORMAT_R8G8B8_UNORM);
+		out->materials_own[i].images.emissive
+			= create_image_from_cgltf_texture_view(r, &data->materials[i].emissive_texture, 3, VK_FORMAT_R8G8B8_UNORM);
+		out->materials_own[i].images.diffuse
+			= create_image_from_cgltf_texture_view(r,
+					&data->materials[i].pbr_metallic_roughness.base_color_texture, 3, VK_FORMAT_R8G8B8_UNORM);
+
+		// Combine the occlusion (R) and metallic+roughness (GB) textures into one.
+		{
+			cgltf_texture_view *occlusion = &data->materials[i].occlusion_texture;
+			cgltf_texture_view *metallic_roughness = &data->materials[i].pbr_metallic_roughness.metallic_roughness_texture;
+			cgltf_buffer_view *buf_r = occlusion->texture->image->buffer_view;
+			cgltf_buffer_view *buf_gb = metallic_roughness->texture->image->buffer_view;
+			int width, height, channels;
+			stbi_uc *data_r = stbi_load_from_memory(
+				buf_r->buffer->data,
+				buf_r->size, &width, &height, &channels, 1
+			);
+			// Initially only has the green and blue channels.
+			stbi_uc *data_rgb = stbi_load_from_memory(
+				buf_gb->buffer->data,
+				buf_gb->size, &width, &height, &channels, 3
+			);
+			// Fill the empty R channel from `data_r`.
+			for (size_t i = 0; i < (size_t)width * (size_t)height; ++i) {
+				data_rgb[i * 3] = data_r[i];
+			}
+			out->materials_own[i].images.ao_metallic_roughness = create_image(r, &(struct vulkan_image_create_info){
+				.name = metallic_roughness->texture->name,
+				.size = (VkExtent2D){ .width = (uint32_t)width, .height = (uint32_t)height },
+				.format = VK_FORMAT_R8G8B8_UINT,
+				.data = data,
+				.data_size = (size_t)width * (size_t)height * 3,
+			});
 		}
 	}
 	cgltf_free(data);
