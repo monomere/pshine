@@ -8,6 +8,7 @@ build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c    || $mod/sr
 build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
 # build $builddir/pshine/eximgui.cc.o  : cxx $mod/src/pshine/eximgui.cc
 
+build $builddir/pshine/cgltf.c.o         : cc $mod/src/pshine/cgltf.c
 build $builddir/pshine/stb.c.o           : cc $mod/src/pshine/stb.c
 build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/vk_mem_alloc.cc
 build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
@@ -55,6 +56,7 @@ build $builddir/main: ld $
   $builddir/vendor/volk.c.o $
   $builddir/vendor/toml.c.o $
   $builddir/pshine/stb.c.o $
+  $builddir/pshine/cgltf.c.o $
   $builddir/pshine/vk_mem_alloc.cc.o $
   $builddir/vendor/cimgui/cimgui.cpp.o $
   $builddir/vendor/imgui/imgui.cpp.o $

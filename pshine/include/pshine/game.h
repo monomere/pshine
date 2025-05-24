@@ -209,11 +209,24 @@ struct pshine_star_system {
 	/// Cout of `bodies_own`.
 	size_t body_count;
 
-	/// The celestial bodies of this star system. `[0]` is the star.
+	/// The celestial bodies of this star system. `[0]` is the star. TBD: multi-star systems.
 	struct pshine_celestial_body **bodies_own;
 
 	/// Offset from the origin of the galaxy. In XCS.
 	pshine_point3d_xscaled origin_offset;
+};
+
+struct pshine_ship_graphics_data;
+
+/// A space ship.
+struct pshine_ship {
+	char* name_own;
+	char* callcode_own;
+	char* model_file_own;
+	pshine_point3d_world position;
+	/// In m/s.
+	pshine_vector3d velocity;
+	struct pshine_ship_graphics_data* graphics_data;
 };
 
 typedef struct { int32_t x; } pshine_snorm32;
@@ -225,8 +238,8 @@ typedef struct { pshine_unorm32 x, y; } pshine_unorm32x2;
 
 struct pshine_static_mesh_vertex {
 	float position[3];
-	float normal_oct[2];
 	float tangent_dia;
+	float normal_oct[2];
 	float texcoord[2];
 };
 

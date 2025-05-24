@@ -57,10 +57,10 @@ Make sure to check the contents of the script before running it.
 
 <hr>
 
-### Volk, VMA, stb_image
+### Volk, VMA, stb_image, cgltf
 
 The graphics backend uses [stb_image](https://github.com/nothings/stb), [volk](https://github.com/zeux/volk) and
-[VMA](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator),
+[VMA](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator), [cgltf](https://github.com/jkuhlmann/cgltf).
 so after cloning (only once):
 
 ```bash
@@ -68,6 +68,7 @@ wget -P pshine/include/vendor https://raw.githubusercontent.com/zeux/volk/master
 wget -P pshine/src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
 wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
 wget -P pshine/include/vendor https://raw.githubusercontent.com/nothings/stb/refs/heads/master/stb_image.h
+wget -P pshine/include/vendor https://raw.githubusercontent.com/jkuhlmann/cgltf/refs/tags/v1.15/cgltf.h
 ```
 
 ### Auxiliary libraries
@@ -175,6 +176,10 @@ Key|Action
 <kbd>E</kbd>/<kbd>Q</kbd> | Move down/up
 <kbd>&#8592;</kbd>/<kbd>&#8594;</kbd> | Rotate on global Y axis (yaw)
 <kbd>&#8593;</kbd>/<kbd>&#8595;</kbd> | Rotate on local X axis (pitch)
+
+## Credits
+
+- Spaceship model by FilipZelinka, from [SketchFab](https://sketchfab.com/3d-models/spaceship-clipper-v2-red-menace-632da93e0e4c4ebab699ecb641803898). Under CC BY 4.0.
 
 ## TODO
 

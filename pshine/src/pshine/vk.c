@@ -13,12 +13,15 @@
 #include <cimgui/cimgui.h>
 #include <cimgui/backends/cimgui_impl_glfw.h>
 #include <cimgui/backends/cimgui_impl_vulkan.h>
-#include "stb_image.h"
+#include <stb_image.h>
+// TODO: weird include guard error. included in vk_util.h
+// #include <cgltf.h>
 
 // #include <giraffe/giraffe.h>
 
 #include "vk_util.h"
 #include "math.h"
+#include "vertex_util.h"
 
 #define SCSd3_WCSd3(wcs) (double3mul((wcs), PSHINE_SCS_FACTOR))
 #define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
@@ -139,6 +142,39 @@ struct pshine_planet_graphics_data {
 	/// Note: Can be VK_NULL_HANDLE if there are no rings.
 	VkDescriptorSet rings_descriptor_set;
 	struct vulkan_image ring_slice_texture;
+};
+
+struct std_material_images {
+	struct vulkan_image diffuse;
+	struct vulkan_image emissive;
+	struct vulkan_image normal;
+	struct vulkan_image metallic_roughness_ao;
+};
+
+struct vulkan_mesh_model {
+	size_t part_count;
+	struct vulkan_mesh_model_part {
+		size_t material_index;
+		struct vulkan_mesh mesh;
+	} *parts_own;
+	size_t material_count;
+	struct vulkan_mesh_model_material {
+		struct vulkan_image image;
+	} *materials_own;
+};
+
+static void load_mesh_model_from_gltf(
+	struct vulkan_renderer *r,
+	const char *fpath,
+	struct vulkan_mesh_model *out
+);
+
+struct pshine_ship_graphics_data {
+	struct vulkan_mesh mesh;
+	size_t image_count;
+	struct vulkan_image *images_own;
+	struct vulkan_buffer uniform_buffer;
+	VkDescriptorSet descriptor_set;
 };
 
 struct swapchain_image_sync_data {
@@ -835,6 +871,156 @@ static struct vulkan_image load_texture_from_file(
 	r->image_cache.ptr[idx].fpath_own = pshine_strdup(fpath);
 	r->image_cache.ptr[idx].image = img;
 	return img;
+}
+
+static void load_mesh_model_from_gltf(
+	struct vulkan_renderer *r,
+	const char *fpath,
+	struct vulkan_mesh_model *out
+) {
+	PSHINE_DEBUG("Loading model from %s", fpath);
+	struct cgltf_data *data = nullptr;
+	cgltf_result res;
+	res = cgltf_parse_file(&(cgltf_options){
+		.type = cgltf_file_type_glb,
+	}, fpath, &data);
+	if (res != cgltf_result_success) PSHINE_PANIC("Failed to load glb model at '%s': %s (%u)", fpath, pshine_cgltf_result_string(res), res);
+	size_t total_primitive_count = 0;
+	for (size_t i = 0; i < data->meshes_count; ++i) {
+		total_primitive_count += data->meshes[0].primitives_count;
+	}
+	out->part_count = total_primitive_count;
+	out->parts_own = calloc(out->part_count, sizeof(*out->parts_own));
+	for (size_t i = 0, current_part = 0; i < data->meshes_count; ++i) {
+		cgltf_mesh *mesh = &data->meshes[i];
+		for (size_t j = 0; j < mesh->primitives_count; ++j, ++current_part) {
+			cgltf_primitive *prim = &mesh->primitives[j];
+			
+			enum : size_t { bad_attrib = (size_t)-1 };
+			size_t position_attrib = bad_attrib;
+			size_t normal_attrib = bad_attrib;
+			size_t tangent_attrib = bad_attrib;
+			size_t texcoord_attrib = bad_attrib;
+			for (size_t k = 0; k < prim->attributes_count; ++k) {
+				switch (prim->attributes[k].type) {
+				case cgltf_attribute_type_position: position_attrib = k; break;
+				case cgltf_attribute_type_normal: normal_attrib = k; break;
+				case cgltf_attribute_type_tangent: tangent_attrib = k; break;
+				case cgltf_attribute_type_texcoord: texcoord_attrib = k; break;
+				default: break;
+				}
+			}
+			if (
+				position_attrib == bad_attrib ||
+				normal_attrib == bad_attrib ||
+				tangent_attrib == bad_attrib ||
+				texcoord_attrib == bad_attrib
+			) {
+				PSHINE_PANIC(
+					"Missing attributes in model\n"
+					"\tposition: %zu\n"
+					"\tnormal: %zu\n"
+					"\ttangent: %zu\n"
+					"\ttexcoord: %zu\n",
+					position_attrib, normal_attrib,
+					tangent_attrib, texcoord_attrib
+				);
+			}
+			cgltf_accessor *position_acc = prim->attributes[position_attrib].data;
+			PSHINE_CHECK(position_acc->type == cgltf_type_vec3,
+				"Expected position attribute to be of type vec3.");
+			PSHINE_CHECK(position_acc->component_type == cgltf_component_type_r_32f,
+				"Expected position attribute to be of floats.");
+
+			cgltf_accessor *normal_acc = prim->attributes[normal_attrib].data;
+			PSHINE_CHECK(normal_acc->type == cgltf_type_vec3,
+				"Expected normal attribute to be of type vec3.");
+			PSHINE_CHECK(normal_acc->component_type == cgltf_component_type_r_32f,
+				"Expected normal attribute to be of floats.");
+
+			cgltf_accessor *tangent_acc = prim->attributes[tangent_attrib].data;
+			PSHINE_CHECK(tangent_acc->type == cgltf_type_vec3,
+				"Expected tangent attribute to be of type vec3.");
+			PSHINE_CHECK(tangent_acc->component_type == cgltf_component_type_r_32f,
+				"Expected tangent attribute to be of floats.");
+
+			cgltf_accessor *texcoord_acc = prim->attributes[texcoord_attrib].data;
+			PSHINE_CHECK(texcoord_acc->type == cgltf_type_vec2,
+				"Expected texcoord attribute to be of type vec2.");
+			PSHINE_CHECK(texcoord_acc->component_type == cgltf_component_type_r_32f,
+				"Expected texcoord attribute to be of floats.");
+
+			size_t vertex_count = position_acc->count;
+			struct pshine_static_mesh_vertex *vertices = calloc(vertex_count, sizeof(*vertices));
+
+			uint8_t *position_data = position_acc->buffer_view->buffer->data;
+			position_data += position_acc->buffer_view->offset;
+			position_data += position_acc->offset;
+
+			uint8_t *normal_data = normal_acc->buffer_view->buffer->data;
+			normal_data += normal_acc->buffer_view->offset;
+			normal_data += normal_acc->offset;
+
+			uint8_t *tangent_data = tangent_acc->buffer_view->buffer->data;
+			tangent_data += tangent_acc->buffer_view->offset;
+			tangent_data += tangent_acc->offset;
+
+			uint8_t *texcoord_data = texcoord_acc->buffer_view->buffer->data;
+			texcoord_data += texcoord_acc->buffer_view->offset;
+			texcoord_data += texcoord_acc->offset;
+
+			for (size_t k = 0; k < vertex_count; ++k) {
+				*(float3*)vertices[k].position = ((float3*)(void*)position_data)[k];
+				vertices[k].tangent_dia = encode_tangent(
+					((float3*)(void*)normal_data)[k],
+					((float3*)(void*)tangent_data)[k]
+				);
+				*(float2*)vertices[k].normal_oct = float32x3_to_oct(((float3*)(void*)normal_data)[k]);
+				*(float2*)vertices[k].texcoord = ((float2*)(void*)texcoord_data)[k];
+				position_data += position_acc->stride;
+				normal_data += normal_acc->stride;
+				tangent_data += tangent_acc->stride;
+				texcoord_data += texcoord_acc->stride;
+			}
+
+			size_t index_count = prim->indices->count;
+			uint32_t *indices = calloc(index_count, sizeof(*indices));
+			
+			uint8_t *index_data = prim->indices->buffer_view->buffer->data;
+			index_data += prim->indices->buffer_view->offset;
+			index_data += prim->indices->offset;
+
+			switch (prim->indices->component_type) {
+				case cgltf_component_type_r_32u:
+					for (size_t k = 0; k < index_count; ++k) {
+						indices[k] = ((uint32_t*)(void*)index_data)[k];
+						index_data += prim->indices->stride;
+					} break;
+				case cgltf_component_type_r_16:
+				case cgltf_component_type_r_16u:
+					for (size_t k = 0; k < index_count; ++k) {
+						indices[k] = (uint32_t)((uint16_t*)(void*)index_data)[k];
+						index_data += prim->indices->stride;
+					} break;
+				case cgltf_component_type_r_8:
+				case cgltf_component_type_r_8u:
+					for (size_t k = 0; k < index_count; ++k) {
+						indices[k] = (uint32_t)((uint8_t*)(void*)index_data)[k];
+						index_data += prim->indices->stride;
+					} break;
+				default: PSHINE_PANIC("Bad index accessor component type, expected integers.");
+			}
+
+			create_mesh(r, &(struct pshine_mesh_data){
+				.vertex_type = PSHINE_VERTEX_STATIC_MESH,
+				.vertex_count = vertex_count,
+				.vertices = vertices,
+				.index_count = index_count,
+				.indices = indices,
+			}, &out->parts_own[current_part].mesh);
+		}
+	}
+	cgltf_free(data);
 }
 
 static void init_star_system(struct vulkan_renderer *r, struct pshine_star_system *system) {

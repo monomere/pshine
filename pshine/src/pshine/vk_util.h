@@ -1,8 +1,8 @@
 #ifndef PSHINE_IMPL_VK_UTIL_H_
 #define PSHINE_IMPL_VK_UTIL_H_
-#include "math.h"
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan_core.h>
+#include <cgltf.h>
 
 const char *pshine_vk_result_string(VkResult result) {
 	switch (result) {
@@ -315,5 +315,22 @@ const char *pshine_vk_color_space_string(VkColorSpaceKHR v) {
 	default: return "Unknown";
 	}
 }
+
+static const char *pshine_cgltf_result_string(cgltf_result res) {
+	switch (res) {
+		case cgltf_result_success: return "Success";
+		case cgltf_result_data_too_short: return "Data Too Short";
+		case cgltf_result_unknown_format: return "Unknown Format";
+		case cgltf_result_invalid_json: return "Invalid Json";
+		case cgltf_result_invalid_gltf: return "Invalid Gltf";
+		case cgltf_result_invalid_options: return "Invalid Options";
+		case cgltf_result_file_not_found: return "File Not Found";
+		case cgltf_result_io_error: return "IO Error";
+		case cgltf_result_out_of_memory: return "Out Of Memory";
+		case cgltf_result_legacy_gltf: return "Legacy Gltf";
+		default: return "Unknown Error";
+	}
+}
+
 
 #endif // PSHINE_IMPL_VK_UTIL_H_
