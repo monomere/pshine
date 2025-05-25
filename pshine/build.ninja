@@ -49,6 +49,8 @@ build $builddir/data/shaders/rings.frag.spv            : glslc data/shaders/ring
 build $builddir/data/shaders/skybox.vert.spv           : glslc data/shaders/skybox.vert
 build $builddir/data/shaders/skybox.frag.spv           : glslc data/shaders/skybox.frag
 build $builddir/data/shaders/atmo_lut.comp.spv         : glslc data/shaders/atmo_lut.comp
+build $builddir/data/shaders/std_mesh.vert.spv         : glslc data/shaders/std_mesh.vert
+build $builddir/data/shaders/std_mesh.frag.spv         : glslc data/shaders/std_mesh.frag
 build $builddir/data/shaders/solid_color.frag.spv      : glslc data/shaders/solid_color.frag
 build $builddir/data/shaders/bloom_upsample.comp.spv   : glslc data/shaders/bloom_upsample.comp
 build $builddir/data/shaders/bloom_downsample.comp.spv : glslc data/shaders/bloom_downsample.comp

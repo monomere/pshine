@@ -45,6 +45,7 @@ struct StdMeshUniforms {
 	mat4 model_view;
 	mat4 model;
 	vec4 sun;
+	vec3 rel_cam_pos;
 };
 
 struct MaterialUniforms {
@@ -54,9 +55,7 @@ struct MaterialUniforms {
 };
 
 struct StdMaterialUniforms {
-	vec4 color;
 	vec3 view_dir;
-	float smoothness;
 };
 
 struct RingsUniforms {

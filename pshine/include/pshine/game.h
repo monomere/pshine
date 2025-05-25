@@ -220,12 +220,19 @@ struct pshine_ship_graphics_data;
 
 /// A space ship.
 struct pshine_ship {
+	/// If this is a valid ship, must be equal to `-1`.
+	/// This exists so that when iterating the ship dyna,
+	/// we know if the element isn't dead.
+	size_t _alive_marker;
 	char* name_own;
 	char* callcode_own;
+	/// Used for initialization and debugging.
 	char* model_file_own;
 	pshine_point3d_world position;
 	/// In m/s.
 	pshine_vector3d velocity;
+	/// Mesh scale.
+	double scale;
 	struct pshine_ship_graphics_data* graphics_data;
 };
 

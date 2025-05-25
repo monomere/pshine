@@ -8,7 +8,9 @@ layout (location = 1) in vec2 i_normal_oct;
 layout (location = 2) in float i_tangent_dia;
 layout (location = 3) in vec2 i_texcoord;
 
-layout (location = 0) out vec3 o_normal;
+layout (location = 0) out vec3 o_position;
+layout (location = 1) out vec3 o_normal;
+layout (location = 2) out vec2 o_texcoord;
 
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 2, binding = 0) uniform readonly BUFFER(StdMeshUniforms, mesh);
@@ -25,5 +27,7 @@ vec3 oct_to_float32x3(vec2 e) {
 
 void main() {
 	o_normal = oct_to_float32x3(i_normal_oct);
-	gl_Position = mesh.proj * mesh.model_view * vec4(position, 1.0);
+	o_texcoord = i_texcoord;
+	o_position = i_position;
+	gl_Position = mesh.proj * mesh.model_view * vec4(i_position, 1.0);
 }

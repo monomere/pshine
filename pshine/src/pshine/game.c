@@ -141,8 +141,8 @@ static inline planet_vertex spheregen_vtxlerp(
 	// float tng_dia = encode_tangent(nor, tng);
 	return (planet_vertex){
 		{ pos.x, pos.y, pos.z },
-		{ nor_oct.x, nor_oct.y },
 		0.0f,
+		{ nor_oct.x, nor_oct.y },
 	};
 }
 
@@ -685,6 +685,18 @@ void pshine_init_game(struct pshine_game *game) {
 	// init_planet((void*)game->celestial_bodies_own[0], game->celestial_bodies_own[1], 6'371'000.0, double3v0());
 	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
 	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
+
+	{
+		size_t idx = PSHINE_DYNA_ALLOC(game->ships);
+		game->ships.ptr[idx]._alive_marker = (size_t)-1;
+		game->ships.ptr[idx].name_own = pshine_strdup("Red Menace");
+		game->ships.ptr[idx].callcode_own = pshine_strdup("NG-XK-AP-421620");
+		game->ships.ptr[idx].model_file_own = pshine_strdup("data/models/red_menace.glb");
+		game->ships.ptr[idx].position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.y = 75.221 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].scale = 4.0;
+	}
 
 	if (game->star_system_count <= 0) {
 		PSHINE_PANIC("No star systems present, there's nothing to show; exiting.");
