@@ -28,17 +28,13 @@ static inline float2 decode_diamond(float p) {
 
 // Given a normal and tangent vector, encode the tangent as a single float that can be
 // subsequently quantized.
-static inline float encode_tangent(float3 normal, float3 tangent)
-{
+static inline float encode_tangent(float3 normal, float3 tangent) {
 	// First, find a canonical direction in the tangent plane
 	float3 t1;
-	if (fabs(normal.y) > fabs(normal.z))
-	{
+	if (fabs(normal.y) > fabs(normal.z)) {
 		// Pick a canonical direction orthogonal to n with z = 0
 		t1 = float3xyz(normal.y, -normal.x, 0.f);
-	}
-	else
-	{
+	} else {
 		// Pick a canonical direction orthogonal to n with y = 0
 		t1 = float3xyz(normal.z, 0.f, -normal.x);
 	}
@@ -57,12 +53,9 @@ static inline float encode_tangent(float3 normal, float3 tangent)
 static inline float3 decode_tangent(float3 normal, float diamond_tangent) {
 	// As in the encode step, find our canonical tangent basis span(t1, t2)
 	float3 t1;
-	if (fabs(normal.y) > fabs(normal.z))
-	{
+	if (fabs(normal.y) > fabs(normal.z)) {
 		t1 = float3xyz(normal.y, -normal.x, 0.f);
-	}
-	else
-	{
+	} else {
 		t1 = float3xyz(normal.z, 0.f, -normal.x);
 	}
 	t1 = float3norm(t1);

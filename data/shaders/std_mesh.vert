@@ -12,6 +12,11 @@ layout (location = 0) out vec3 o_position;
 layout (location = 1) out vec3 o_normal;
 layout (location = 2) out vec2 o_texcoord;
 
+layout (location = 3) out vec3 o_tangent_sun_dir;
+layout (location = 4) out vec3 o_tangent_cam_pos;
+layout (location = 5) out vec3 o_tangent_pos;
+layout (location = 6) out vec3 o_tangent_normal;
+
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 2, binding = 0) uniform readonly BUFFER(StdMeshUniforms, mesh);
 
@@ -25,9 +30,52 @@ vec3 oct_to_float32x3(vec2 e) {
 	return normalize(v);
 }
 
+vec2 decode_diamond(float p) {
+	vec2 v;
+
+	// Remap p to the appropriate segment on the diamond
+	float p_sign = sign(p - 0.5f);
+	v.x = -p_sign * 4.f * p + 1.f + p_sign * 2.f;
+	v.y = p_sign * (1.f - abs(v.x));
+
+	// Normalization extends the point on the diamond back to the unit circle
+	return normalize(v);
+}
+
+vec3 decode_tangent(vec3 normal, float diamond_tangent) {
+	// As in the encode step, find our canonical tangent basis span(t1, t2)
+	vec3 t1;
+	if (abs(normal.y) > abs(normal.z)) {
+		t1 = vec3(normal.y, -normal.x, 0.f);
+	} else {
+		t1 = vec3(normal.z, 0.f, -normal.x);
+	}
+	t1 = normalize(t1);
+
+	vec3 t2 = cross(t1, normal);
+
+	// Recover the coordinates used with t1 and t2
+	vec2 packed_tangent = decode_diamond(diamond_tangent);
+
+	return t1 * packed_tangent.x + t2 * packed_tangent.y;
+}
+
 void main() {
 	o_normal = oct_to_float32x3(i_normal_oct);
+	vec3 tangent = decode_tangent(o_normal, i_tangent_dia);
 	o_texcoord = i_texcoord;
 	o_position = i_position;
+
+	vec3 T = normalize(vec3(mesh.model * vec4(tangent, 0.0)));
+	vec3 N = normalize(vec3(mesh.model * vec4(o_normal, 0.0)));
+	T = normalize(T - dot(T, N) * N);
+	vec3 B = cross(N, T);
+	mat3 TBN = transpose(mat3(T, B, N));
+
+	o_tangent_sun_dir = TBN * mesh.sun.xyz;
+	o_tangent_cam_pos = TBN * mesh.rel_cam_pos;
+	o_tangent_pos = TBN * o_position;
+	o_tangent_normal = TBN * o_normal;
+
 	gl_Position = mesh.proj * mesh.model_view * vec4(i_position, 1.0);
 }

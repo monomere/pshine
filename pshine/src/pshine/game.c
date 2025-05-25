@@ -695,6 +695,7 @@ void pshine_init_game(struct pshine_game *game) {
 		game->ships.ptr[idx].position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
 		game->ships.ptr[idx].position.xyz.y = 75.221 * PSHINE_SCS_SCALE;
 		game->ships.ptr[idx].position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
+		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(π / 2, π, 0);
 		game->ships.ptr[idx].scale = 4.0;
 	}
 
@@ -1600,10 +1601,14 @@ static void science_gui(struct pshine_game *game, float actual_delta_time) {
 }
 
 void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
+	static float real_time = 0;
+	real_time += actual_delta_time;
 	game->time += actual_delta_time * game->time_scale;
 	for (size_t i = 0; i < game->star_system_count; ++i) {
 		update_star_system(game, &game->star_systems_own[i], actual_delta_time * game->time_scale);
 	}
+
+	*(floatR*)game->ships.ptr[0].orientation.values = floatReuler(π / 2, real_time, 0.0f);
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_P) && !game->data_own->last_key_states[PSHINE_KEY_P]) {
 		game->data_own->is_control_precise = !game->data_own->is_control_precise;

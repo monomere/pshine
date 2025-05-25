@@ -113,6 +113,52 @@ MATH_FN_ `T `$vs(const `B vs[`[$Dim,0,$At,$Str]]) { return `[vs{0},$Dim,,$Dims,$
 MATH_FN_ `T `$v(`B v) { return `[v,$Dim,,$Dims,$ctor]; }
 /// Create a rotor with all components equal to 0.
 MATH_FN_ `T `$v0() { return `$v(`[$bZero]); }
+	
+/// Create a rotor that is a combination of two rotors.
+MATH_FN_ `T `$combine(`T a, `T b) {
+	`T result = {};
+	result.s  = a.s * b.s  - a.xy * b.xy - a.yz * b.yz - a.zx * b.zx;
+	result.xy = a.s * b.xy + a.xy * b.s  - a.yz * b.zx + a.zx * b.yz;
+	result.yz = a.s * b.yz + a.xy * b.zx + a.yz * b.s  - a.zx * b.xy;
+	result.zx = a.s * b.zx - a.xy * b.yz + a.yz * b.xy + a.zx * b.s ;
+	return result;
+}
+	
+/// Create a rotor that is the inverse of the specified rotor.
+MATH_FN_ `T `$inverse(`T v) { return `$wxyz(v.s, -v.xy, -v.yz, -v.zx); }
+
+/// Apply a rotor to a vector.
+MATH_FN_ `B3 `$apply(`T r, `B3 v) {
+	const `B S_x = r.s * v.x + r.xy * v.y - r.zx * v.z;
+	const `B S_y = r.s * v.y - r.xy * v.x + r.yz * v.z;
+	const `B S_z = r.s * v.z - r.yz * v.y + r.zx * v.x;
+	const `B S_xyz = r.xy * v.z + r.yz * v.x + r.zx * v.y;
+	return `B3xyz(
+		S_x * r.s + S_y   * r.xy + S_xyz * r.yz - S_z   * r.zx,
+		S_y * r.s - S_x   * r.xy + S_z   * r.yz + S_xyz * r.zx,
+		S_z * r.s + S_xyz * r.xy - S_y   * r.yz + S_x   * r.zx
+	);
+}
+
+/// Create a rotor from Euler angles, in Y-X-Z sequence.
+/// First the aircraft does a yaw turn (Y), taxiing to the runway,
+/// then it takes off, pitches (X), then rolls (Z).
+MATH_FN_ `T `$euler(`B pitch, `B yaw, `B roll) {
+	const `B cr = `[roll,0.5,$Tb,mul,$Gbinop,$cos];
+	const `B sr = `[roll,0.5,$Tb,mul,$Gbinop,$sin];
+	const `B cp = `[pitch,0.5,$Tb,mul,$Gbinop,$cos];
+	const `B sp = `[pitch,0.5,$Tb,mul,$Gbinop,$sin];
+	const `B cy = `[yaw,0.5,$Tb,mul,$Gbinop,$cos];
+	const `B sy = `[yaw,0.5,$Tb,mul,$Gbinop,$sin];
+
+	// TODO: verify that the sequence is correct...
+	return `$wxyz(
+		cr * cp * cy + sr * sp * sy,
+		cr * sp * sy - sr * cp * cy,
+		- cr * sp * cy - sr * cp * sy,
+		sr * sp * cy - cr * cp * sy
+	);
+}
 """.strip()),
 	({"cast"}, "", R"""
 /// Create a `Ta from a `Tb with each component casted.
@@ -251,7 +297,7 @@ MATH_FN_ void `B3x3axisangle(`B3x3 *m, `B3 axis, `B angle) {
 	r.v3s[2] = `B3add(`B3add(`B3mul(m->v3s[0], r20), `B3mul(m->v3s[1], r21)), `B3mul(m->v3s[2], r22));
 	*m = r;
 }
-/// Create a 3x3 euler angles rotation matrix.
+/// Create a 3x3 Euler angles rotation matrix.
 MATH_FN_ void set`B3x3rotation(`B3x3 *m, `B yaw, `B pitch, `B roll) {
 	memset(m->vs, 0, sizeof(m->vs));
 	`B α = pitch, β = yaw, γ = roll;
@@ -267,6 +313,13 @@ MATH_FN_ void set`B3x3rotation(`B3x3 *m, `B yaw, `B pitch, `B roll) {
 	m->vs[0][2] = cα * sβ * cγ + sα * sγ;
 	m->vs[1][2] = cα * sβ * sγ - sα * cγ;
 	m->vs[2][2] = cα * cβ;
+}
+	
+/// Create a 3x3 rotation matrix from a rotor.
+MATH_FN_ void set`B3x3rotationR(`B3x3 *m, `B.R r) {
+	m->v3s[0] = `B.Rapply(r, `B3xyz(1, 0, 0));
+	m->v3s[1] = `B.Rapply(r, `B3xyz(0, 1, 0));
+	m->v3s[2] = `B.Rapply(r, `B3xyz(0, 0, 1));
 }
 
 /// Create a 3x3 translation matrix.
@@ -790,8 +843,8 @@ class Generator:
 		for ty in self.BASE_TYPES:
 			self._generate_scalar(ty)
 			self._generate_vector(ty)
-			self._generate_matrix(ty)
 			self._generate_rotor(ty)
+			self._generate_matrix(ty)
 		for tya, tyb in itertools.product(self.BASE_TYPES, self.BASE_TYPES):
 			if tya == tyb: continue
 			self._generate_vector_casts(tya, tyb)

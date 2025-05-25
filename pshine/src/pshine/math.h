@@ -186,6 +186,66 @@ MATH_FN_ float4 float4max(float4 a, float4 b) { return (float4){{ a.vs[0] > b.vs
 MATH_FN_ float4 float4clamp(float4 x, float4 a, float4 b) { return float4min(float4max(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
 MATH_FN_ float4 float4lerp(float4 a, float4 b, float t) { return float4add(float4mul(a, 1 - t), float4mul(b, t)); }
+/// A float rotor, representing rotation in 3D space.
+typedef union {
+	struct { float s, xy, yz, zx; };
+	float vs[4];
+} floatR;
+
+/// Create a rotor from a scalar, the xy bivector, the yz bivector, and the zx bivector.
+MATH_FN_ floatR floatRwxyz(float w, float x, float y, float z) { return (floatR){{ w, x, y, z }}; }
+/// Create a rotor with all components taken from the arguments.
+MATH_FN_ floatR floatRvs(const float vs[4]) { return (floatR){{ vs[0], vs[1], vs[2], vs[3] }}; }
+/// Create a rotor with all components equal to the specified value.
+MATH_FN_ floatR floatRv(float v) { return (floatR){{ v, v, v, v }}; }
+/// Create a rotor with all components equal to 0.
+MATH_FN_ floatR floatRv0() { return floatRv(0); }
+	
+/// Create a rotor that is a combination of two rotors.
+MATH_FN_ floatR floatRcombine(floatR a, floatR b) {
+	floatR result = {};
+	result.s  = a.s * b.s  - a.xy * b.xy - a.yz * b.yz - a.zx * b.zx;
+	result.xy = a.s * b.xy + a.xy * b.s  - a.yz * b.zx + a.zx * b.yz;
+	result.yz = a.s * b.yz + a.xy * b.zx + a.yz * b.s  - a.zx * b.xy;
+	result.zx = a.s * b.zx - a.xy * b.yz + a.yz * b.xy + a.zx * b.s ;
+	return result;
+}
+	
+/// Create a rotor that is the inverse of the specified rotor.
+MATH_FN_ floatR floatRinverse(floatR v) { return floatRwxyz(v.s, -v.xy, -v.yz, -v.zx); }
+
+/// Apply a rotor to a vector.
+MATH_FN_ float3 floatRapply(floatR r, float3 v) {
+	const float S_x = r.s * v.x + r.xy * v.y - r.zx * v.z;
+	const float S_y = r.s * v.y - r.xy * v.x + r.yz * v.z;
+	const float S_z = r.s * v.z - r.yz * v.y + r.zx * v.x;
+	const float S_xyz = r.xy * v.z + r.yz * v.x + r.zx * v.y;
+	return float3xyz(
+		S_x * r.s + S_y   * r.xy + S_xyz * r.yz - S_z   * r.zx,
+		S_y * r.s - S_x   * r.xy + S_z   * r.yz + S_xyz * r.zx,
+		S_z * r.s + S_xyz * r.xy - S_y   * r.yz + S_x   * r.zx
+	);
+}
+
+/// Create a rotor from Euler angles, in Y-X-Z sequence.
+/// First the aircraft does a yaw turn (Y), taxiing to the runway,
+/// then it takes off, pitches (X), then rolls (Z).
+MATH_FN_ floatR floatReuler(float pitch, float yaw, float roll) {
+	const float cr = cosf(roll * 0.5);
+	const float sr = sinf(roll * 0.5);
+	const float cp = cosf(pitch * 0.5);
+	const float sp = sinf(pitch * 0.5);
+	const float cy = cosf(yaw * 0.5);
+	const float sy = sinf(yaw * 0.5);
+
+	// TODO: verify that the sequence is correct...
+	return floatRwxyz(
+		cr * cp * cy + sr * sp * sy,
+		cr * sp * sy - sr * cp * cy,
+		- cr * sp * cy - sr * cp * sy,
+		sr * sp * cy - cr * cp * sy
+	);
+}
 
 /// A 2 by 2 matrix of floats.
 typedef union {
@@ -365,7 +425,7 @@ MATH_FN_ void float3x3axisangle(float3x3 *m, float3 axis, float angle) {
 	r.v3s[2] = float3add(float3add(float3mul(m->v3s[0], r20), float3mul(m->v3s[1], r21)), float3mul(m->v3s[2], r22));
 	*m = r;
 }
-/// Create a 3x3 euler angles rotation matrix.
+/// Create a 3x3 Euler angles rotation matrix.
 MATH_FN_ void setfloat3x3rotation(float3x3 *m, float yaw, float pitch, float roll) {
 	memset(m->vs, 0, sizeof(m->vs));
 	float α = pitch, β = yaw, γ = roll;
@@ -381,6 +441,13 @@ MATH_FN_ void setfloat3x3rotation(float3x3 *m, float yaw, float pitch, float rol
 	m->vs[0][2] = cα * sβ * cγ + sα * sγ;
 	m->vs[1][2] = cα * sβ * sγ - sα * cγ;
 	m->vs[2][2] = cα * cβ;
+}
+	
+/// Create a 3x3 rotation matrix from a rotor.
+MATH_FN_ void setfloat3x3rotationR(float3x3 *m, floatR r) {
+	m->v3s[0] = floatRapply(r, float3xyz(1, 0, 0));
+	m->v3s[1] = floatRapply(r, float3xyz(0, 1, 0));
+	m->v3s[2] = floatRapply(r, float3xyz(0, 0, 1));
 }
 
 /// Create a 3x3 translation matrix.
@@ -488,20 +555,6 @@ MATH_FN_ void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, float3 u
 }
 
 
-/// A float rotor, representing rotation in 3D space.
-typedef union {
-	struct { float s, xy, yz, zx; };
-	float vs[4];
-} floatR;
-
-/// Create a rotor from a scalar, the xy bivector, the yz bivector, and the zx bivector.
-MATH_FN_ floatR floatRwxyz(float w, float x, float y, float z) { return (floatR){{ w, x, y, z }}; }
-/// Create a rotor with all components taken from the arguments.
-MATH_FN_ floatR floatRvs(const float vs[4]) { return (floatR){{ vs[0], vs[1], vs[2], vs[3] }}; }
-/// Create a rotor with all components equal to the specified value.
-MATH_FN_ floatR floatRv(float v) { return (floatR){{ v, v, v, v }}; }
-/// Create a rotor with all components equal to 0.
-MATH_FN_ floatR floatRv0() { return floatRv(0); }
 
 /// Return the element-wise minimum of two values.
 MATH_FN_ double mind(double a, double b) { return a < b ? a : b; }
@@ -673,6 +726,66 @@ MATH_FN_ double4 double4max(double4 a, double4 b) { return (double4){{ a.vs[0] >
 MATH_FN_ double4 double4clamp(double4 x, double4 a, double4 b) { return double4min(double4max(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
 MATH_FN_ double4 double4lerp(double4 a, double4 b, double t) { return double4add(double4mul(a, 1 - t), double4mul(b, t)); }
+/// A double rotor, representing rotation in 3D space.
+typedef union {
+	struct { double s, xy, yz, zx; };
+	double vs[4];
+} doubleR;
+
+/// Create a rotor from a scalar, the xy bivector, the yz bivector, and the zx bivector.
+MATH_FN_ doubleR doubleRwxyz(double w, double x, double y, double z) { return (doubleR){{ w, x, y, z }}; }
+/// Create a rotor with all components taken from the arguments.
+MATH_FN_ doubleR doubleRvs(const double vs[4]) { return (doubleR){{ vs[0], vs[1], vs[2], vs[3] }}; }
+/// Create a rotor with all components equal to the specified value.
+MATH_FN_ doubleR doubleRv(double v) { return (doubleR){{ v, v, v, v }}; }
+/// Create a rotor with all components equal to 0.
+MATH_FN_ doubleR doubleRv0() { return doubleRv(0); }
+	
+/// Create a rotor that is a combination of two rotors.
+MATH_FN_ doubleR doubleRcombine(doubleR a, doubleR b) {
+	doubleR result = {};
+	result.s  = a.s * b.s  - a.xy * b.xy - a.yz * b.yz - a.zx * b.zx;
+	result.xy = a.s * b.xy + a.xy * b.s  - a.yz * b.zx + a.zx * b.yz;
+	result.yz = a.s * b.yz + a.xy * b.zx + a.yz * b.s  - a.zx * b.xy;
+	result.zx = a.s * b.zx - a.xy * b.yz + a.yz * b.xy + a.zx * b.s ;
+	return result;
+}
+	
+/// Create a rotor that is the inverse of the specified rotor.
+MATH_FN_ doubleR doubleRinverse(doubleR v) { return doubleRwxyz(v.s, -v.xy, -v.yz, -v.zx); }
+
+/// Apply a rotor to a vector.
+MATH_FN_ double3 doubleRapply(doubleR r, double3 v) {
+	const double S_x = r.s * v.x + r.xy * v.y - r.zx * v.z;
+	const double S_y = r.s * v.y - r.xy * v.x + r.yz * v.z;
+	const double S_z = r.s * v.z - r.yz * v.y + r.zx * v.x;
+	const double S_xyz = r.xy * v.z + r.yz * v.x + r.zx * v.y;
+	return double3xyz(
+		S_x * r.s + S_y   * r.xy + S_xyz * r.yz - S_z   * r.zx,
+		S_y * r.s - S_x   * r.xy + S_z   * r.yz + S_xyz * r.zx,
+		S_z * r.s + S_xyz * r.xy - S_y   * r.yz + S_x   * r.zx
+	);
+}
+
+/// Create a rotor from Euler angles, in Y-X-Z sequence.
+/// First the aircraft does a yaw turn (Y), taxiing to the runway,
+/// then it takes off, pitches (X), then rolls (Z).
+MATH_FN_ doubleR doubleReuler(double pitch, double yaw, double roll) {
+	const double cr = cos(roll * 0.5);
+	const double sr = sin(roll * 0.5);
+	const double cp = cos(pitch * 0.5);
+	const double sp = sin(pitch * 0.5);
+	const double cy = cos(yaw * 0.5);
+	const double sy = sin(yaw * 0.5);
+
+	// TODO: verify that the sequence is correct...
+	return doubleRwxyz(
+		cr * cp * cy + sr * sp * sy,
+		cr * sp * sy - sr * cp * cy,
+		- cr * sp * cy - sr * cp * sy,
+		sr * sp * cy - cr * cp * sy
+	);
+}
 
 /// A 2 by 2 matrix of doubles.
 typedef union {
@@ -852,7 +965,7 @@ MATH_FN_ void double3x3axisangle(double3x3 *m, double3 axis, double angle) {
 	r.v3s[2] = double3add(double3add(double3mul(m->v3s[0], r20), double3mul(m->v3s[1], r21)), double3mul(m->v3s[2], r22));
 	*m = r;
 }
-/// Create a 3x3 euler angles rotation matrix.
+/// Create a 3x3 Euler angles rotation matrix.
 MATH_FN_ void setdouble3x3rotation(double3x3 *m, double yaw, double pitch, double roll) {
 	memset(m->vs, 0, sizeof(m->vs));
 	double α = pitch, β = yaw, γ = roll;
@@ -868,6 +981,13 @@ MATH_FN_ void setdouble3x3rotation(double3x3 *m, double yaw, double pitch, doubl
 	m->vs[0][2] = cα * sβ * cγ + sα * sγ;
 	m->vs[1][2] = cα * sβ * sγ - sα * cγ;
 	m->vs[2][2] = cα * cβ;
+}
+	
+/// Create a 3x3 rotation matrix from a rotor.
+MATH_FN_ void setdouble3x3rotationR(double3x3 *m, doubleR r) {
+	m->v3s[0] = doubleRapply(r, double3xyz(1, 0, 0));
+	m->v3s[1] = doubleRapply(r, double3xyz(0, 1, 0));
+	m->v3s[2] = doubleRapply(r, double3xyz(0, 0, 1));
 }
 
 /// Create a 3x3 translation matrix.
@@ -975,20 +1095,6 @@ MATH_FN_ void setdouble4x4lookat(double4x4 *m, double3 eye, double3 center, doub
 }
 
 
-/// A double rotor, representing rotation in 3D space.
-typedef union {
-	struct { double s, xy, yz, zx; };
-	double vs[4];
-} doubleR;
-
-/// Create a rotor from a scalar, the xy bivector, the yz bivector, and the zx bivector.
-MATH_FN_ doubleR doubleRwxyz(double w, double x, double y, double z) { return (doubleR){{ w, x, y, z }}; }
-/// Create a rotor with all components taken from the arguments.
-MATH_FN_ doubleR doubleRvs(const double vs[4]) { return (doubleR){{ vs[0], vs[1], vs[2], vs[3] }}; }
-/// Create a rotor with all components equal to the specified value.
-MATH_FN_ doubleR doubleRv(double v) { return (doubleR){{ v, v, v, v }}; }
-/// Create a rotor with all components equal to 0.
-MATH_FN_ doubleR doubleRv0() { return doubleRv(0); }
 /// Create a float2 from a double2 with each component casted.
 MATH_FN_ float2 float2_double2(double2 x) { return (float2){{ (float)(x.vs[0]), (float)(x.vs[1]) }}; }
 /// Create a float3 from a double3 with each component casted.

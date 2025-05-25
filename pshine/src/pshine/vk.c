@@ -4266,11 +4266,20 @@ static void do_frame(
 		double4x4 model_mat = {};
 		setdouble4x4iden(&model_mat);
 
+		float3x3 model_rot_mat3;
+		setfloat3x3rotationR(&model_rot_mat3, floatRvs(ship->orientation.values));
+		double4x4 model_rot_mat;
+		model_rot_mat.v4s[0] = double4xyz3w(double3_float3(model_rot_mat3.v3s[0]), 0.0);
+		model_rot_mat.v4s[1] = double4xyz3w(double3_float3(model_rot_mat3.v3s[1]), 0.0);
+		model_rot_mat.v4s[2] = double4xyz3w(double3_float3(model_rot_mat3.v3s[2]), 0.0);
+		model_rot_mat.v4s[3] = double4xyz3w(double3v0(), 1.0);
+
 		double4x4 model_trans_mat;
 		setdouble4x4trans(&model_trans_mat, SCSd3_WCSp3(ship->position));
 		double4x4 model_scale_mat;
 		setdouble4x4scale(&model_scale_mat, double3v(ship->scale * PSHINE_SCS_FACTOR));
 
+		double4x4mul(&model_mat, &model_rot_mat);
 		double4x4mul(&model_mat, &model_scale_mat);
 		double4x4mul(&model_mat, &model_trans_mat);
 

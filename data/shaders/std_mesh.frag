@@ -10,6 +10,11 @@ layout (location = 0) in vec3 i_position;
 layout (location = 1) in vec3 i_normal;
 layout (location = 2) in vec2 i_texcoord;
 
+layout (location = 3) in vec3 i_tangent_sun_dir;
+layout (location = 4) in vec3 i_tangent_cam_pos;
+layout (location = 5) in vec3 i_tangent_pos;
+layout (location = 6) in vec3 i_tangent_normal;
+
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 1, binding = 0) uniform readonly BUFFER(StdMaterialUniforms, material);
 layout (set = 2, binding = 0) uniform readonly BUFFER(StdMeshUniforms, mesh);
@@ -58,17 +63,29 @@ void main() {
 	vec3 col = texture(texture_diffuse, i_texcoord).rgb;
 	vec3 ao_rough_metal = texture(texture_ao_rough_metal, i_texcoord).rgb;
 	vec3 emissive = texture(texture_emissive, i_texcoord).rgb;
-	vec3 world_normal = i_normal; // normalize(vec3(mesh.model * vec4(i_normal, 0.0)));
+	vec3 normal_map = texture(texture_normal, i_texcoord).rgb * 2.0 - 1.0;
+
+	vec3 k_normal = i_tangent_normal;
+	vec3 k_pos = i_tangent_pos;
+	vec3 k_cam_pos = i_tangent_cam_pos;
+	vec3 k_sun_dir = i_tangent_sun_dir;
+
+	// vec3 k_normal = i_normal;
+	// vec3 k_pos = i_position;
+	// vec3 k_cam_pos = mesh.rel_cam_pos;
+	// vec3 k_sun_dir = mesh.sun.xyz;
+
+	vec3 world_normal = k_normal + normal_map * 0.01;
 	float shadow = clamp(dot(normalize(mesh.sun.xyz), world_normal), 0.06, 1.0);
 
 	vec3 N = world_normal;
-	vec3 V = normalize(i_position - mesh.rel_cam_pos);
+	vec3 V = normalize(k_pos - k_cam_pos);
 
-	vec3 F0 = vec3(0.04); 
+	vec3 F0 = vec3(0.04);
 	F0 = mix(F0, col, ao_rough_metal.b);
 
 	// calculate per-light radiance
-	vec3 L = mesh.sun.xyz;
+	vec3 L = k_sun_dir;
 	vec3 H = normalize(V + L);
 	// float light_distance = length(lightPositions[i] - WorldPos);
 	// float attenuation = 1.0 / (light_distance * light_distance);
