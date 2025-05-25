@@ -4,6 +4,15 @@
 #include <stddef.h>
 #include <pshine/util.h>
 
+/// A geometric structure that represents rotation.
+/// Using 32-bit floats, as having that double precision isn't really necessary.
+typedef union pshine_rotor_ {
+	struct {
+		float scalar, xy, yz, zx;
+	} components;
+	float values[4];
+} pshine_rotor;
+
 typedef union pshine_point3d_ {
 	struct { double x, y, z; } xyz;
 	double values[3];
@@ -231,6 +240,7 @@ struct pshine_ship {
 	pshine_point3d_world position;
 	/// In m/s.
 	pshine_vector3d velocity;
+	pshine_rotor orientation;
 	/// Mesh scale.
 	double scale;
 	struct pshine_ship_graphics_data* graphics_data;
