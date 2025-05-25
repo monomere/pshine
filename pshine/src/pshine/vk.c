@@ -208,7 +208,16 @@ struct render_pass_transients {
 	struct vulkan_image bloom[BLOOM_STAGE_COUNT];
 };
 
-struct image_cache_entry {
+struct model_store_entry {
+	/// Must be `(size_t)-1` on valid entries.
+	size_t _alive_marker;
+	char *fpath_own;
+	struct vulkan_mesh_model model;
+};
+
+struct image_store_entry {
+	/// Must be `(size_t)-1` on valid entries.
+	size_t _alive_marker;
 	char *fpath_own;
 	struct vulkan_image image;
 };
@@ -334,7 +343,8 @@ struct vulkan_renderer {
 
 	uint8_t *key_states;
 
-	PSHINE_DYNA_(struct image_cache_entry) image_cache;
+	PSHINE_DYNA_(struct image_store_entry) image_store;
+	PSHINE_DYNA_(struct model_store_entry) model_store;
 };
 
 VkResult check_vk_impl_(struct pshine_debug_file_loc where, VkResult result, const char *expr) {
@@ -776,9 +786,9 @@ static struct vulkan_image load_texture_from_file(
 	// PSHINE_INFO("Called load_texture_from_file(r, \"%s\", format=%d, format_channels=%d, bytes_per_channel=%d)",
 	// 	fpath, (int)format, format_channels, bytes_per_channel);
 	// TODO: cache parameters
-	for (size_t i = 0; i < r->image_cache.dyna.count; ++i) {
-		if (strcmp(r->image_cache.ptr[i].fpath_own, fpath) == 0) {
-			return r->image_cache.ptr[i].image;
+	for (size_t i = 0; i < r->image_store.dyna.count; ++i) {
+		if (strcmp(r->image_store.ptr[i].fpath_own, fpath) == 0) {
+			return r->image_store.ptr[i].image;
 		}
 	}
 
@@ -883,9 +893,10 @@ static struct vulkan_image load_texture_from_file(
 		free(data);
 	}
 
-	size_t idx = PSHINE_DYNA_ALLOC(r->image_cache);
-	r->image_cache.ptr[idx].fpath_own = pshine_strdup(fpath);
-	r->image_cache.ptr[idx].image = img;
+	size_t idx = PSHINE_DYNA_ALLOC(r->image_store);
+	r->image_store.ptr[idx]._alive_marker = (size_t)-1;
+	r->image_store.ptr[idx].fpath_own = pshine_strdup(fpath);
+	r->image_store.ptr[idx].image = img;
 	return img;
 }
 
@@ -984,6 +995,13 @@ static void load_mesh_model_from_gltf(
 	struct vulkan_mesh_model *out
 ) {
 	PSHINE_DEBUG("Loading model from %s", fpath);
+
+	for (size_t i = 0; i < r->model_store.dyna.count; ++i) {
+		if (strcmp(r->model_store.ptr[i].fpath_own, fpath) == 0) {
+			*out = r->model_store.ptr[i].model;
+			return;
+		}
+	}
 	struct cgltf_data *data = nullptr;
 	cgltf_result res;
 	res = cgltf_parse_file(&(cgltf_options){
@@ -1276,6 +1294,11 @@ static void load_mesh_model_from_gltf(
 		}, 0, nullptr);
 	}
 	cgltf_free(data);
+
+	size_t idx = PSHINE_DYNA_ALLOC(r->model_store);
+	r->model_store.ptr[idx]._alive_marker = (size_t)-1;
+	r->model_store.ptr[idx].model = *out;
+	r->model_store.ptr[idx].fpath_own = pshine_strdup(fpath);
 }
 
 static void init_ship(struct vulkan_renderer *r, struct pshine_ship *ship) {
@@ -4085,6 +4108,11 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	for (size_t i = 0; i < r->game->star_system_count; ++i) {
 		deinit_star_system(r, &r->game->star_systems_own[i]);
 	}
+	
+	for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
+		if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) continue;
+		deallocate_buffer(r, r->game->ships.ptr[i].graphics_data->uniform_buffer);
+	}
 
 	vkDestroySampler(r->device, r->skybox_sampler, nullptr);
 	vkDestroySampler(r->device, r->atmo_lut_sampler, nullptr);
@@ -4095,11 +4123,33 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 		destroy_mesh(r, &r->own_sphere_meshes[i]);
 	free(r->own_sphere_meshes);
 
-	for (size_t i = 0; i < r->image_cache.dyna.count; ++i) {
-		deallocate_image(r, r->image_cache.ptr[i].image);
-		free(r->image_cache.ptr[i].fpath_own);
-		r->image_cache.ptr[i].fpath_own = nullptr;
+	for (size_t i = 0; i < r->model_store.dyna.count; ++i) {
+		if (r->model_store.ptr[i]._alive_marker != (size_t)-1) continue;
+		struct vulkan_mesh_model *model = &r->model_store.ptr[i].model;
+		for (size_t j = 0; j < model->part_count; ++j) {
+			destroy_mesh(r, &model->parts_own[j].mesh);
+		}
+		free(model->parts_own);
+		for (size_t j = 0; j < model->material_count; ++j) {
+			deallocate_buffer(r, model->materials_own[j].uniform_buffer);
+			deallocate_image(r, model->materials_own[j].images.ao_metallic_roughness);
+			deallocate_image(r, model->materials_own[j].images.diffuse);
+			deallocate_image(r, model->materials_own[j].images.emissive);
+			deallocate_image(r, model->materials_own[j].images.normal);
+		}
+		free(model->materials_own);
+		free(r->model_store.ptr[i].fpath_own);
+		r->model_store.ptr[i].fpath_own = nullptr;
 	}
+	pshine_free_dyna_(&r->model_store.dyna);
+
+	for (size_t i = 0; i < r->image_store.dyna.count; ++i) {
+		if (r->image_store.ptr[i]._alive_marker != (size_t)-1) continue;
+		deallocate_image(r, r->image_store.ptr[i].image);
+		free(r->image_store.ptr[i].fpath_own);
+		r->image_store.ptr[i].fpath_own = nullptr;
+	}
+	pshine_free_dyna_(&r->image_store.dyna);
 
 	deinit_imgui(r);
 	deinit_frames(r);

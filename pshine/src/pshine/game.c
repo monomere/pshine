@@ -723,7 +723,6 @@ void pshine_init_game(struct pshine_game *game) {
 	game->data_own->is_control_precise = false;
 
 	eximgui_state_init(&game->data_own->eximgui_state);
-
 }
 
 static void deinit_star_system(struct pshine_game *game, struct pshine_star_system *system) {
