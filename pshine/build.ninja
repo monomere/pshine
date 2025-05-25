@@ -1,11 +1,17 @@
 
 build $mod/src/pshine/math.h: python generate_math.py
 
-build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
-build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
-build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
-build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c    || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
-build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+
+build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/src/pshine/math.h
+build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      || $mod/src/pshine/math.h
+build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h
+build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c    || $mod/src/pshine/math.h
+build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h
 # build $builddir/pshine/eximgui.cc.o  : cxx $mod/src/pshine/eximgui.cc
 
 build $builddir/pshine/cgltf.c.o         : cc $mod/src/pshine/cgltf.c

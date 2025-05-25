@@ -245,11 +245,12 @@ struct pshine_static_mesh_vertex {
 
 struct pshine_planet_vertex {
 	float position[3];
-	float normal_oct[2];
 	float tangent_dia;
+	float normal_oct[2];
 };
 
 enum pshine_vertex_type {
+	PSHINE_VERTEX_NONE,
 	PSHINE_VERTEX_STATIC_MESH,
 	PSHINE_VERTEX_SKINNED_MESH,
 	PSHINE_VERTEX_PLANET,
@@ -326,6 +327,8 @@ struct pshine_game {
 	struct pshine_environment_info environment;
 
 	struct pshine_pcg64_state rng64;
+
+	PSHINE_DYNA_(struct pshine_ship) ships;
 };
 
 /// This is ran at the start of the game, before the renderer is initialized.

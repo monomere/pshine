@@ -40,7 +40,20 @@ struct StaticMeshUniforms {
 	vec4 sun;
 };
 
+struct StdMeshUniforms {
+	mat4 proj;
+	mat4 model_view;
+	mat4 model;
+	vec4 sun;
+};
+
 struct MaterialUniforms {
+	vec4 color;
+	vec3 view_dir;
+	float smoothness;
+};
+
+struct StdMaterialUniforms {
 	vec4 color;
 	vec3 view_dir;
 	float smoothness;
