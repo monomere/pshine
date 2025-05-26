@@ -10,10 +10,11 @@ layout (location = 0) in vec3 i_position;
 layout (location = 1) in vec3 i_normal;
 layout (location = 2) in vec2 i_texcoord;
 
-layout (location = 3) in vec3 i_tangent_sun_dir;
-layout (location = 4) in vec3 i_tangent_cam_pos;
-layout (location = 5) in vec3 i_tangent_pos;
-layout (location = 6) in vec3 i_tangent_normal;
+layout (location = 3) in mat3 i_tbn;
+// layout (location = 3) in vec3 i_tangent_sun_dir;
+// layout (location = 4) in vec3 i_tangent_cam_pos;
+// layout (location = 5) in vec3 i_tangent_pos;
+// layout (location = 6) in vec3 i_tangent_normal;
 
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 1, binding = 0) uniform readonly BUFFER(StdMaterialUniforms, material);
@@ -59,54 +60,76 @@ float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness) {
 	return ggx1 * ggx2;
 }
 
+vec4 _vis(vec3 x) {
+	return vec4(clamp(abs(x), 0.0, 1.0), 1.0);
+}
+
 void main() {
 	vec3 col = texture(texture_diffuse, i_texcoord).rgb;
 	vec3 ao_rough_metal = texture(texture_ao_rough_metal, i_texcoord).rgb;
 	vec3 emissive = texture(texture_emissive, i_texcoord).rgb;
-	vec3 normal_map = texture(texture_normal, i_texcoord).rgb * 2.0 - 1.0;
+	vec3 normal_map = -normalize(texture(texture_normal, i_texcoord).rgb * 2.0 - 1.0);
 
-	vec3 k_normal = i_tangent_normal;
-	vec3 k_pos = i_tangent_pos;
-	vec3 k_cam_pos = i_tangent_cam_pos;
-	vec3 k_sun_dir = i_tangent_sun_dir;
+	vec3 albedo = col;
+	float occlusion = ao_rough_metal.r;
+	float roughness = ao_rough_metal.g;
+	float metallic = ao_rough_metal.b;
 
-	// vec3 k_normal = i_normal;
-	// vec3 k_pos = i_position;
-	// vec3 k_cam_pos = mesh.rel_cam_pos;
-	// vec3 k_sun_dir = mesh.sun.xyz;
+	// vec3 k_normal = i_tangent_normal;
+	// vec3 k_pos = i_tangent_pos;
+	// vec3 k_cam_pos = i_tangent_cam_pos;
+	// vec3 k_sun_dir = i_tangent_sun_dir;
 
-	vec3 world_normal = k_normal + normal_map * 0.01;
-	float shadow = clamp(dot(normalize(mesh.sun.xyz), world_normal), 0.06, 1.0);
+	vec3 k_pos = i_position;
+	vec3 k_cam_pos = mesh.rel_cam_pos.xyz;
+	vec3 k_sun_dir = mesh.sun.xyz;
+	vec3 k_normal = i_tbn * normal_map;
 
-	vec3 N = world_normal;
-	vec3 V = normalize(k_pos - k_cam_pos);
+	float shadow = clamp(dot(normalize(k_sun_dir), k_normal), 0.06, 1.0);
 
-	vec3 F0 = vec3(0.04);
-	F0 = mix(F0, col, ao_rough_metal.b);
+	vec3 N = k_normal;
+	vec3 V = normalize(k_cam_pos - k_pos);
+	// calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
+	// of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
+	vec3 F0 = vec3(0.04); 
+	F0 = mix(F0, albedo, metallic);
 
-	// calculate per-light radiance
-	vec3 L = k_sun_dir;
-	vec3 H = normalize(V + L);
-	// float light_distance = length(lightPositions[i] - WorldPos);
-	// float attenuation = 1.0 / (light_distance * light_distance);
-	vec3 radiance = vec3(10.0, 10.0, 10.0);
-	
-	// cook-torrance brdf
-	float NDF = distribution_ggx(N, H, ao_rough_metal.g);
-	float G = geometry_smith(N, V, L, ao_rough_metal.g);
-	vec3 F = fresnel_schlick(max(dot(H, V), 0.0), F0);
-	
-	vec3 kS = F;
-	vec3 kD = vec3(1.0) - kS;
-	kD *= 1.0 - ao_rough_metal.b;
-	
-	vec3 numerator = NDF * G * F;
-	float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-	vec3 specular = numerator / denominator;  
-			
-	// add to outgoing radiance Lo
-	float NdotL = max(dot(N, L), 0.0);
-	vec3 Lo = (kD * col / PI + specular) * radiance * NdotL; 
+	// reflectance equation
+	vec3 Lo = vec3(0.0);
+	{
+		// calculate per-light radiance
+		vec3 L = normalize(k_sun_dir);
+		vec3 H = normalize(V + L);
+		// float distance = length(k_sun_dir);
+		// float attenuation = 1.0; // 1.0 / (distance * distance);
+		vec3 radiance = vec3(4.0); // lightColors[i] * attenuation;
 
+		// Cook-Torrance BRDF
+		float NDF = distribution_ggx(N, H, roughness);
+		float G   = geometry_smith(N, V, L, roughness);      
+		vec3 F    = fresnel_schlick(max(dot(H, V), 0.0), F0);
+				
+		vec3 numerator    = NDF * G * F; 
+		float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001; // + 0.0001 to prevent divide by zero
+		vec3 specular = numerator / denominator;
+		
+		// kS is equal to Fresnel
+		vec3 kS = F;
+		// for energy conservation, the diffuse and specular light can't
+		// be above 1.0 (unless the surface emits light); to preserve this
+		// relationship the diffuse component (kD) should equal 1.0 - kS.
+		vec3 kD = vec3(1.0) - kS;
+		// multiply kD by the inverse metalness such that only non-metals 
+		// have diffuse lighting, or a linear blend if partly metal (pure metals
+		// have no diffuse light).
+		kD *= 1.0 - metallic;	  
+
+		// scale light by NdotL
+		float NdotL = max(dot(N, L), 0.0);        
+
+		// add to outgoing radiance Lo
+		Lo += (kD * albedo / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
+	}
+	// o_color = _vis(k_normal);
 	o_color = vec4(Lo * shadow * ao_rough_metal.r + emissive * 16.0, 1.0);
 }

@@ -80,8 +80,9 @@ struct std_mesh_uniform_data {
 	float4x4 proj;
 	float4x4 model_view;
 	float4x4 model;
+	float4x4 unscaled_model;
 	float4 sun;
-	float3 rel_cam_pos;
+	float4 rel_cam_pos;
 };
 
 struct rings_uniform_data {
@@ -4287,13 +4288,14 @@ static void do_frame(
 		double4x4mul(&model_view_mat, &view_mat);
 		new_data.model_view = float4x4_double4x4(model_view_mat);
 		new_data.model = float4x4_double4x4(model_mat);
+		new_data.unscaled_model = float4x4_double4x4(model_rot_mat);
 		new_data.proj = near_proj_mat32;
 
 		double3 sun_pos = double3v0();
 		double3 body_pos = SCSd3_WCSp3(ship->position);
 		new_data.sun = float4xyz3w(float3_double3(double3norm(double3sub(sun_pos, body_pos))), 1.0f);
 
-		new_data.rel_cam_pos = float3_double3(double3sub(camera_pos_scs, body_pos));
+		new_data.rel_cam_pos = float4xyz3w(float3_double3(double3sub(camera_pos_scs, body_pos)), 0.0);
 
 		vmaCopyMemoryToAllocation(
 			r->allocator, &new_data, ship->graphics_data->uniform_buffer.allocation,

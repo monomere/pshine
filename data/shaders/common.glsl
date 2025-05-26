@@ -44,8 +44,9 @@ struct StdMeshUniforms {
 	mat4 proj;
 	mat4 model_view;
 	mat4 model;
+	mat4 unscaled_model;
 	vec4 sun;
-	vec3 rel_cam_pos;
+	vec4 rel_cam_pos;
 };
 
 struct MaterialUniforms {

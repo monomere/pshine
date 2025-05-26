@@ -1608,7 +1608,7 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 		update_star_system(game, &game->star_systems_own[i], actual_delta_time * game->time_scale);
 	}
 
-	*(floatR*)game->ships.ptr[0].orientation.values = floatReuler(π / 2, real_time, 0.0f);
+	*(floatR*)game->ships.ptr[0].orientation.values = floatReuler(π / 2, real_time * 0.5f, 0.0f);
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_P) && !game->data_own->last_key_states[PSHINE_KEY_P]) {
 		game->data_own->is_control_precise = !game->data_own->is_control_precise;
