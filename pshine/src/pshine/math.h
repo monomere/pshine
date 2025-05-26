@@ -247,6 +247,19 @@ MATH_FN_ floatR floatReuler(float pitch, float yaw, float roll) {
 	);
 }
 
+/// Create a rotor that transforms `from_dir` to `to_dir`.
+MATH_FN_ floatR floatRfromto(float3 from_dir, float3 to_dir) {
+	from_dir = float3norm(from_dir);
+	to_dir = float3norm(to_dir);
+	const float3 halfway = float3norm(float3add(from_dir, to_dir));
+	return floatRwxyz(
+		float3dot(from_dir, halfway),
+		(halfway.x * from_dir.y) - (halfway.y * from_dir.x),
+		(halfway.y * from_dir.z) - (halfway.z * from_dir.y),
+		(halfway.z * from_dir.x) - (halfway.x * from_dir.z)
+	);
+}
+
 /// A 2 by 2 matrix of floats.
 typedef union {
 	struct { float vvs[4]; };
@@ -784,6 +797,19 @@ MATH_FN_ doubleR doubleReuler(double pitch, double yaw, double roll) {
 		cr * sp * sy - sr * cp * cy,
 		- cr * sp * cy - sr * cp * sy,
 		sr * sp * cy - cr * cp * sy
+	);
+}
+
+/// Create a rotor that transforms `from_dir` to `to_dir`.
+MATH_FN_ doubleR doubleRfromto(double3 from_dir, double3 to_dir) {
+	from_dir = double3norm(from_dir);
+	to_dir = double3norm(to_dir);
+	const double3 halfway = double3norm(double3add(from_dir, to_dir));
+	return doubleRwxyz(
+		double3dot(from_dir, halfway),
+		(halfway.x * from_dir.y) - (halfway.y * from_dir.x),
+		(halfway.y * from_dir.z) - (halfway.z * from_dir.y),
+		(halfway.z * from_dir.x) - (halfway.x * from_dir.z)
 	);
 }
 

@@ -159,6 +159,19 @@ MATH_FN_ `T `$euler(`B pitch, `B yaw, `B roll) {
 		sr * sp * cy - cr * cp * sy
 	);
 }
+
+/// Create a rotor that transforms `[from_dir,$Code] to `[to_dir,$Code].
+MATH_FN_ `T `$fromto(`B3 from_dir, `B3 to_dir) {
+	from_dir = `B3norm(from_dir);
+	to_dir = `B3norm(to_dir);
+	const `B3 halfway = `B3norm(`B3add(from_dir, to_dir));
+	return `$wxyz(
+		`B3dot(from_dir, halfway),
+		(halfway.x * from_dir.y) - (halfway.y * from_dir.x),
+		(halfway.y * from_dir.z) - (halfway.z * from_dir.y),
+		(halfway.z * from_dir.x) - (halfway.x * from_dir.z)
+	);
+}
 """.strip()),
 	({"cast"}, "", R"""
 /// Create a `Ta from a `Tb with each component casted.

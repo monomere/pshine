@@ -528,6 +528,7 @@ enum movement_mode {
 	MOVEMENT_FLY,
 	MOVEMENT_ARC,
 	MOVEMENT_WALK,
+	MOVEMENT_SHIP,
 };
 
 struct pshine_game_data {
@@ -792,38 +793,23 @@ static void update_camera_walk(struct pshine_game *game, float delta_time) {
 	// One of the axes is easy, the normal of the planet sphere, the other one a bit more complicated.
 	// (we can get the third axis by doing a cross product of the other axes)
 
-	double3x3 mat = {};
-	setdouble3x3rotation(&mat, 0.0, game->data_own->camera_pitch, 0.0);
-	{
-		double3x3 mat2 = {};
-		setdouble3x3rotation(&mat2,  game->data_own->camera_yaw, 0.0, 0.0);
-		double3x3mul(&mat, &mat2);
-	}
-
-
-	double3 cam_forward = double3x3mulv(&mat, double3xyz(0.0, 0.0, 1.0));
-	// double3 cam_forward = double3xyz(
-	// 	cos(game->data_own->camera_pitch) * sin(game->data_own->camera_yaw),
-	// 	-sin(game->data_own->camera_pitch),
-	// 	cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
-	// );
-
+	floatR cam_rot = floatReuler(game->data_own->camera_pitch, game->data_own->camera_yaw, 0);
 	double3 cam_pos = double3vs(game->camera_position.values);
 	{
-		double3 delta = {};
+		float3 delta = {};
 		if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
 		if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
 		if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
-		delta = double3x3mulv(&mat, delta);
-		cam_pos = double3add(cam_pos, double3mul(double3norm(delta), game->data_own->move_speed * delta_time));
+		delta = floatRapply(cam_rot, delta);
+		cam_pos = double3add(cam_pos, double3mul(double3norm(double3_float3(delta)),
+			game->data_own->move_speed * delta_time));
 	}
 
-
 	*(double3*)game->camera_position.values = cam_pos;
-	*(double3*)game->camera_forward.values = cam_forward;
+	*(floatR*)game->camera_orientation.values = cam_rot;
 }
 
 [[maybe_unused]]
@@ -847,34 +833,23 @@ static void update_camera_fly(struct pshine_game *game, float delta_time) {
 		double3x3mul(&mat, &mat2);
 	}
 
-	//   0   -sina cosa
-	//  cosb   0   sinb    0        cosasinb
-	//   0     1    0    -sina  =    -sina
-	// -sinb   0   cosb   cosa      cosacosb
-
-	double3 cam_forward = double3x3mulv(&mat, double3xyz(0.0, 0.0, 1.0));
-	// double3 cam_forward = double3xyz(
-	// 	cos(game->data_own->camera_pitch) * sin(game->data_own->camera_yaw),
-	// 	-sin(game->data_own->camera_pitch),
-	// 	cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
-	// );
-
+	floatR cam_rot = floatReuler(game->data_own->camera_pitch, game->data_own->camera_yaw, 0);
 	double3 cam_pos = double3vs(game->camera_position.values);
 	{
-		double3 delta = {};
+		float3 delta = {};
 		if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
 		if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
 		if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
-		delta = double3x3mulv(&mat, delta);
-		cam_pos = double3add(cam_pos, double3mul(double3norm(delta), game->data_own->move_speed * delta_time));
+		delta = floatRapply(cam_rot, delta);
+		cam_pos = double3add(cam_pos, double3mul(double3norm(double3_float3(delta)),
+			game->data_own->move_speed * delta_time));
 	}
 
-
 	*(double3*)game->camera_position.values = cam_pos;
-	*(double3*)game->camera_forward.values = cam_forward;
+	*(floatR*)game->camera_orientation.values = cam_rot;
 }
 
 [[maybe_unused]]
@@ -908,7 +883,7 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 	// double3 cam_forward = double3xyz(-1.0f, 0.0f, 0.0f);
 
 	*(double3*)game->camera_position.values = cam_pos;
-	*(double3*)game->camera_forward.values = cam_forward;
+	*(floatR*)game->camera_orientation.values = floatRfromto(float3xyz(0, 0, 1), float3_double3(cam_forward));
 }
 
 static void propagate_orbit(
@@ -1600,15 +1575,31 @@ static void science_gui(struct pshine_game *game, float actual_delta_time) {
 	ImGui_End();
 }
 
+static void update_ships(struct pshine_game *game, float delta_time) {
+	// static float real_time = 0;
+	// real_time += delta_time;
+	// *(floatR*)game->ships.ptr[0].orientation.values = floatReuler(π / 2, real_time * 0.5f, 0.0f);
+}
+
+static void update_camera_ship(struct pshine_game *game, float delta_time) {
+	struct pshine_ship *ship = &game->ships.ptr[0];
+	double3 right   = double3_float3(floatRapply(*(floatR*)ship->orientation.values, float3xyz(1, 0, 0)));
+	double3 up      = double3_float3(floatRapply(*(floatR*)ship->orientation.values, float3xyz(0, 1, 0)));
+	double3 forward = double3_float3(floatRapply(*(floatR*)ship->orientation.values, float3xyz(0, 0, 1)));
+	double3 pos = *(double3*)ship->position.values;
+	double3 cam_pos = double3add(double3neg(double3mul(forward, 55.0)), double3mul(up, 14.0));
+	*(double3*)game->camera_position.values = double3add(cam_pos, pos);
+	*(floatR*)game->camera_orientation.values =
+		floatRfromto(float3xyz(0, 0, 1), float3_double3(double3norm((cam_pos))));
+}
+
 void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
-	static float real_time = 0;
-	real_time += actual_delta_time;
 	game->time += actual_delta_time * game->time_scale;
 	for (size_t i = 0; i < game->star_system_count; ++i) {
 		update_star_system(game, &game->star_systems_own[i], actual_delta_time * game->time_scale);
 	}
 
-	*(floatR*)game->ships.ptr[0].orientation.values = floatReuler(π / 2, real_time * 0.5f, 0.0f);
+	update_ships(game, actual_delta_time);
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_P) && !game->data_own->last_key_states[PSHINE_KEY_P]) {
 		game->data_own->is_control_precise = !game->data_own->is_control_precise;
@@ -1627,11 +1618,11 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 
 	}
 
-
 	switch (game->data_own->movement_mode) {
 		case MOVEMENT_ARC: update_camera_arc(game, actual_delta_time); break;
 		case MOVEMENT_FLY: update_camera_fly(game, actual_delta_time); break;
 		case MOVEMENT_WALK: update_camera_walk(game, actual_delta_time); break;
+		case MOVEMENT_SHIP: update_camera_ship(game, actual_delta_time); break;
 		default:
 			PSHINE_WARN("Unknown movement mode: %d, switching to fly", game->data_own->movement_mode);
 			game->data_own->movement_mode = MOVEMENT_FLY;

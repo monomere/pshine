@@ -4223,13 +4223,23 @@ static void do_frame(
 
 	double aspect_ratio = r->swapchain_extent.width /(double) r->swapchain_extent.height;
 	double4x4 view_mat = {};
-	setdouble4x4iden(&view_mat);
-	setdouble4x4lookat(
-		&view_mat,
-		camera_pos_scs,
-		double3add(camera_pos_scs, double3vs(r->game->camera_forward.values)),
-		double3xyz(0.0, 1.0, 0.0)
-	);
+	{
+		float3x3 m1;
+		setfloat3x3rotationR(&m1, floatRinverse(*(floatR*)r->game->camera_orientation.values));
+		view_mat.v4s[0] = double4xyz3w(double3_float3(m1.v3s[0]), 0.0);
+		view_mat.v4s[1] = double4xyz3w(double3_float3(m1.v3s[1]), 0.0);
+		view_mat.v4s[2] = double4xyz3w(double3_float3(m1.v3s[2]), 0.0);
+		view_mat.v4s[3] = double4xyz3w(double3v0(), 1.0);
+		double4x4 m2;
+		setdouble4x4trans(&m2, double3neg(*(double3*)r->game->camera_position.values));
+		double4x4mul(&view_mat, &m2);
+	}
+	// setdouble4x4lookat(
+	// 	&view_mat,
+	// 	camera_pos_scs,
+	// 	double3add(camera_pos_scs, double3vs(r->game->camera_forward.values)),
+	// 	double3xyz(0.0, 1.0, 0.0)
+	// );
 
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
 	double4x4 near_proj_mat = {};
@@ -4242,7 +4252,7 @@ static void do_frame(
 
 	{
 		float3 cam_y = float3xyz(0.0f, 1.0f, 0.0f);
-		float3 cam_z = float3_double3(double3norm(double3vs(r->game->camera_forward.values)));
+		float3 cam_z = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1));
 		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
 		cam_y = float3norm(float3cross(cam_z, cam_x));
 		double3 cam_pos = camera_pos_scs;
@@ -4482,7 +4492,7 @@ static void do_frame(
 			{
 				struct planet_material_uniform_data new_data = {
 					.color = float4rgba(0.8f, 0.3f, 0.1f, 1.0f),
-					.view_dir = float3_double3(double3vs(r->game->camera_forward.values)),
+					.view_dir = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1)),
 					.smoothness = r->game->material_smoothness_,
 				};
 				struct planet_material_uniform_data *data;
@@ -5195,7 +5205,8 @@ static void show_gizmos(struct vulkan_renderer *r) {
 	setdouble4x4lookat(
 		&view_mat,
 		camera_pos_scs,
-		double3add(camera_pos_scs, double3vs(r->game->camera_forward.values)),
+		double3add(camera_pos_scs,
+			double3_float3(floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1)))),
 		double3xyz(0.0, 1.0, 0.0)
 	);
 	double4x4 proj_mat = {};

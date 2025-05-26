@@ -325,7 +325,7 @@ struct pshine_game {
 	struct pshine_renderer *renderer;
 
 	pshine_point3d_world camera_position;
-	pshine_vector3d camera_forward;
+	pshine_rotor camera_orientation;
 
 	struct pshine_graphics_settings graphics_settings;
 
