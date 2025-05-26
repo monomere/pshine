@@ -177,6 +177,7 @@ struct vulkan_mesh_model {
 		struct vulkan_mesh mesh;
 	} *parts_own;
 	size_t material_count;
+	double4x4 transform;
 	struct vulkan_std_material *materials_own;
 };
 
@@ -1149,6 +1150,8 @@ static void load_mesh_model_from_gltf(
 			}, &out->parts_own[current_part].mesh);
 		}
 	}
+
+	out->transform = double4x4_float4x4(*(float4x4*)data->nodes[0].matrix);
 
 	out->material_count = data->materials_count;
 	out->materials_own = calloc(out->material_count, sizeof(*out->materials_own));
@@ -4224,15 +4227,19 @@ static void do_frame(
 	double aspect_ratio = r->swapchain_extent.width /(double) r->swapchain_extent.height;
 	double4x4 view_mat = {};
 	{
-		float3x3 m1;
-		setfloat3x3rotationR(&m1, floatRinverse(*(floatR*)r->game->camera_orientation.values));
-		view_mat.v4s[0] = double4xyz3w(double3_float3(m1.v3s[0]), 0.0);
-		view_mat.v4s[1] = double4xyz3w(double3_float3(m1.v3s[1]), 0.0);
-		view_mat.v4s[2] = double4xyz3w(double3_float3(m1.v3s[2]), 0.0);
-		view_mat.v4s[3] = double4xyz3w(double3v0(), 1.0);
-		double4x4 m2;
-		setdouble4x4trans(&m2, double3neg(*(double3*)r->game->camera_position.values));
-		double4x4mul(&view_mat, &m2);
+		float3x3 rot_mat_32;
+		setfloat3x3rotationR(&rot_mat_32, floatRinverse(floatRvs(r->game->camera_orientation.values)));
+		double4x4 rot_mat;
+		rot_mat.v4s[0] = double4xyz3w(double3_float3(rot_mat_32.v3s[0]), 0.0);
+		rot_mat.v4s[1] = double4xyz3w(double3_float3(rot_mat_32.v3s[1]), 0.0);
+		rot_mat.v4s[2] = double4xyz3w(double3_float3(rot_mat_32.v3s[2]), 0.0);
+		rot_mat.v4s[3] = double4xyz3w(double3v0(), 1.0);
+
+		double4x4 trans_mat;
+		setdouble4x4trans(&trans_mat, double3neg(camera_pos_scs));
+
+		view_mat = trans_mat;
+		double4x4mul(&view_mat, &rot_mat);
 	}
 	// setdouble4x4lookat(
 	// 	&view_mat,
@@ -4251,10 +4258,9 @@ static void do_frame(
 	float4x4 proj_mat32 = float4x4_double4x4(proj_mat);
 
 	{
-		float3 cam_y = float3xyz(0.0f, 1.0f, 0.0f);
+		float3 cam_x = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(1, 0, 0));
+		float3 cam_y = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 1, 0));
 		float3 cam_z = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1));
-		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
-		cam_y = float3norm(float3cross(cam_z, cam_x));
 		double3 cam_pos = camera_pos_scs;
 		double3 sun_pos = double3v0();
 		struct global_uniform_data new_data = {
@@ -4290,6 +4296,10 @@ static void do_frame(
 		double4x4 model_scale_mat;
 		setdouble4x4scale(&model_scale_mat, double3v(ship->scale * PSHINE_SCS_FACTOR));
 
+		double4x4 unscaled_model = ship->graphics_data->model.transform;
+		double4x4mul(&unscaled_model, &model_rot_mat);
+
+		double4x4mul(&model_mat, &ship->graphics_data->model.transform);
 		double4x4mul(&model_mat, &model_rot_mat);
 		double4x4mul(&model_mat, &model_scale_mat);
 		double4x4mul(&model_mat, &model_trans_mat);
@@ -4298,7 +4308,7 @@ static void do_frame(
 		double4x4mul(&model_view_mat, &view_mat);
 		new_data.model_view = float4x4_double4x4(model_view_mat);
 		new_data.model = float4x4_double4x4(model_mat);
-		new_data.unscaled_model = float4x4_double4x4(model_rot_mat);
+		new_data.unscaled_model = float4x4_double4x4(unscaled_model);
 		new_data.proj = near_proj_mat32;
 
 		double3 sun_pos = double3v0();
@@ -5199,16 +5209,22 @@ static void show_gizmos(struct vulkan_renderer *r) {
 	ImVec2 display_size = ImGui_GetIO()->DisplaySize;
 	double2 screen_size = double2xy(display_size.x, display_size.y);
 	double aspect_ratio = screen_size.x / screen_size.y;
-	double4x4 view_mat = {};
 	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);
-	setdouble4x4iden(&view_mat);
-	setdouble4x4lookat(
-		&view_mat,
-		camera_pos_scs,
-		double3add(camera_pos_scs,
-			double3_float3(floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1)))),
-		double3xyz(0.0, 1.0, 0.0)
-	);
+
+	float3x3 rot_mat_32;
+	setfloat3x3rotationR(&rot_mat_32, floatRinverse(floatRvs(r->game->camera_orientation.values)));
+	double4x4 rot_mat;
+	rot_mat.v4s[0] = double4xyz3w(double3_float3(rot_mat_32.v3s[0]), 0.0);
+	rot_mat.v4s[1] = double4xyz3w(double3_float3(rot_mat_32.v3s[1]), 0.0);
+	rot_mat.v4s[2] = double4xyz3w(double3_float3(rot_mat_32.v3s[2]), 0.0);
+	rot_mat.v4s[3] = double4xyz3w(double3v0(), 1.0);
+
+	double4x4 trans_mat;
+	setdouble4x4trans(&trans_mat, double3neg(camera_pos_scs));
+
+	double4x4 view_mat = trans_mat;
+	double4x4mul(&view_mat, &rot_mat);
+
 	double4x4 proj_mat = {};
 	setdouble4x4iden(&proj_mat);
 	double znear = 0.01;

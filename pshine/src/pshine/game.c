@@ -529,6 +529,7 @@ enum movement_mode {
 	MOVEMENT_ARC,
 	MOVEMENT_WALK,
 	MOVEMENT_SHIP,
+	MOVEMENT_COUNT_,
 };
 
 struct pshine_game_data {
@@ -696,7 +697,8 @@ void pshine_init_game(struct pshine_game *game) {
 		game->ships.ptr[idx].position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
 		game->ships.ptr[idx].position.xyz.y = 75.221 * PSHINE_SCS_SCALE;
 		game->ships.ptr[idx].position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
-		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(π / 2, π, 0);
+		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(π / 2, 0, 0);
+		// *(floatR*)game->ships.ptr[idx].orientation.values = floatRwxyz(1, 0, 0, 0);
 		game->ships.ptr[idx].scale = 4.0;
 	}
 
@@ -711,7 +713,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->data_own->camera_pitch = 0.0;
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0;
-	game->data_own->movement_mode = MOVEMENT_FLY;
+	game->data_own->movement_mode = MOVEMENT_SHIP;
 	game->data_own->move_speed = 500'000.0;
 	game->time_scale = 0.0;
 	game->camera_position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
@@ -825,15 +827,15 @@ static void update_camera_fly(struct pshine_game *game, float delta_time) {
 		game->data_own->camera_yaw += delta.x * rot_speed * delta_time;
 	}
 
-	double3x3 mat = {};
-	setdouble3x3rotation(&mat, 0.0, game->data_own->camera_pitch, 0.0);
-	{
-		double3x3 mat2 = {};
-		setdouble3x3rotation(&mat2,  game->data_own->camera_yaw, 0.0, 0.0);
-		double3x3mul(&mat, &mat2);
-	}
+	// double3x3 mat = {};
+	// setdouble3x3rotation(&mat, 0.0, game->data_own->camera_pitch, 0.0);
+	// {
+	// 	double3x3 mat2 = {};
+	// 	setdouble3x3rotation(&mat2,  game->data_own->camera_yaw, 0.0, 0.0);
+	// 	double3x3mul(&mat, &mat2);
+	// }
 
-	floatR cam_rot = floatReuler(game->data_own->camera_pitch, game->data_own->camera_yaw, 0);
+	floatR cam_rot = floatReuler(-game->data_own->camera_pitch, -game->data_own->camera_yaw, 0);
 	double3 cam_pos = double3vs(game->camera_position.values);
 	{
 		float3 delta = {};
@@ -1576,21 +1578,48 @@ static void science_gui(struct pshine_game *game, float actual_delta_time) {
 }
 
 static void update_ships(struct pshine_game *game, float delta_time) {
-	// static float real_time = 0;
-	// real_time += delta_time;
-	// *(floatR*)game->ships.ptr[0].orientation.values = floatReuler(π / 2, real_time * 0.5f, 0.0f);
+	floatR ship_orient = floatRvs(game->ships.ptr[0].orientation.values);
+	double3 ship_pos = double3vs(game->ships.ptr[0].position.values);
+	{
+		float3 delta = {};
+		if (pshine_is_key_down(game->renderer, PSHINE_KEY_LEFT)) delta.x += 1.0;
+		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_RIGHT)) delta.x -= 1.0;
+		if (pshine_is_key_down(game->renderer, PSHINE_KEY_UP)) delta.y += 1.0;
+		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_DOWN)) delta.y -= 1.0;
+		double rot_speed = ROTATE_SPEED * (game->data_own->is_control_precise ? 0.01 : 1.0);
+		
+		float pitch = delta.y * rot_speed * delta_time;
+		float yaw = delta.x * rot_speed * delta_time;
+		floatR delta_orient = floatReuler(pitch, yaw, 0);
+		ship_orient = floatRcombine(ship_orient, delta_orient);
+	}
+	{
+		float3 delta = {};
+		if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
+		else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
+		if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
+		else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
+		if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
+		else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
+		delta = floatRapply(ship_orient, delta);
+		ship_pos = double3add(ship_pos, double3mul(double3norm(double3_float3(delta)),
+			game->data_own->move_speed * delta_time));
+	}
+	*(double3*)game->ships.ptr[0].position.values = ship_pos;
+	*(floatR*)game->ships.ptr[0].orientation.values = ship_orient;
 }
 
 static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	struct pshine_ship *ship = &game->ships.ptr[0];
-	double3 right   = double3_float3(floatRapply(*(floatR*)ship->orientation.values, float3xyz(1, 0, 0)));
-	double3 up      = double3_float3(floatRapply(*(floatR*)ship->orientation.values, float3xyz(0, 1, 0)));
-	double3 forward = double3_float3(floatRapply(*(floatR*)ship->orientation.values, float3xyz(0, 0, 1)));
-	double3 pos = *(double3*)ship->position.values;
-	double3 cam_pos = double3add(double3neg(double3mul(forward, 55.0)), double3mul(up, 14.0));
-	*(double3*)game->camera_position.values = double3add(cam_pos, pos);
+	floatR ship_orient = floatRvs(ship->orientation.values);
+	double3 right   = double3_float3(floatRapply(ship_orient, float3xyz(1, 0, 0)));
+	double3 up      = double3_float3(floatRapply(ship_orient, float3xyz(0, 1, 0)));
+	double3 forward = double3_float3(floatRapply(ship_orient, float3xyz(0, 0, 1)));
+	double3 pos = double3vs(ship->position.values);
+	double3 cam_offset = double3add((double3mul(forward, -65.0)), double3mul(up, 10.0));
+	*(double3*)game->camera_position.values = double3add(cam_offset, pos);
 	*(floatR*)game->camera_orientation.values =
-		floatRfromto(float3xyz(0, 0, 1), float3_double3(double3norm((cam_pos))));
+		floatRfromto(float3xyz(0, 0, 1), float3_double3(forward));
 }
 
 void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
@@ -1606,7 +1635,7 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 	}
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F) && !game->data_own->last_key_states[PSHINE_KEY_F]) {
-		game->data_own->movement_mode = !game->data_own->movement_mode;
+		game->data_own->movement_mode = (game->data_own->movement_mode + 1) % MOVEMENT_COUNT_;
 	}
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F2) && !game->data_own->last_key_states[PSHINE_KEY_F2]) {
