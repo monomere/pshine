@@ -4254,7 +4254,8 @@ static void do_frame(
 	float4x4 near_proj_mat32 = float4x4_double4x4(near_proj_mat);
 
 	double4x4 proj_mat = {};
-	struct double4x4persp_info persp_info = setdouble4x4persp(&proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, 0.01);
+	struct double4x4persp_info persp_info = setdouble4x4persp(
+		&proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, 0.0001);
 	float4x4 proj_mat32 = float4x4_double4x4(proj_mat);
 
 	{

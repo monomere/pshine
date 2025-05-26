@@ -139,6 +139,7 @@ vec4 compute_color(vec2 uv, vec4 col, float depth) {
 	// return vec4(vec3(dst_to_surface * 0.1), 1.0);
 
 	float dst_thru_atmo = min(atmo_hit.y, dst_to_surface - dst_to_atmo);
+	dst_thru_atmo = min(dst_thru_atmo, depth / atmo.scale_factor / 0.5);
 	// if (distance(ray_origin, atmo.planet.xyz) < atmo.planet.w) return vec4(1.0, 0.0, 0.0, 1.0);
 
 	if (dst_thru_atmo > 0.0) {

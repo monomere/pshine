@@ -694,9 +694,9 @@ void pshine_init_game(struct pshine_game *game) {
 		game->ships.ptr[idx].name_own = pshine_strdup("Red Menace");
 		game->ships.ptr[idx].callcode_own = pshine_strdup("NG-XK-AP-421620");
 		game->ships.ptr[idx].model_file_own = pshine_strdup("data/models/red_menace.glb");
-		game->ships.ptr[idx].position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
-		game->ships.ptr[idx].position.xyz.y = 75.221 * PSHINE_SCS_SCALE;
-		game->ships.ptr[idx].position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.x = 23058677.647 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.y = -363.291 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.z = 10228938.562 * PSHINE_SCS_SCALE;
 		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(π / 2, 0, 0);
 		// *(floatR*)game->ships.ptr[idx].orientation.values = floatRwxyz(1, 0, 0, 0);
 		game->ships.ptr[idx].scale = 4.0;
@@ -705,7 +705,7 @@ void pshine_init_game(struct pshine_game *game) {
 	if (game->star_system_count <= 0) {
 		PSHINE_PANIC("No star systems present, there's nothing to show; exiting.");
 	}
-	game->current_star_system = 0;
+	game->current_star_system = 2;
 	game->data_own->selected_body = 0;
 	game->data_own->camera_dist = game->star_systems_own[game->current_star_system].bodies_own[0]->radius + 165'000'000.0;
 	game->camera_position.xyz.z = -game->data_own->camera_dist;
@@ -1588,8 +1588,8 @@ static void update_ships(struct pshine_game *game, float delta_time) {
 		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_DOWN)) delta.y -= 1.0;
 		double rot_speed = ROTATE_SPEED * (game->data_own->is_control_precise ? 0.01 : 1.0);
 		
-		float pitch = delta.y * rot_speed * delta_time;
-		float yaw = delta.x * rot_speed * delta_time;
+		float pitch = -delta.y * rot_speed * delta_time;
+		float yaw = -delta.x * rot_speed * delta_time;
 		floatR delta_orient = floatReuler(pitch, yaw, 0);
 		ship_orient = floatRcombine(ship_orient, delta_orient);
 	}
@@ -1618,8 +1618,8 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	double3 pos = double3vs(ship->position.values);
 	double3 cam_offset = double3add((double3mul(forward, -65.0)), double3mul(up, 10.0));
 	*(double3*)game->camera_position.values = double3add(cam_offset, pos);
-	*(floatR*)game->camera_orientation.values =
-		floatRfromto(float3xyz(0, 0, 1), float3_double3(forward));
+	*(floatR*)game->camera_orientation.values = ship_orient;
+		// floatRfromto(float3xyz(0, 0, 1), float3_double3(forward));
 }
 
 void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
