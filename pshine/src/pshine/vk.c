@@ -3379,6 +3379,8 @@ static void deinit_pipelines(struct vulkan_renderer *r) {
 	vkDestroyPipelineLayout(r->device, r->pipelines.rings_layout, nullptr);
 	vkDestroyPipeline(r->device, r->pipelines.skybox_pipeline, nullptr);
 	vkDestroyPipelineLayout(r->device, r->pipelines.skybox_layout, nullptr);
+	vkDestroyPipeline(r->device, r->pipelines.std_mesh_pipeline, nullptr);
+	vkDestroyPipelineLayout(r->device, r->pipelines.std_mesh_layout, nullptr);
 	vkDestroyPipeline(r->device, r->pipelines.upsample_bloom_pipeline, nullptr);
 	vkDestroyPipelineLayout(r->device, r->pipelines.upsample_bloom_layout, nullptr);
 	vkDestroyPipeline(r->device, r->pipelines.first_downsample_bloom_pipeline, nullptr);
@@ -4261,7 +4263,7 @@ static void do_frame(
 	{
 		float3 cam_x = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(1, 0, 0));
 		float3 cam_y = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 1, 0));
-		float3 cam_z = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1));
+		// float3 cam_z = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1));
 		double3 cam_pos = camera_pos_scs;
 		double3 sun_pos = double3v0();
 		struct global_uniform_data new_data = {
