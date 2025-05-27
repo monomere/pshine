@@ -1,0 +1,29 @@
+[planet]
+name = "Test Planet"
+description = "Lone planet for testing terrain generation."
+radius = 2_439_700.0
+parent = "Test Star"
+is_static = false
+mass = 0.055
+mu = 3.98600436e-4
+average_color = 0xccddfc
+gizmo_color = 0xccd6dc
+
+[rotation]
+speed = 0.4
+axis = [0.0, 1.0, 0.0]
+
+[orbit]
+argument = 0.50831
+eccentricity = 0.20563
+inclination = 0.11
+longitude = 0.84354
+semimajor = 57_910.0
+true_anomaly = 0.0
+
+[surface]
+albedo_texture_path = "data/textures/mercury_2k.jpg"
+lights_texture_path = "data/textures/1x1_black.png"
+bump_texture_path = "data/textures/1x1_black.png"
+spec_texture_path = "data/textures/1x1_black.png"
+

@@ -44,9 +44,9 @@ size_t pshine_get_mem_usage() {
 }
 
 // TODO: PSHINE_USE_CPPTRACE
-#ifndef PSHINE_USE_CPPTRACE
-#define PSHINE_USE_CPPTRACE
-#endif
+// #ifndef PSHINE_USE_CPPTRACE
+// #define PSHINE_USE_CPPTRACE
+// #endif
 
 #if defined(PSHINE_USE_CPPTRACE) && PSHINE_USE_CPPTRACE
 #include <ctrace/ctrace.h>

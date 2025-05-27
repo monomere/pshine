@@ -4,6 +4,15 @@
 #include <stddef.h>
 #include <pshine/util.h>
 
+/// A geometric structure that represents rotation.
+/// Using 32-bit floats, as having that double precision isn't really necessary.
+typedef union pshine_rotor_ {
+	struct {
+		float scalar, xy, yz, zx;
+	} components;
+	float values[4];
+} pshine_rotor;
+
 typedef union pshine_point3d_ {
 	struct { double x, y, z; } xyz;
 	double values[3];
@@ -209,11 +218,45 @@ struct pshine_star_system {
 	/// Cout of `bodies_own`.
 	size_t body_count;
 
-	/// The celestial bodies of this star system. `[0]` is the star.
+	/// The celestial bodies of this star system. `[0]` is the star. TBD: multi-star systems.
 	struct pshine_celestial_body **bodies_own;
 
 	/// Offset from the origin of the galaxy. In XCS.
 	pshine_point3d_xscaled origin_offset;
+};
+
+struct pshine_ship_graphics_data;
+
+/// A space ship.
+struct pshine_ship {
+	/// If this is a valid ship, must be equal to `-1`.
+	/// This exists so that when iterating the ship dyna,
+	/// we know if the element isn't dead.
+	size_t _alive_marker;
+	char* name_own;
+	char* callcode_own;
+
+	/// Used for initialization and debugging.
+	char* model_file_own;
+
+	/// Mesh scale.
+	double scale;
+	struct pshine_ship_graphics_data* graphics_data;
+
+	pshine_point3d_world position;
+	pshine_rotor orientation;
+
+	/// In m/s.
+	double velocity, max_atmo_velocity, max_space_velocity;
+
+	/// The next properties are calculated during the ship's update
+
+	/// In m/s.
+	double current_max_velocity;
+
+	/// In meters.
+	double closest_body_distance;
+	struct pshine_celestial_body *closest_body;
 };
 
 typedef struct { int32_t x; } pshine_snorm32;
@@ -225,18 +268,19 @@ typedef struct { pshine_unorm32 x, y; } pshine_unorm32x2;
 
 struct pshine_static_mesh_vertex {
 	float position[3];
-	float normal_oct[2];
 	float tangent_dia;
+	float normal_oct[2];
 	float texcoord[2];
 };
 
 struct pshine_planet_vertex {
 	float position[3];
-	float normal_oct[2];
 	float tangent_dia;
+	float normal_oct[2];
 };
 
 enum pshine_vertex_type {
+	PSHINE_VERTEX_NONE,
 	PSHINE_VERTEX_STATIC_MESH,
 	PSHINE_VERTEX_SKINNED_MESH,
 	PSHINE_VERTEX_PLANET,
@@ -294,7 +338,7 @@ struct pshine_game {
 	struct pshine_renderer *renderer;
 
 	pshine_point3d_world camera_position;
-	pshine_vector3d camera_forward;
+	pshine_rotor camera_orientation;
 
 	struct pshine_graphics_settings graphics_settings;
 
@@ -313,6 +357,8 @@ struct pshine_game {
 	struct pshine_environment_info environment;
 
 	struct pshine_pcg64_state rng64;
+
+	PSHINE_DYNA_(struct pshine_ship) ships;
 };
 
 /// This is ran at the start of the game, before the renderer is initialized.

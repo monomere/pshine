@@ -1,13 +1,20 @@
 
 build $mod/src/pshine/math.h: python generate_math.py
 
-build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
-build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
-build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
-build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c    || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
-build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+# giraffe/ffi/include/giraffe/giraffe.h
+
+build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/src/pshine/math.h
+build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      || $mod/src/pshine/math.h
+build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h
+build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c    || $mod/src/pshine/math.h
+build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h
 # build $builddir/pshine/eximgui.cc.o  : cxx $mod/src/pshine/eximgui.cc
 
+build $builddir/pshine/cgltf.c.o         : cc $mod/src/pshine/cgltf.c
 build $builddir/pshine/stb.c.o           : cc $mod/src/pshine/stb.c
 build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/vk_mem_alloc.cc
 build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
@@ -42,6 +49,8 @@ build $builddir/data/shaders/rings.frag.spv            : glslc data/shaders/ring
 build $builddir/data/shaders/skybox.vert.spv           : glslc data/shaders/skybox.vert
 build $builddir/data/shaders/skybox.frag.spv           : glslc data/shaders/skybox.frag
 build $builddir/data/shaders/atmo_lut.comp.spv         : glslc data/shaders/atmo_lut.comp
+build $builddir/data/shaders/std_mesh.vert.spv         : glslc data/shaders/std_mesh.vert
+build $builddir/data/shaders/std_mesh.frag.spv         : glslc data/shaders/std_mesh.frag
 build $builddir/data/shaders/solid_color.frag.spv      : glslc data/shaders/solid_color.frag
 build $builddir/data/shaders/bloom_upsample.comp.spv   : glslc data/shaders/bloom_upsample.comp
 build $builddir/data/shaders/bloom_downsample.comp.spv : glslc data/shaders/bloom_downsample.comp
@@ -55,6 +64,7 @@ build $builddir/main: ld $
   $builddir/vendor/volk.c.o $
   $builddir/vendor/toml.c.o $
   $builddir/pshine/stb.c.o $
+  $builddir/pshine/cgltf.c.o $
   $builddir/pshine/vk_mem_alloc.cc.o $
   $builddir/vendor/cimgui/cimgui.cpp.o $
   $builddir/vendor/imgui/imgui.cpp.o $

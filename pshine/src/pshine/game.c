@@ -1,10 +1,12 @@
 #include <pshine/game.h>
 #include <string.h>
 #include "math.h"
+#include "vertex_util.h"
 #include <pshine/util.h>
 #include <cimgui/cimgui.h>
 #include <toml.h>
 #include <errno.h>
+#include <float.h>
 
 // Note: the math in this file is best viewed
 //       with the Julia Mono font, or with UnifontEx.
@@ -105,6 +107,65 @@ static struct time_format_params compute_time_format_params(double secs) {
 	return r;
 }
 
+struct keybind {
+	enum pshine_key key;
+	const char *name;
+};
+
+struct keybinds {
+	const char *name;
+	struct keybind *keys;
+};
+
+enum {
+	KEYBIND_SHIP_THROTTLE_INC,
+	KEYBIND_SHIP_THROTTLE_DEC,
+	KEYBIND_SHIP_PITCH_UP,
+	KEYBIND_SHIP_PITCH_DOWN,
+	KEYBIND_SHIP_ROLL_LEFT,
+	KEYBIND_SHIP_ROLL_RIGHT,
+	KEYBIND_SHIP_YAW_LEFT,
+	KEYBIND_SHIP_YAW_RIGHT,
+};
+
+static struct keybinds keybinds_ship_movement = {
+	.name = "ship_movement",
+	.keys = (struct keybind[]){
+		[KEYBIND_SHIP_THROTTLE_INC] = (struct keybind){
+			.key = PSHINE_KEY_LEFT_SHIFT,
+			.name = "Throttle Increase",
+		},
+		[KEYBIND_SHIP_THROTTLE_DEC] = (struct keybind){
+			.key = PSHINE_KEY_LEFT_CONTROL,
+			.name = "Throttle Decrease",
+		},
+		[KEYBIND_SHIP_PITCH_UP] = (struct keybind){
+			.key = PSHINE_KEY_S,
+			.name = "Pitch Up",
+		},
+		[KEYBIND_SHIP_PITCH_DOWN] = (struct keybind){
+			.key = PSHINE_KEY_W,
+			.name = "Pitch Down",
+		},
+		[KEYBIND_SHIP_ROLL_LEFT] = (struct keybind){
+			.key = PSHINE_KEY_E,
+			.name = "Roll Right",
+		},
+		[KEYBIND_SHIP_ROLL_RIGHT] = (struct keybind){
+			.key = PSHINE_KEY_Q,
+			.name = "Roll Left",
+		},
+		[KEYBIND_SHIP_YAW_LEFT] = (struct keybind){
+			.key = PSHINE_KEY_A,
+			.name = "Yaw Left",
+		},
+		[KEYBIND_SHIP_YAW_RIGHT] = (struct keybind){
+			.key = PSHINE_KEY_D,
+			.name = "Yaw Right",
+		},
+	},
+};
+
 typedef struct pshine_planet_vertex planet_vertex;
 
 // requires: |a| = |b|
@@ -117,97 +178,6 @@ static inline float3 spheregen_float3lerp(float3 a, float3 b, float t) {
 		ca = sinf((1 - t) * ϕ) * isinϕ,
 		cb = sinf(t * ϕ) * isinϕ;
 	return float3add(float3mul(a, ca), float3mul(b, cb));
-}
-
-// The next couple of functions are from https://www.jeremyong.com/graphics/2023/01/09/tangent-spaces-and-diamond-encoding/
-
-// static inline float encode_diamond(float2 p) {
-// 	// Project to the unit diamond, then to the x-axis.
-// 	float x = p.x / (fabs(p.x) + fabs(p.y));
-
-// 	// Contract the x coordinate by a factor of 4 to represent all 4 quadrants in
-// 	// the unit range and remap
-// 	float py_sign = copysign(1, p.y);
-// 	return -py_sign * 0.25f * x + 0.5f + py_sign * 0.25f;
-// }
-
-// static inline float2 decode_diamond(float p) {
-// 	float2 v;
-
-// 	// Remap p to the appropriate segment on the diamond
-// 	float p_sign = copysign(1, p - 0.5f);
-// 	v.x = -p_sign * 4.f * p + 1.f + p_sign * 2.f;
-// 	v.y = p_sign * (1.f - fabs(v.x));
-
-// 	// Normalization extends the point on the diamond back to the unit circle
-// 	return float2norm(v);
-// }
-
-// // Given a normal and tangent vector, encode the tangent as a single float that can be
-// // subsequently quantized.
-// static inline float encode_tangent(float3 normal, float3 tangent)
-// {
-// 	// First, find a canonical direction in the tangent plane
-// 	float3 t1;
-// 	if (fabs(normal.y) > fabs(normal.z))
-// 	{
-// 		// Pick a canonical direction orthogonal to n with z = 0
-// 		t1 = float3xyz(normal.y, -normal.x, 0.f);
-// 	}
-// 	else
-// 	{
-// 		// Pick a canonical direction orthogonal to n with y = 0
-// 		t1 = float3xyz(normal.z, 0.f, -normal.x);
-// 	}
-// 	t1 = float3norm(t1);
-
-// 	// Construct t2 such that t1 and t2 span the plane
-// 	float3 t2 = float3cross(t1, normal);
-
-// 	// Decompose the tangent into two coordinates in the canonical basis
-// 	float2 packed_tangent = float2xy(float3dot(tangent, t1), float3dot(tangent, t2));
-
-// 	// Apply our diamond encoding to our two coordinates
-// 	return encode_diamond(packed_tangent);
-// }
-
-// static inline float3 decode_tangent(float3 normal, float diamond_tangent) {
-// 	// As in the encode step, find our canonical tangent basis span(t1, t2)
-// 	float3 t1;
-// 	if (fabs(normal.y) > fabs(normal.z))
-// 	{
-// 		t1 = float3xyz(normal.y, -normal.x, 0.f);
-// 	}
-// 	else
-// 	{
-// 		t1 = float3xyz(normal.z, 0.f, -normal.x);
-// 	}
-// 	t1 = float3norm(t1);
-
-// 	float3 t2 = float3cross(t1, normal);
-
-// 	// Recover the coordinates used with t1 and t2
-// 	float2 packed_tangent = decode_diamond(diamond_tangent);
-
-// 	return float3add(float3mul(t1, packed_tangent.x), float3mul(t2, packed_tangent.y));
-// }
-
-// From the unit vector survey paper
-static inline float sign_not_zero(float v) {
-	return (v >= 0.0) ? +1.0 : -1.0;
-}
-// Assume normalized input. Output is on [-1, 1] for each component.
-static inline float2 float32x3_to_oct(float3 v) {
-	// Project the sphere onto the octahedron, and then onto the xy plane
-	float2 p = float2mul(float2vs(v.vs), (1.0 / (fabs(v.x) + fabs(v.y) + fabs(v.z))));
-	// Reflect the folds of the lower hemisphere over the diagonals
-	return (v.z <= 0.0) ? float2xy((1.0 - fabs(p.y)) * sign_not_zero(p.x), (1.0 - fabs(p.x)) * sign_not_zero(p.y)) : p;
-}
-
-static inline float3 oct_to_float32x3(float2 e) {
-	float3 v = float3xyz(e.x, e.y, 1.0 - fabs(e.x) - fabs(e.y));
-	if (v.z < 0) v = float3xyz((1.0 - fabs(v.y)) * sign_not_zero(v.x), (1.0 - fabs(v.x)) * sign_not_zero(v.y), v.z);
-	return float3norm(v);
 }
 
 // static inline pshine_snorm32 snorm32_float(float v) { return (pshine_snorm32){ (int32_t)roundf(v * INT32_MAX) }; }
@@ -231,8 +201,8 @@ static inline planet_vertex spheregen_vtxlerp(
 	// float tng_dia = encode_tangent(nor, tng);
 	return (planet_vertex){
 		{ pos.x, pos.y, pos.z },
-		{ nor_oct.x, nor_oct.y },
 		0.0f,
+		{ nor_oct.x, nor_oct.y },
 	};
 }
 
@@ -423,6 +393,7 @@ static void create_orbit_points(
 static struct pshine_celestial_body *load_celestial_body(
 	const char *fpath
 ) {
+	PSHINE_DEBUG("loading celestial body from '%s'", fpath);
 	FILE *fin = fopen(fpath, "rb");
 	if (fin == nullptr) {
 		PSHINE_ERROR("Failed to open celestial body file %s: %s", fpath,
@@ -617,6 +588,8 @@ enum movement_mode {
 	MOVEMENT_FLY,
 	MOVEMENT_ARC,
 	MOVEMENT_WALK,
+	MOVEMENT_SHIP,
+	MOVEMENT_COUNT_,
 };
 
 struct pshine_game_data {
@@ -628,9 +601,11 @@ struct pshine_game_data {
 	size_t selected_body;
 	struct eximgui_state eximgui_state;
 	bool is_control_precise;
+	struct keybinds *keybinds_ship_movement;
 };
 
 static void load_star_system_config(struct pshine_game *game, struct pshine_star_system *out, const char *fpath) {
+	PSHINE_DEBUG("loading star system from '%s'", fpath);
 	FILE *fin = fopen(fpath, "rb");
 	if (fin == nullptr) {
 		PSHINE_ERROR("Failed to open star system config file '%s': %s", fpath,
@@ -757,27 +732,30 @@ void pshine_init_game(struct pshine_game *game) {
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
 	load_game_config(game, "data/config.toml");
-	// game->celestial_bodies_own[4] = load_celestial_body("data/celestial/moon.toml");
-	// game->celestial_bodies_own[3] = load_celestial_body("data/celestial/venus.toml");
-	// game->celestial_bodies_own[2] = load_celestial_body("data/celestial/mars.toml");
-	// game->celestial_bodies_own[1] = load_celestial_body("data/celestial/sun.toml");
-	// game->celestial_bodies_own[0] = load_celestial_body("data/celestial/earth.toml");
 
 	for (size_t i = 0; i < game->star_system_count; ++i) {
 		init_star_system(game, &game->star_systems_own[i]);
 	}
 
-	// game->celestial_bodies_own[1] = calloc(1, sizeof(struct pshine_star));
-	// init_star((void*)game->celestial_bodies_own[1]);
-	// game->celestial_bodies_own[0] = calloc(1, sizeof(struct pshine_planet));
-	// init_planet((void*)game->celestial_bodies_own[0], game->celestial_bodies_own[1], 6'371'000.0, double3v0());
-	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
-	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
+	{
+		size_t idx = PSHINE_DYNA_ALLOC(game->ships);
+		game->ships.ptr[idx]._alive_marker = (size_t)-1;
+		game->ships.ptr[idx].name_own = pshine_strdup("Red Menace");
+		game->ships.ptr[idx].callcode_own = pshine_strdup("NG-XK-AP-421620");
+		game->ships.ptr[idx].model_file_own = pshine_strdup("data/models/red_menace.glb");
+		game->ships.ptr[idx].position.xyz.x = 23058677.647 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.y = -363.291 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.z = 10228938.562 * PSHINE_SCS_SCALE;
+		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(0, 0, 0);
+		game->ships.ptr[idx].scale = 4.0;
+		game->ships.ptr[idx].max_atmo_velocity = 550.0;
+		game->ships.ptr[idx].max_space_velocity = 8600.0;
+	}
 
 	if (game->star_system_count <= 0) {
 		PSHINE_PANIC("No star systems present, there's nothing to show; exiting.");
 	}
-	game->current_star_system = 0;
+	game->current_star_system = 2;
 	game->data_own->selected_body = 0;
 	game->data_own->camera_dist = game->star_systems_own[game->current_star_system].bodies_own[0]->radius + 165'000'000.0;
 	game->camera_position.xyz.z = -game->data_own->camera_dist;
@@ -785,7 +763,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->data_own->camera_pitch = 0.0;
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
 	game->atmo_blend_factor = 0.0;
-	game->data_own->movement_mode = MOVEMENT_FLY;
+	game->data_own->movement_mode = MOVEMENT_SHIP;
 	game->data_own->move_speed = 500'000.0;
 	game->time_scale = 0.0;
 	game->camera_position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
@@ -797,9 +775,9 @@ void pshine_init_game(struct pshine_game *game) {
 	game->graphics_settings.bloom_threshold = 7.0;
 	game->material_smoothness_ = 0.02;
 	game->data_own->is_control_precise = false;
+	game->data_own->keybinds_ship_movement = &keybinds_ship_movement;
 
 	eximgui_state_init(&game->data_own->eximgui_state);
-
 }
 
 static void deinit_star_system(struct pshine_game *game, struct pshine_star_system *system) {
@@ -868,38 +846,23 @@ static void update_camera_walk(struct pshine_game *game, float delta_time) {
 	// One of the axes is easy, the normal of the planet sphere, the other one a bit more complicated.
 	// (we can get the third axis by doing a cross product of the other axes)
 
-	double3x3 mat = {};
-	setdouble3x3rotation(&mat, 0.0, game->data_own->camera_pitch, 0.0);
-	{
-		double3x3 mat2 = {};
-		setdouble3x3rotation(&mat2,  game->data_own->camera_yaw, 0.0, 0.0);
-		double3x3mul(&mat, &mat2);
-	}
-
-
-	double3 cam_forward = double3x3mulv(&mat, double3xyz(0.0, 0.0, 1.0));
-	// double3 cam_forward = double3xyz(
-	// 	cos(game->data_own->camera_pitch) * sin(game->data_own->camera_yaw),
-	// 	-sin(game->data_own->camera_pitch),
-	// 	cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
-	// );
-
+	floatR cam_rot = floatReuler(game->data_own->camera_pitch, game->data_own->camera_yaw, 0);
 	double3 cam_pos = double3vs(game->camera_position.values);
 	{
-		double3 delta = {};
+		float3 delta = {};
 		if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
 		if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
 		if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
-		delta = double3x3mulv(&mat, delta);
-		cam_pos = double3add(cam_pos, double3mul(double3norm(delta), game->data_own->move_speed * delta_time));
+		delta = floatRapply(cam_rot, delta);
+		cam_pos = double3add(cam_pos, double3mul(double3norm(double3_float3(delta)),
+			game->data_own->move_speed * delta_time));
 	}
 
-
 	*(double3*)game->camera_position.values = cam_pos;
-	*(double3*)game->camera_forward.values = cam_forward;
+	*(floatR*)game->camera_orientation.values = cam_rot;
 }
 
 [[maybe_unused]]
@@ -915,42 +878,31 @@ static void update_camera_fly(struct pshine_game *game, float delta_time) {
 		game->data_own->camera_yaw += delta.x * rot_speed * delta_time;
 	}
 
-	double3x3 mat = {};
-	setdouble3x3rotation(&mat, 0.0, game->data_own->camera_pitch, 0.0);
-	{
-		double3x3 mat2 = {};
-		setdouble3x3rotation(&mat2,  game->data_own->camera_yaw, 0.0, 0.0);
-		double3x3mul(&mat, &mat2);
-	}
+	// double3x3 mat = {};
+	// setdouble3x3rotation(&mat, 0.0, game->data_own->camera_pitch, 0.0);
+	// {
+	// 	double3x3 mat2 = {};
+	// 	setdouble3x3rotation(&mat2,  game->data_own->camera_yaw, 0.0, 0.0);
+	// 	double3x3mul(&mat, &mat2);
+	// }
 
-	//   0   -sina cosa
-	//  cosb   0   sinb    0        cosasinb
-	//   0     1    0    -sina  =    -sina
-	// -sinb   0   cosb   cosa      cosacosb
-
-	double3 cam_forward = double3x3mulv(&mat, double3xyz(0.0, 0.0, 1.0));
-	// double3 cam_forward = double3xyz(
-	// 	cos(game->data_own->camera_pitch) * sin(game->data_own->camera_yaw),
-	// 	-sin(game->data_own->camera_pitch),
-	// 	cos(game->data_own->camera_pitch) * cos(game->data_own->camera_yaw)
-	// );
-
+	floatR cam_rot = floatReuler(-game->data_own->camera_pitch, -game->data_own->camera_yaw, 0);
 	double3 cam_pos = double3vs(game->camera_position.values);
 	{
-		double3 delta = {};
+		float3 delta = {};
 		if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
 		if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
 		if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
 		else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
-		delta = double3x3mulv(&mat, delta);
-		cam_pos = double3add(cam_pos, double3mul(double3norm(delta), game->data_own->move_speed * delta_time));
+		delta = floatRapply(cam_rot, delta);
+		cam_pos = double3add(cam_pos, double3mul(double3norm(double3_float3(delta)),
+			game->data_own->move_speed * delta_time));
 	}
 
-
 	*(double3*)game->camera_position.values = cam_pos;
-	*(double3*)game->camera_forward.values = cam_forward;
+	*(floatR*)game->camera_orientation.values = cam_rot;
 }
 
 [[maybe_unused]]
@@ -984,7 +936,7 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 	// double3 cam_forward = double3xyz(-1.0f, 0.0f, 0.0f);
 
 	*(double3*)game->camera_position.values = cam_pos;
-	*(double3*)game->camera_forward.values = cam_forward;
+	*(floatR*)game->camera_orientation.values = floatRfromto(float3xyz(0, 0, 1), float3_double3(cam_forward));
 }
 
 static void propagate_orbit(
@@ -1676,18 +1628,104 @@ static void science_gui(struct pshine_game *game, float actual_delta_time) {
 	ImGui_End();
 }
 
+static void update_ship(struct pshine_game *game, struct pshine_ship *ship, float delta_time) {
+	{
+		double min_dist = DBL_MAX;
+		for (size_t i = 0; i < game->star_systems_own[game->current_star_system].body_count; ++i) {
+			struct pshine_celestial_body *body = game->star_systems_own[game->current_star_system].bodies_own[i];
+			double3 body_pos = double3vs(body->position.values);
+			double3 ship_pos = double3vs(ship->position.values);
+			double dist = double3mag2(double3sub(body_pos, ship_pos));
+			if (dist < min_dist) {
+				min_dist = dist;
+				ship->closest_body = body;
+				ship->closest_body_distance = sqrt(dist);
+			}
+		}
+	}
+
+
+	struct keybinds *kbd = game->data_own->keybinds_ship_movement;
+	floatR ship_orient = floatRvs(ship->orientation.values);
+	double3 ship_pos = double3vs(ship->position.values);
+	{
+		float3 delta = {};
+		
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_PITCH_UP].key)) delta.y += 1.0;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_PITCH_DOWN].key)) delta.y -= 1.0;
+
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_YAW_RIGHT].key)) delta.x += 1.0;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_YAW_LEFT].key)) delta.x -= 1.0;
+		
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_ROLL_RIGHT].key)) delta.z += 1.0;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_ROLL_LEFT].key)) delta.z -= 1.0;
+
+		float rot_speed = ROTATE_SPEED * (game->data_own->is_control_precise ? 0.01 : 1.0);
+		
+		float pitch = -delta.y * rot_speed * delta_time;
+		float yaw = delta.x * rot_speed * delta_time;
+		float roll = delta.z * rot_speed * delta_time;
+		floatR delta_orient = floatReuler(pitch, yaw, roll);
+		ship_orient = floatRcombine(ship_orient, delta_orient);
+	}
+	
+	{
+		double delta = 0.0f;
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_THROTTLE_INC].key)) delta += 1.0;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_THROTTLE_DEC].key)) delta -= 1.0;
+		delta *= delta_time * 1000.0f;
+		ship->velocity += delta * 5.0;
+		double height = 0.0; /* 0-1 */
+		bool inside_atmosphere = false;
+		if (ship->closest_body->type == PSHINE_CELESTIAL_BODY_PLANET) {
+			struct pshine_planet *planet = (void*)ship->closest_body;
+			height = ship->closest_body_distance - ship->closest_body->radius;
+			height /= planet->atmosphere.height;
+			inside_atmosphere = height <= 1.0;
+		}
+		if (inside_atmosphere) {
+			double t = exp(-height) * (1 - height);
+			ship->current_max_velocity = lerpd(ship->max_space_velocity, ship->max_atmo_velocity, t * t);
+		} else {
+			ship->current_max_velocity = ship->max_space_velocity;
+		}
+		ship->velocity = clampd(ship->velocity, 0, ship->current_max_velocity);
+	}
+	{
+		float3 delta = floatRapply(ship_orient, float3xyz(0, 0, 1));
+		ship_pos = double3add(ship_pos, double3mul(double3_float3(delta), ship->velocity * delta_time));
+	}
+	*(double3*)ship->position.values = ship_pos;
+	*(floatR*)ship->orientation.values = ship_orient;
+}
+
+static void update_camera_ship(struct pshine_game *game, float delta_time) {
+	struct pshine_ship *ship = &game->ships.ptr[0];
+	floatR ship_orient = floatRvs(ship->orientation.values);
+	// double3 right= double3_float3(floatRapply(ship_orient, float3xyz(1, 0, 0)));
+	double3 up      = double3_float3(floatRapply(ship_orient, float3xyz(0, 1, 0)));
+	double3 forward = double3_float3(floatRapply(ship_orient, float3xyz(0, 0, 1)));
+	double3 pos = double3vs(ship->position.values);
+	double3 cam_offset = double3add((double3mul(forward, -65.0)), double3mul(up, 10.0));
+	*(double3*)game->camera_position.values = double3add(cam_offset, pos);
+	*(floatR*)game->camera_orientation.values = ship_orient;
+		// floatRfromto(float3xyz(0, 0, 1), float3_double3(forward));
+}
+
 void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 	game->time += actual_delta_time * game->time_scale;
 	for (size_t i = 0; i < game->star_system_count; ++i) {
 		update_star_system(game, &game->star_systems_own[i], actual_delta_time * game->time_scale);
 	}
 
+	update_ship(game, &game->ships.ptr[0], actual_delta_time);
+
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_P) && !game->data_own->last_key_states[PSHINE_KEY_P]) {
 		game->data_own->is_control_precise = !game->data_own->is_control_precise;
 	}
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F) && !game->data_own->last_key_states[PSHINE_KEY_F]) {
-		game->data_own->movement_mode = !game->data_own->movement_mode;
+		game->data_own->movement_mode = (game->data_own->movement_mode + 1) % MOVEMENT_COUNT_;
 	}
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F2) && !game->data_own->last_key_states[PSHINE_KEY_F2]) {
@@ -1699,11 +1737,11 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 
 	}
 
-
 	switch (game->data_own->movement_mode) {
 		case MOVEMENT_ARC: update_camera_arc(game, actual_delta_time); break;
 		case MOVEMENT_FLY: update_camera_fly(game, actual_delta_time); break;
 		case MOVEMENT_WALK: update_camera_walk(game, actual_delta_time); break;
+		case MOVEMENT_SHIP: update_camera_ship(game, actual_delta_time); break;
 		default:
 			PSHINE_WARN("Unknown movement mode: %d, switching to fly", game->data_own->movement_mode);
 			game->data_own->movement_mode = MOVEMENT_FLY;
@@ -1902,8 +1940,14 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 		}
 		ImGui_End();
 
+		if (ImGui_Begin("Ship", nullptr, 0)) {
+			ImGui_Text("Max Velocity: %.1f", game->ships.ptr[0].current_max_velocity);
+			ImGui_Text("Velocity: %.1f", game->ships.ptr[0].velocity);
+		}
+		ImGui_End();
+
 		if (body->type == PSHINE_CELESTIAL_BODY_PLANET) {
-			if (ImGui_Begin("Planet", NULL, 0)) {
+			if (ImGui_Begin("Planet", nullptr, 0)) {
 				struct pshine_planet *planet = (struct pshine_planet*)body;
 				ImGui_BeginDisabled(!planet->has_atmosphere);
 				if (eximgui_begin_input_box("Atmosphere", "The paramters of the planet's atmosphere. You may need to recalculate the LUT.")) {
@@ -1991,6 +2035,12 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 					}
 				}
 			}
+			eximgui_input_double3("##WCS Position", "World coordinate system body position. In meters.",
+				body->position.values, 1000.0, "%.3fm");
+			// if (eximgui_input_double3("##SCS Position", "Scaled coordinate system camera position. 1:8192.",
+			// 	p_scs.vs, 100.0, "%.3fu")) {
+			// 	*(double3*)&game->camera_position.values = double3mul(p_scs, PSHINE_SCS_SCALE);
+			// }
 		}
 		ImGui_End();
 		ImGui_PopStyleColor();

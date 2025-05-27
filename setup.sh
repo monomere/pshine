@@ -56,6 +56,9 @@ if [ "$DO_DOWNLOAD" -eq "1" ]; then
 	printf $BOLD'Downloading TomlC99'$NORMAL
 	wget -P pshine/src/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.c
 	wget -P pshine/include/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.h
+
+	printf $BOLD'Downloading CGLTF'$NORMAL
+	wget -P pshine/include/vendor https://raw.githubusercontent.com/jkuhlmann/cgltf/refs/tags/v1.15/cgltf.h
 fi
 
 if [ "$DO_BINDINGS" -eq "1" ]; then

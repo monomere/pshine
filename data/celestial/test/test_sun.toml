@@ -1,0 +1,16 @@
+[star]
+name = "Test Star"
+description = "Lone star for lighting the lone planet."
+radius = 195_700_000.0
+is_static = true
+position = [0.0, 0.0, 0.0]
+mass = 332_950.0
+mu = 132.71244
+average_color = 0x97e6fc
+gizmo_color = 0x97e6fc
+surface_temperature = 3772.0
+
+[rotation]
+speed = 0.0
+axis = [0.0, 1.0, 0.0]
+

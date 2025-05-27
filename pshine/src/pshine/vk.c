@@ -13,12 +13,15 @@
 #include <cimgui/cimgui.h>
 #include <cimgui/backends/cimgui_impl_glfw.h>
 #include <cimgui/backends/cimgui_impl_vulkan.h>
-#include "stb_image.h"
+#include <stb_image.h>
+// TODO: weird include guard error. included in vk_util.h
+// #include <cgltf.h>
 
 // #include <giraffe/giraffe.h>
 
 #include "vk_util.h"
 #include "math.h"
+#include "vertex_util.h"
 
 #define SCSd3_WCSd3(wcs) (double3mul((wcs), PSHINE_SCS_FACTOR))
 #define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
@@ -56,17 +59,30 @@ struct atmo_uniform_data {
 	float scale_factor;
 };
 
-struct material_uniform_data {
+struct planet_material_uniform_data {
 	float4 color;
 	float3 view_dir;
 	float smoothness;
 };
 
-struct static_mesh_uniform_data {
+struct std_material_uniform_data {
+	float3 view_dir;
+};
+
+struct planet_mesh_uniform_data {
 	float4x4 proj;
 	float4x4 model_view;
 	float4x4 model;
 	float4 sun;
+};
+
+struct std_mesh_uniform_data {
+	float4x4 proj;
+	float4x4 model_view;
+	float4x4 model;
+	float4x4 unscaled_model;
+	float4 sun;
+	float4 rel_cam_pos;
 };
 
 struct rings_uniform_data {
@@ -141,6 +157,42 @@ struct pshine_planet_graphics_data {
 	struct vulkan_image ring_slice_texture;
 };
 
+struct vulkan_std_material_images {
+	struct vulkan_image diffuse;
+	struct vulkan_image emissive;
+	struct vulkan_image normal;
+	struct vulkan_image ao_metallic_roughness;
+};
+
+struct vulkan_std_material {
+	struct vulkan_std_material_images images;
+	VkDescriptorSet descriptor_set;
+	struct vulkan_buffer uniform_buffer;
+};
+
+struct vulkan_mesh_model {
+	size_t part_count;
+	struct vulkan_mesh_model_part {
+		size_t material_index;
+		struct vulkan_mesh mesh;
+	} *parts_own;
+	size_t material_count;
+	double4x4 transform;
+	struct vulkan_std_material *materials_own;
+};
+
+static void load_mesh_model_from_gltf(
+	struct vulkan_renderer *r,
+	const char *fpath,
+	struct vulkan_mesh_model *out
+);
+
+struct pshine_ship_graphics_data {
+	struct vulkan_mesh_model model;
+	struct vulkan_buffer uniform_buffer;
+	VkDescriptorSet descriptor_set;
+};
+
 struct swapchain_image_sync_data {
 	VkSemaphore image_avail_semaphore;
 	VkSemaphore render_finish_semaphore;
@@ -158,7 +210,16 @@ struct render_pass_transients {
 	struct vulkan_image bloom[BLOOM_STAGE_COUNT];
 };
 
-struct image_cache_entry {
+struct model_store_entry {
+	/// Must be `(size_t)-1` on valid entries.
+	size_t _alive_marker;
+	char *fpath_own;
+	struct vulkan_mesh_model model;
+};
+
+struct image_store_entry {
+	/// Must be `(size_t)-1` on valid entries.
+	size_t _alive_marker;
 	char *fpath_own;
 	struct vulkan_image image;
 };
@@ -200,12 +261,10 @@ struct vulkan_renderer {
 		// graphics pipelines
 		VkPipelineLayout tri_layout;
 		VkPipeline tri_pipeline;
-		VkPipelineLayout mesh_layout;
-		VkPipeline mesh_pipeline;
-		VkPipelineLayout color_mesh_layout;
-		VkPipeline color_mesh_pipeline;
-		VkPipelineLayout planet_layout;
-		VkPipeline planet_pipeline;
+		VkPipelineLayout planet_mesh_layout;
+		VkPipeline planet_mesh_pipeline;
+		VkPipelineLayout planet_color_mesh_layout;
+		VkPipeline planet_color_mesh_pipeline;
 		VkPipelineLayout atmo_layout;
 		VkPipeline atmo_pipeline;
 		VkPipelineLayout line_gizmo_layout;
@@ -216,6 +275,8 @@ struct vulkan_renderer {
 		VkPipeline rings_pipeline;
 		VkPipelineLayout skybox_layout;
 		VkPipeline skybox_pipeline;
+		VkPipelineLayout std_mesh_layout;
+		VkPipeline std_mesh_pipeline;
 
 		// compute pipelines
 		VkPipelineLayout atmo_lut_layout;
@@ -240,8 +301,8 @@ struct vulkan_renderer {
 		VkDescriptorPool pool;
 		VkDescriptorPool pool_imgui;
 		VkDescriptorSetLayout global_layout;
-		VkDescriptorSetLayout material_layout;
-		VkDescriptorSetLayout static_mesh_layout;
+		VkDescriptorSetLayout planet_material_layout;
+		VkDescriptorSetLayout planet_mesh_layout;
 		VkDescriptorSetLayout atmo_layout;
 		VkDescriptorSetLayout atmo_lut_layout;
 		VkDescriptorSetLayout blit_layout;
@@ -249,6 +310,8 @@ struct vulkan_renderer {
 		VkDescriptorSetLayout skybox_layout;
 		VkDescriptorSetLayout upsample_bloom_layout;
 		VkDescriptorSetLayout downsample_bloom_layout;
+		VkDescriptorSetLayout std_material_layout;
+		VkDescriptorSetLayout std_mesh_layout;
 	} descriptors;
 
 	struct {
@@ -282,7 +345,8 @@ struct vulkan_renderer {
 
 	uint8_t *key_states;
 
-	PSHINE_DYNA_(struct image_cache_entry) image_cache;
+	PSHINE_DYNA_(struct image_store_entry) image_store;
+	PSHINE_DYNA_(struct model_store_entry) model_store;
 };
 
 VkResult check_vk_impl_(struct pshine_debug_file_loc where, VkResult result, const char *expr) {
@@ -724,9 +788,9 @@ static struct vulkan_image load_texture_from_file(
 	// PSHINE_INFO("Called load_texture_from_file(r, \"%s\", format=%d, format_channels=%d, bytes_per_channel=%d)",
 	// 	fpath, (int)format, format_channels, bytes_per_channel);
 	// TODO: cache parameters
-	for (size_t i = 0; i < r->image_cache.dyna.count; ++i) {
-		if (strcmp(r->image_cache.ptr[i].fpath_own, fpath) == 0) {
-			return r->image_cache.ptr[i].image;
+	for (size_t i = 0; i < r->image_store.dyna.count; ++i) {
+		if (strcmp(r->image_store.ptr[i].fpath_own, fpath) == 0) {
+			return r->image_store.ptr[i].image;
 		}
 	}
 
@@ -831,10 +895,450 @@ static struct vulkan_image load_texture_from_file(
 		free(data);
 	}
 
-	size_t idx = PSHINE_DYNA_ALLOC(r->image_cache);
-	r->image_cache.ptr[idx].fpath_own = pshine_strdup(fpath);
-	r->image_cache.ptr[idx].image = img;
+	size_t idx = PSHINE_DYNA_ALLOC(r->image_store);
+	r->image_store.ptr[idx]._alive_marker = (size_t)-1;
+	r->image_store.ptr[idx].fpath_own = pshine_strdup(fpath);
+	r->image_store.ptr[idx].image = img;
 	return img;
+}
+
+struct vulkan_image_create_info {
+	const char *name;
+	VkExtent2D size;
+	VkFormat format;
+	size_t data_size;
+	const void *data;
+};
+
+static struct vulkan_image create_image(
+	struct vulkan_renderer *r,
+	const struct vulkan_image_create_info *info
+) {
+	struct vulkan_image img = allocate_image(r, &(struct vulkan_image_alloc_info){
+		.allocation_flags = 0,
+		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+		.preferred_memory_property_flags = 0,
+		.required_memory_property_flags = 0,
+		.out_allocation_info = nullptr,
+		.image_info = &(VkImageCreateInfo){
+			.imageType = VK_IMAGE_TYPE_2D,
+			.arrayLayers = 1,
+			.mipLevels = 1,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.extent = (VkExtent3D){
+				.width = info->size.width,
+				.height = info->size.height,
+				.depth = 1,
+			},
+			.format = info->format,
+			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			.flags = 0,
+		},
+		.view_info = &(VkImageViewCreateInfo){
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = info->format,
+			.subresourceRange = {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseArrayLayer = 0,
+				.baseMipLevel = 0,
+				.layerCount = 1,
+				.levelCount = 1,
+			}
+		},
+	});
+
+	NAME_VK_OBJECT(r, img.image, VK_OBJECT_TYPE_IMAGE, "%s image", info->name);
+	NAME_VK_OBJECT(r, img.view, VK_OBJECT_TYPE_IMAGE_VIEW, "%s image view", info->name);
+
+	write_to_image_staged(
+		r,
+		&img,
+		(VkOffset3D){},
+		(VkExtent3D){ .width = info->size.width, .height = info->size.height, .depth = 1 },
+		info->format,
+		info->data_size,
+		info->data
+	);
+
+	return img;
+}
+
+static struct vulkan_image create_image_from_cgltf_texture_view(
+	struct vulkan_renderer *r,
+	cgltf_texture_view *v,
+	int desired_channels,
+	VkFormat format
+) {
+	cgltf_buffer_view *buf = v->texture->image->buffer_view;
+	int width, height, channels;
+	stbi_uc *data = stbi_load_from_memory(
+		(uint8_t*)buf->buffer->data + buf->offset,
+		buf->size, &width, &height, &channels, desired_channels
+	);
+	if (data == nullptr) {
+		PSHINE_PANIC("Failed to load embedded image: %s", stbi_failure_reason());
+	}
+	struct vulkan_image img = create_image(r, &(struct vulkan_image_create_info){
+		.name = v->texture->name,
+		.size = (VkExtent2D){ .width = (uint32_t)width, .height = (uint32_t)height },
+		.format = format,
+		.data = data,
+		.data_size = (size_t)width * (size_t)height * desired_channels,
+	});
+	stbi_image_free(data);
+	return img;
+}
+
+static void load_mesh_model_from_gltf(
+	struct vulkan_renderer *r,
+	const char *fpath,
+	struct vulkan_mesh_model *out
+) {
+	PSHINE_DEBUG("Loading model from %s", fpath);
+
+	for (size_t i = 0; i < r->model_store.dyna.count; ++i) {
+		if (strcmp(r->model_store.ptr[i].fpath_own, fpath) == 0) {
+			*out = r->model_store.ptr[i].model;
+			return;
+		}
+	}
+	struct cgltf_data *data = nullptr;
+	cgltf_result res;
+	res = cgltf_parse_file(&(cgltf_options){
+		.type = cgltf_file_type_glb,
+	}, fpath, &data);
+	if (res != cgltf_result_success) PSHINE_PANIC("Failed to load glb model at '%s': %s (%u)", fpath, pshine_cgltf_result_string(res), res);
+	cgltf_load_buffers(&(cgltf_options){
+		.type = cgltf_file_type_glb,
+	}, data, fpath);
+	size_t total_primitive_count = 0;
+	for (size_t i = 0; i < data->meshes_count; ++i) {
+		total_primitive_count += data->meshes[0].primitives_count;
+	}
+	out->part_count = total_primitive_count;
+	out->parts_own = calloc(out->part_count, sizeof(*out->parts_own));
+	for (size_t i = 0, current_part = 0; i < data->meshes_count; ++i) {
+		cgltf_mesh *mesh = &data->meshes[i];
+		for (size_t j = 0; j < mesh->primitives_count; ++j, ++current_part) {
+			cgltf_primitive *prim = &mesh->primitives[j];
+			
+			enum : size_t { bad_attrib = (size_t)-1 };
+			size_t position_attrib = bad_attrib;
+			size_t normal_attrib = bad_attrib;
+			size_t tangent_attrib = bad_attrib;
+			size_t texcoord_attrib = bad_attrib;
+			for (size_t k = 0; k < prim->attributes_count; ++k) {
+				switch (prim->attributes[k].type) {
+				case cgltf_attribute_type_position: position_attrib = k; break;
+				case cgltf_attribute_type_normal: normal_attrib = k; break;
+				case cgltf_attribute_type_tangent: tangent_attrib = k; break;
+				case cgltf_attribute_type_texcoord: texcoord_attrib = k; break;
+				default: break;
+				}
+			}
+			if (
+				position_attrib == bad_attrib ||
+				normal_attrib == bad_attrib ||
+				tangent_attrib == bad_attrib ||
+				texcoord_attrib == bad_attrib
+			) {
+				PSHINE_PANIC(
+					"Missing attributes in model\n"
+					"\tposition: %zu\n"
+					"\tnormal: %zu\n"
+					"\ttangent: %zu\n"
+					"\ttexcoord: %zu\n",
+					position_attrib, normal_attrib,
+					tangent_attrib, texcoord_attrib
+				);
+			}
+			cgltf_accessor *position_acc = prim->attributes[position_attrib].data;
+			PSHINE_CHECK(position_acc->type == cgltf_type_vec3,
+				"Expected position attribute to be of type vec3.");
+			PSHINE_CHECK(position_acc->component_type == cgltf_component_type_r_32f,
+				"Expected position attribute to be of floats.");
+
+			cgltf_accessor *normal_acc = prim->attributes[normal_attrib].data;
+			PSHINE_CHECK(normal_acc->type == cgltf_type_vec3,
+				"Expected normal attribute to be of type vec3.");
+			PSHINE_CHECK(normal_acc->component_type == cgltf_component_type_r_32f,
+				"Expected normal attribute to be of floats.");
+
+			cgltf_accessor *tangent_acc = prim->attributes[tangent_attrib].data;
+			PSHINE_CHECK(tangent_acc->type == cgltf_type_vec3 || tangent_acc->type == cgltf_type_vec4,
+				"Expected tangent attribute to be of type vec3 or vec4.");
+			PSHINE_CHECK(tangent_acc->component_type == cgltf_component_type_r_32f,
+				"Expected tangent attribute to be of floats.");
+
+			cgltf_accessor *texcoord_acc = prim->attributes[texcoord_attrib].data;
+			PSHINE_CHECK(texcoord_acc->type == cgltf_type_vec2,
+				"Expected texcoord attribute to be of type vec2.");
+			PSHINE_CHECK(texcoord_acc->component_type == cgltf_component_type_r_32f,
+				"Expected texcoord attribute to be of floats.");
+
+			size_t vertex_count = position_acc->count;
+			struct pshine_static_mesh_vertex *vertices = calloc(vertex_count, sizeof(*vertices));
+
+			uint8_t *position_data = position_acc->buffer_view->buffer->data;
+			position_data += position_acc->buffer_view->offset;
+			position_data += position_acc->offset;
+
+			uint8_t *normal_data = normal_acc->buffer_view->buffer->data;
+			normal_data += normal_acc->buffer_view->offset;
+			normal_data += normal_acc->offset;
+
+			uint8_t *tangent_data = tangent_acc->buffer_view->buffer->data;
+			tangent_data += tangent_acc->buffer_view->offset;
+			tangent_data += tangent_acc->offset;
+
+			uint8_t *texcoord_data = texcoord_acc->buffer_view->buffer->data;
+			texcoord_data += texcoord_acc->buffer_view->offset;
+			texcoord_data += texcoord_acc->offset;
+
+			for (size_t k = 0; k < vertex_count; ++k) {
+				*(float3*)vertices[k].position = *((float3*)(void*)position_data);
+				vertices[k].tangent_dia = encode_tangent(
+					*((float3*)(void*)normal_data),
+					*((float3*)(void*)tangent_data)
+				);
+				*(float2*)vertices[k].normal_oct = float32x3_to_oct(*((float3*)(void*)normal_data));
+				*(float2*)vertices[k].texcoord = *((float2*)(void*)texcoord_data);
+				position_data += position_acc->stride;
+				normal_data += normal_acc->stride;
+				tangent_data += tangent_acc->stride;
+				texcoord_data += texcoord_acc->stride;
+			}
+
+			size_t index_count = prim->indices->count;
+			uint32_t *indices = calloc(index_count, sizeof(*indices));
+			
+			uint8_t *index_data = prim->indices->buffer_view->buffer->data;
+			index_data += prim->indices->buffer_view->offset;
+			index_data += prim->indices->offset;
+
+			switch (prim->indices->component_type) {
+				case cgltf_component_type_r_32u:
+					for (size_t k = 0; k < index_count; ++k) {
+						indices[k] = *(uint32_t*)(void*)index_data;
+						index_data += prim->indices->stride;
+					} break;
+				case cgltf_component_type_r_16:
+				case cgltf_component_type_r_16u:
+					for (size_t k = 0; k < index_count; ++k) {
+						indices[k] = (uint32_t)*(uint16_t*)(void*)index_data;
+						index_data += prim->indices->stride;
+					} break;
+				case cgltf_component_type_r_8:
+				case cgltf_component_type_r_8u:
+					for (size_t k = 0; k < index_count; ++k) {
+						indices[k] = (uint32_t)*(uint8_t*)(void*)index_data;
+						index_data += prim->indices->stride;
+					} break;
+				default: PSHINE_PANIC("Bad index accessor component type, expected integers.");
+			}
+
+			out->parts_own[current_part].material_index = data->materials - prim->material;
+
+			create_mesh(r, &(struct pshine_mesh_data){
+				.vertex_type = PSHINE_VERTEX_STATIC_MESH,
+				.vertex_count = vertex_count,
+				.vertices = vertices,
+				.index_count = index_count,
+				.indices = indices,
+			}, &out->parts_own[current_part].mesh);
+		}
+	}
+
+	out->transform = double4x4_float4x4(*(float4x4*)data->nodes[0].matrix);
+
+	out->material_count = data->materials_count;
+	out->materials_own = calloc(out->material_count, sizeof(*out->materials_own));
+	for (size_t i = 0; i < data->materials_count; ++i) {
+		out->materials_own[i].images.normal
+			= create_image_from_cgltf_texture_view(r, &data->materials[i].normal_texture, 4, VK_FORMAT_R8G8B8A8_UNORM);
+		out->materials_own[i].images.emissive
+			= create_image_from_cgltf_texture_view(r, &data->materials[i].emissive_texture, 4, VK_FORMAT_R8G8B8A8_UNORM);
+		out->materials_own[i].images.diffuse
+			= create_image_from_cgltf_texture_view(r,
+					&data->materials[i].pbr_metallic_roughness.base_color_texture, 4, VK_FORMAT_R8G8B8A8_SRGB);
+		NAME_VK_OBJECT(r, out->materials_own[i].images.diffuse.image, VK_OBJECT_TYPE_IMAGE, "Diffuse for %s", fpath);
+		NAME_VK_OBJECT(r, out->materials_own[i].images.emissive.image, VK_OBJECT_TYPE_IMAGE, "Emissive for %s", fpath);
+		NAME_VK_OBJECT(r, out->materials_own[i].images.normal.image, VK_OBJECT_TYPE_IMAGE, "Normal for %s", fpath);
+
+		// Combine the occlusion (R) and metallic+roughness (GB) textures into one.
+		{
+			cgltf_texture_view *occlusion = &data->materials[i].occlusion_texture;
+			cgltf_texture_view *metallic_roughness = &data->materials[i].pbr_metallic_roughness.metallic_roughness_texture;
+			cgltf_buffer_view *buf_r = occlusion->texture->image->buffer_view;
+			cgltf_buffer_view *buf_gb = metallic_roughness->texture->image->buffer_view;
+			int width, height, channels;
+			
+			stbi_uc *data_r = stbi_load_from_memory(
+				(uint8_t*)buf_r->buffer->data + buf_r->offset,
+				buf_r->size, &width, &height, &channels, 1
+			);
+			if (data_r == nullptr) {
+				PSHINE_PANIC("Failed to load embedded image: %s", stbi_failure_reason());
+			}
+			// (Initially only has the green and blue channels.)
+			// The alpha channel exists because most GPUs don't support R8G8B8 images.
+			// We just ignore the channel.
+			// TODO: Use R8G8B8 if the GPU supports it.
+			stbi_uc *data_rgb = stbi_load_from_memory(
+				(uint8_t*)buf_gb->buffer->data + buf_gb->offset,
+				buf_gb->size, &width, &height, &channels, 4
+			);
+			if (data_rgb == nullptr) {
+				PSHINE_PANIC("Failed to load embedded image: %s", stbi_failure_reason());
+			}
+			// Fill the empty R channel from `data_r`.
+			for (size_t i = 0; i < (size_t)width * (size_t)height; ++i) {
+				data_rgb[i * 4] = data_r[i];
+			}
+			stbi_image_free(data_r);
+			out->materials_own[i].images.ao_metallic_roughness = create_image(r, &(struct vulkan_image_create_info){
+				.size = (VkExtent2D){ .width = (uint32_t)width, .height = (uint32_t)height },
+				.format = VK_FORMAT_R8G8B8A8_UNORM,
+				.data = data_rgb,
+				.data_size = (size_t)width * (size_t)height * 4,
+			});
+			NAME_VK_OBJECT(r, out->materials_own[i].images.ao_metallic_roughness.image, VK_OBJECT_TYPE_IMAGE,
+				"Occlusion+Metallic+Roughness for %s", fpath);
+			stbi_image_free(data_rgb);
+		}
+
+		out->materials_own[i].uniform_buffer = allocate_buffer(r, &(struct vulkan_buffer_alloc_info){
+			.size = get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * FRAMES_IN_FLIGHT,
+			.buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+			.required_memory_property_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+			.allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+			.memory_usage = VMA_MEMORY_USAGE_AUTO,
+		});
+		NAME_VK_OBJECT(r, out->materials_own[i].uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER,
+			"Material UB #%zu for %s", i, fpath);
+		
+		
+
+		CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+			.descriptorPool = r->descriptors.pool,
+			.descriptorSetCount = 1,
+			.pSetLayouts = &r->descriptors.std_material_layout,
+		}, &out->materials_own[i].descriptor_set));
+		NAME_VK_OBJECT(r, out->materials_own[i].descriptor_set, VK_OBJECT_TYPE_DESCRIPTOR_SET, "Material %zu of %s", i, fpath);
+
+		vkUpdateDescriptorSets(r->device, 5, (VkWriteDescriptorSet[5]){
+			(VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+				.dstSet = out->materials_own[i].descriptor_set,
+				.dstArrayElement = 0,
+				.dstBinding = 0,
+				.pBufferInfo = &(VkDescriptorBufferInfo){
+					.buffer = out->materials_own[i].uniform_buffer.buffer,
+					.offset = 0,
+					.range = sizeof(struct std_material_uniform_data),
+				},
+			},
+			(VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.dstSet = out->materials_own[i].descriptor_set,
+				.dstArrayElement = 0,
+				.dstBinding = 1,
+				.pImageInfo = &(VkDescriptorImageInfo){
+					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					.imageView = out->materials_own[i].images.diffuse.view,
+					.sampler = r->material_texture_sampler,
+				},
+			},
+			(VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.dstSet = out->materials_own[i].descriptor_set,
+				.dstArrayElement = 0,
+				.dstBinding = 2,
+				.pImageInfo = &(VkDescriptorImageInfo){
+					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					.imageView = out->materials_own[i].images.ao_metallic_roughness.view,
+					.sampler = r->material_texture_sampler,
+				},
+			},
+			(VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.dstSet = out->materials_own[i].descriptor_set,
+				.dstArrayElement = 0,
+				.dstBinding = 3,
+				.pImageInfo = &(VkDescriptorImageInfo){
+					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					.imageView = out->materials_own[i].images.normal.view,
+					.sampler = r->material_texture_sampler,
+				},
+			},
+			(VkWriteDescriptorSet){
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.dstSet = out->materials_own[i].descriptor_set,
+				.dstArrayElement = 0,
+				.dstBinding = 4,
+				.pImageInfo = &(VkDescriptorImageInfo){
+					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					.imageView = out->materials_own[i].images.emissive.view,
+					.sampler = r->material_texture_sampler,
+				},
+			},
+		}, 0, nullptr);
+	}
+	cgltf_free(data);
+
+	size_t idx = PSHINE_DYNA_ALLOC(r->model_store);
+	r->model_store.ptr[idx]._alive_marker = (size_t)-1;
+	r->model_store.ptr[idx].model = *out;
+	r->model_store.ptr[idx].fpath_own = pshine_strdup(fpath);
+}
+
+static void init_ship(struct vulkan_renderer *r, struct pshine_ship *ship) {
+	ship->graphics_data = calloc(1, sizeof(*ship->graphics_data));
+	load_mesh_model_from_gltf(r, ship->model_file_own, &ship->graphics_data->model);
+
+	ship->graphics_data->uniform_buffer = allocate_buffer(r, &(struct vulkan_buffer_alloc_info){
+		.size = get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * FRAMES_IN_FLIGHT,
+		.buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		.required_memory_property_flags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		.allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+		.memory_usage = VMA_MEMORY_USAGE_AUTO,
+	});
+	NAME_VK_OBJECT(r, ship->graphics_data->uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "static mesh ub");
+
+	CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = r->descriptors.pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &r->descriptors.std_mesh_layout,
+	}, &ship->graphics_data->descriptor_set));
+	vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[1]){
+		(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.dstSet = ship->graphics_data->descriptor_set,
+			.pBufferInfo = &(VkDescriptorBufferInfo){
+				.buffer = ship->graphics_data->uniform_buffer.buffer,
+				.offset = 0,
+				.range = sizeof(struct std_mesh_uniform_data),
+			}
+		},
+	}, 0, nullptr);
 }
 
 static void init_star_system(struct vulkan_renderer *r, struct pshine_star_system *system) {
@@ -850,7 +1354,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 				.descriptorPool = r->descriptors.pool,
 				.descriptorSetCount = 1,
-				.pSetLayouts = &r->descriptors.static_mesh_layout,
+				.pSetLayouts = &r->descriptors.planet_mesh_layout,
 			}, &p->graphics_data->descriptor_set));
 
 			// Material descriptors
@@ -858,7 +1362,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 				.descriptorPool = r->descriptors.pool,
 				.descriptorSetCount = 1,
-				.pSetLayouts = &r->descriptors.material_layout,
+				.pSetLayouts = &r->descriptors.planet_material_layout,
 			}, &p->graphics_data->material_descriptor_set));
 
 			// Atmosphere descriptors
@@ -895,15 +1399,15 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 				.memory_usage = VMA_MEMORY_USAGE_AUTO,
 			};
 
-			common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * FRAMES_IN_FLIGHT;
+			common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * FRAMES_IN_FLIGHT;
 			p->graphics_data->uniform_buffer = allocate_buffer(r, &common_alloc_info);
-			NAME_VK_OBJECT(r, p->graphics_data->uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "static mesh ub");
+			NAME_VK_OBJECT(r, p->graphics_data->uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "planet mesh ub");
 
 			common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * FRAMES_IN_FLIGHT;
 			p->graphics_data->atmo_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 			NAME_VK_OBJECT(r, p->graphics_data->atmo_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "atmo ub");
 
-			common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct material_uniform_data)) * FRAMES_IN_FLIGHT;
+			common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct planet_material_uniform_data)) * FRAMES_IN_FLIGHT;
 			p->graphics_data->material_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 			NAME_VK_OBJECT(r, p->graphics_data->material_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "material ub");
 
@@ -929,7 +1433,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 					.pBufferInfo = &(VkDescriptorBufferInfo){
 						.buffer = p->graphics_data->uniform_buffer.buffer,
 						.offset = 0,
-						.range = sizeof(struct static_mesh_uniform_data),
+						.range = sizeof(struct planet_mesh_uniform_data),
 					}
 				},
 				(VkWriteDescriptorSet){
@@ -955,7 +1459,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 					.pBufferInfo = &(VkDescriptorBufferInfo){
 						.buffer = p->graphics_data->material_uniform_buffer.buffer,
 						.offset = 0,
-						.range = sizeof(struct material_uniform_data),
+						.range = sizeof(struct planet_material_uniform_data),
 					}
 				},
 				(VkWriteDescriptorSet){
@@ -1076,7 +1580,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 			p->graphics_data->uniform_buffer = allocate_buffer(
 				r,
 				&(struct vulkan_buffer_alloc_info){
-					.size = get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * FRAMES_IN_FLIGHT,
+					.size = get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * FRAMES_IN_FLIGHT,
 					.buffer_usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 					.required_memory_property_flags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 					.allocation_flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
@@ -1087,7 +1591,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 				.descriptorPool = r->descriptors.pool,
 				.descriptorSetCount = 1,
-				.pSetLayouts = &r->descriptors.static_mesh_layout,
+				.pSetLayouts = &r->descriptors.planet_mesh_layout,
 			}, &p->graphics_data->descriptor_set));
 			vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[]){
 				(VkWriteDescriptorSet){
@@ -1100,7 +1604,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 					.pBufferInfo = &(VkDescriptorBufferInfo){
 						.buffer = p->graphics_data->uniform_buffer.buffer,
 						.offset = 0,
-						.range = sizeof(struct static_mesh_uniform_data)
+						.range = sizeof(struct planet_mesh_uniform_data)
 					}
 				},
 			}, 0, nullptr);
@@ -1163,6 +1667,11 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 
 	for (size_t i = 0; i < r->game->star_system_count; ++i) {
 		init_star_system(r, &r->game->star_systems_own[i]);
+	}
+
+	for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
+		if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) continue;
+		init_ship(r, &r->game->ships.ptr[i]);
 	}
 
 	PSHINE_DEBUG("Loading environment cubemap");
@@ -2315,7 +2824,7 @@ struct graphics_pipeline_info {
 	const char *pipeline_name;
 	bool depth_test;
 	bool blend;
-	bool vertex_input; // TODO: pass vertex attribute here
+	enum pshine_vertex_type vertex_kind;
 	bool lines;
 	bool triangle_strip;
 	// int planet_specialization;
@@ -2324,6 +2833,79 @@ struct graphics_pipeline_info {
 struct vulkan_pipeline {
 	VkPipelineLayout layout;
 	VkPipeline pipeline;
+};
+
+static const VkPipelineVertexInputStateCreateInfo vulkan_planet_vertex_input_state = {
+	.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+	.vertexBindingDescriptionCount = 1,
+	.pVertexBindingDescriptions = &(VkVertexInputBindingDescription){
+		.binding = 0,
+		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+		.stride = sizeof(struct pshine_planet_vertex)
+	},
+	.vertexAttributeDescriptionCount = 3,
+	.pVertexAttributeDescriptions = (VkVertexInputAttributeDescription[]){
+		(VkVertexInputAttributeDescription){
+			.binding = 0,
+			.format = VK_FORMAT_R32G32B32_SFLOAT,
+			.location = 0,
+			.offset = offsetof(struct pshine_planet_vertex, position)
+		},
+		(VkVertexInputAttributeDescription){
+			.binding = 0,
+			.format = VK_FORMAT_R32G32_SFLOAT,
+			.location = 1,
+			.offset = offsetof(struct pshine_planet_vertex, normal_oct)
+		},
+		(VkVertexInputAttributeDescription){
+			.binding = 0,
+			.format = VK_FORMAT_R32_SFLOAT,
+			.location = 2,
+			.offset = offsetof(struct pshine_planet_vertex, tangent_dia)
+		},
+	},
+};
+
+static const VkPipelineVertexInputStateCreateInfo vulkan_std_vertex_input_state = {
+	.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+	.vertexBindingDescriptionCount = 1,
+	.pVertexBindingDescriptions = &(VkVertexInputBindingDescription){
+		.binding = 0,
+		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+		.stride = sizeof(struct pshine_static_mesh_vertex)
+	},
+	.vertexAttributeDescriptionCount = 4,
+	.pVertexAttributeDescriptions = (VkVertexInputAttributeDescription[4]){
+		(VkVertexInputAttributeDescription){
+			.binding = 0,
+			.format = VK_FORMAT_R32G32B32_SFLOAT,
+			.location = 0,
+			.offset = offsetof(struct pshine_static_mesh_vertex, position)
+		},
+		(VkVertexInputAttributeDescription){
+			.binding = 0,
+			.format = VK_FORMAT_R32G32_SFLOAT,
+			.location = 1,
+			.offset = offsetof(struct pshine_static_mesh_vertex, normal_oct)
+		},
+		(VkVertexInputAttributeDescription){
+			.binding = 0,
+			.format = VK_FORMAT_R32_SFLOAT,
+			.location = 2,
+			.offset = offsetof(struct pshine_static_mesh_vertex, tangent_dia)
+		},
+		(VkVertexInputAttributeDescription){
+			.binding = 0,
+			.format = VK_FORMAT_R32G32_SFLOAT,
+			.location = 3,
+			.offset = offsetof(struct pshine_static_mesh_vertex, texcoord)
+		},
+	},
+};
+static const VkPipelineVertexInputStateCreateInfo vulkan_no_vertex_input_state = {
+	.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+	.vertexBindingDescriptionCount = 0,
+	.vertexAttributeDescriptionCount = 0,
 };
 
 static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r, const struct graphics_pipeline_info *info) {
@@ -2356,38 +2938,17 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 	if (info->layout_name != nullptr)
 		NAME_VK_OBJECT(r, layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, info->layout_name);
 
+	const VkPipelineVertexInputStateCreateInfo *vertex_input_state = nullptr;
+	switch (info->vertex_kind) {
+	case PSHINE_VERTEX_NONE: vertex_input_state = &vulkan_no_vertex_input_state; break;
+	case PSHINE_VERTEX_PLANET: vertex_input_state = &vulkan_planet_vertex_input_state; break;
+	case PSHINE_VERTEX_STATIC_MESH: vertex_input_state = &vulkan_std_vertex_input_state; break;
+	default: PSHINE_PANIC("vertex kind %d not implemented.", info->vertex_kind);
+	}
+
 	CHECKVK(vkCreateGraphicsPipelines(r->device, VK_NULL_HANDLE, 1, &(VkGraphicsPipelineCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-		.pVertexInputState = &(VkPipelineVertexInputStateCreateInfo){
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-			.vertexBindingDescriptionCount = info->vertex_input ? 1 : 0,
-			.pVertexBindingDescriptions = &(VkVertexInputBindingDescription){
-				.binding = 0,
-				.inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-				.stride = sizeof(struct pshine_planet_vertex)
-			},
-			.vertexAttributeDescriptionCount = info->vertex_input ? 3 : 0,
-			.pVertexAttributeDescriptions = (VkVertexInputAttributeDescription[]){
-				(VkVertexInputAttributeDescription){
-					.binding = 0,
-					.format = VK_FORMAT_R32G32B32_SFLOAT,
-					.location = 0,
-					.offset = offsetof(struct pshine_planet_vertex, position)
-				},
-				(VkVertexInputAttributeDescription){
-					.binding = 0,
-					.format = VK_FORMAT_R32G32_SFLOAT,
-					.location = 1,
-					.offset = offsetof(struct pshine_planet_vertex, normal_oct)
-				},
-				(VkVertexInputAttributeDescription){
-					.binding = 0,
-					.format = VK_FORMAT_R32_SFLOAT,
-					.location = 2,
-					.offset = offsetof(struct pshine_planet_vertex, tangent_dia)
-				},
-			},
-		},
+		.pVertexInputState = vertex_input_state,
 		.pInputAssemblyState = &(VkPipelineInputAssemblyStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
 			.primitiveRestartEnable = VK_FALSE,
@@ -2397,22 +2958,8 @@ static struct vulkan_pipeline create_graphics_pipeline(struct vulkan_renderer *r
 		},
 		.pViewportState = &(VkPipelineViewportStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-			.viewportCount = 1,
-			// Dynamic
-			// .pViewports = &(VkViewport){
-			// 	.width = r->swapchain_extent.width,
-			// 	.height = r->swapchain_extent.height,
-			// 	.x = 0.0f,
-			// 	.y = 0.0f,
-			// 	.minDepth = 0.0f,
-			// 	.maxDepth = 1.0f,
-			// },
-			.scissorCount = 1,
-			// Dynamic
-			// .pScissors = &(VkRect2D){
-			// 	.offset = { 0, 0 },
-			// 	.extent = r->swapchain_extent,
-			// },
+			.viewportCount = 1, // Dynamic
+			.scissorCount = 1, // Dynamic
 		},
 		.pRasterizationState = &(VkPipelineRasterizationStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -2517,17 +3064,17 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		.set_layout_count = 3,
 		.set_layouts = (VkDescriptorSetLayout[]){
 			r->descriptors.global_layout,
-			r->descriptors.material_layout,
-			r->descriptors.static_mesh_layout,
+			r->descriptors.planet_material_layout,
+			r->descriptors.planet_mesh_layout,
 		},
 		.blend = false,
 		.depth_test = true,
-		.vertex_input = true,
-		.layout_name = "static mesh pipeline layout",
-		.pipeline_name = "static mesh pipeline"
+		.vertex_kind = PSHINE_VERTEX_PLANET,
+		.layout_name = "planet mesh pipeline layout",
+		.pipeline_name = "planet mesh pipeline"
 	});
-	r->pipelines.mesh_pipeline = mesh_pipeline.pipeline;
-	r->pipelines.mesh_layout = mesh_pipeline.layout;
+	r->pipelines.planet_mesh_pipeline = mesh_pipeline.pipeline;
+	r->pipelines.planet_mesh_layout = mesh_pipeline.layout;
 
 	struct vulkan_pipeline color_mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/mesh.1.vert.spv",
@@ -2545,16 +3092,16 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		.set_layout_count = 2,
 		.set_layouts = (VkDescriptorSetLayout[]){
 			r->descriptors.global_layout,
-			r->descriptors.static_mesh_layout,
+			r->descriptors.planet_mesh_layout,
 		},
 		.blend = false,
 		.depth_test = true,
-		.vertex_input = true,
-		.layout_name = "solid color static mesh pipeline layout",
-		.pipeline_name = "solid color static mesh pipeline"
+		.vertex_kind = PSHINE_VERTEX_PLANET,
+		.layout_name = "solid color planet mesh pipeline layout",
+		.pipeline_name = "solid color planet mesh pipeline"
 	});
-	r->pipelines.color_mesh_pipeline = color_mesh_pipeline.pipeline;
-	r->pipelines.color_mesh_layout = color_mesh_pipeline.layout;
+	r->pipelines.planet_color_mesh_pipeline = color_mesh_pipeline.pipeline;
+	r->pipelines.planet_color_mesh_layout = color_mesh_pipeline.layout;
 	PSHINE_DEBUG("created color_mesh_pipeline");
 
 	struct vulkan_pipeline rings_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
@@ -2570,13 +3117,36 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		},
 		.blend = true,
 		.depth_test = true,
-		.vertex_input = false,
+		.vertex_kind = PSHINE_VERTEX_NONE,
 		.layout_name = "rings pipeline layout",
 		.pipeline_name = "rings pipeline",
 	});
 	r->pipelines.rings_pipeline = rings_pipeline.pipeline;
 	r->pipelines.rings_layout = rings_pipeline.layout;
 	PSHINE_DEBUG("created rings_pipeline");
+
+	struct vulkan_pipeline std_mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
+		.vert_fname = "build/pshine/data/shaders/std_mesh.vert.spv",
+		.frag_fname = "build/pshine/data/shaders/std_mesh.frag.spv",
+		.render_pass = r->render_passes.hdr_pass,
+		.subpass = 0,
+		.push_constant_range_count = 0,
+		.set_layout_count = 3,
+		.set_layouts = (VkDescriptorSetLayout[]){
+			r->descriptors.global_layout,
+			r->descriptors.std_material_layout,
+			r->descriptors.std_mesh_layout,
+		},
+		.triangle_strip = false,
+		.blend = true,
+		.depth_test = true,
+		.vertex_kind = PSHINE_VERTEX_STATIC_MESH,
+		.layout_name = "std mesh pipeline layout",
+		.pipeline_name = "std mesh pipeline",
+	});
+	r->pipelines.std_mesh_pipeline = std_mesh_pipeline.pipeline;
+	r->pipelines.std_mesh_layout = std_mesh_pipeline.layout;
+	PSHINE_DEBUG("created std_mesh_pipeline");
 
 	struct vulkan_pipeline skybox_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/skybox.vert.spv",
@@ -2597,7 +3167,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		},
 		.blend = false,
 		.depth_test = true,
-		.vertex_input = false,
+		.vertex_kind = false,
 		.lines = false,
 		.triangle_strip = true,
 		.layout_name = "skybox pipeline layout",
@@ -2615,12 +3185,12 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		.set_layout_count = 3,
 		.set_layouts = (VkDescriptorSetLayout[]){
 			r->descriptors.global_layout,
-			r->descriptors.material_layout,
+			r->descriptors.planet_material_layout,
 			r->descriptors.atmo_layout,
 		},
 		.blend = false,
 		.depth_test = false,
-		.vertex_input = false,
+		.vertex_kind = false,
 		.layout_name = "atmosphere pipeline layout",
 		.pipeline_name = "atmosphere pipeline",
 	});
@@ -2647,7 +3217,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		},
 		.blend = false,
 		.depth_test = false,
-		.vertex_input = false,
+		.vertex_kind = false,
 		.layout_name = "blit pipeline layout",
 		.pipeline_name = "blit pipeline",
 	});
@@ -2795,10 +3365,10 @@ static void init_pipelines(struct vulkan_renderer *r) {
 }
 
 static void deinit_pipelines(struct vulkan_renderer *r) {
-	vkDestroyPipeline(r->device, r->pipelines.mesh_pipeline, nullptr);
-	vkDestroyPipelineLayout(r->device, r->pipelines.mesh_layout, nullptr);
-	vkDestroyPipeline(r->device, r->pipelines.color_mesh_pipeline, nullptr);
-	vkDestroyPipelineLayout(r->device, r->pipelines.color_mesh_layout, nullptr);
+	vkDestroyPipeline(r->device, r->pipelines.planet_mesh_pipeline, nullptr);
+	vkDestroyPipelineLayout(r->device, r->pipelines.planet_mesh_layout, nullptr);
+	vkDestroyPipeline(r->device, r->pipelines.planet_color_mesh_pipeline, nullptr);
+	vkDestroyPipelineLayout(r->device, r->pipelines.planet_color_mesh_layout, nullptr);
 	vkDestroyPipeline(r->device, r->pipelines.atmo_pipeline, nullptr);
 	vkDestroyPipelineLayout(r->device, r->pipelines.atmo_layout, nullptr);
 	vkDestroyPipeline(r->device, r->pipelines.atmo_lut_pipeline, nullptr);
@@ -2936,8 +3506,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
 		}
-	}, nullptr, &r->descriptors.material_layout);
-	NAME_VK_OBJECT(r, r->descriptors.material_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "material descriptor set layout");
+	}, nullptr, &r->descriptors.planet_material_layout);
+	NAME_VK_OBJECT(r, r->descriptors.planet_material_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "planet material descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -2948,8 +3518,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 		}
-	}, nullptr, &r->descriptors.static_mesh_layout);
-	NAME_VK_OBJECT(r, r->descriptors.static_mesh_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "static mesh descriptor set layout");
+	}, nullptr, &r->descriptors.planet_mesh_layout);
+	NAME_VK_OBJECT(r, r->descriptors.planet_mesh_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "planet static mesh descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -3084,14 +3654,68 @@ static void init_descriptors(struct vulkan_renderer *r) {
 		}
 	}, nullptr, &r->descriptors.downsample_bloom_layout);
 	NAME_VK_OBJECT(r, r->descriptors.downsample_bloom_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "downsample&bloom descriptor set layout");
+
+	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 5,
+		.pBindings = (VkDescriptorSetLayoutBinding[5]){
+			(VkDescriptorSetLayoutBinding){
+				.binding = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			// Diffuse
+			(VkDescriptorSetLayoutBinding){
+				.binding = 1,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			// Roughness + Metallic + Occlusion
+			(VkDescriptorSetLayoutBinding){
+				.binding = 2,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			// Normal
+			(VkDescriptorSetLayoutBinding){
+				.binding = 3,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			// Emission
+			(VkDescriptorSetLayoutBinding){
+				.binding = 4,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+		}
+	}, nullptr, &r->descriptors.std_material_layout);
+	NAME_VK_OBJECT(r, r->descriptors.std_material_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "std material descriptor set layout");
+
+	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 1,
+		.pBindings = &(VkDescriptorSetLayoutBinding){
+			.binding = 0,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+		}
+	}, nullptr, &r->descriptors.std_mesh_layout);
+	NAME_VK_OBJECT(r, r->descriptors.std_mesh_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "std static mesh descriptor set layout");
 }
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
 	vkDestroyDescriptorPool(r->device, r->descriptors.pool, nullptr);
 	vkDestroyDescriptorPool(r->device, r->descriptors.pool_imgui, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.global_layout, nullptr);
-	vkDestroyDescriptorSetLayout(r->device, r->descriptors.material_layout, nullptr);
-	vkDestroyDescriptorSetLayout(r->device, r->descriptors.static_mesh_layout, nullptr);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.planet_material_layout, nullptr);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.planet_mesh_layout, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.atmo_layout, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.atmo_lut_layout, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.blit_layout, nullptr);
@@ -3099,6 +3723,8 @@ static void deinit_descriptors(struct vulkan_renderer *r) {
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.skybox_layout, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.downsample_bloom_layout, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.upsample_bloom_layout, nullptr);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.std_material_layout, nullptr);
+	vkDestroyDescriptorSetLayout(r->device, r->descriptors.std_mesh_layout, nullptr);
 }
 
 
@@ -3486,6 +4112,11 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	for (size_t i = 0; i < r->game->star_system_count; ++i) {
 		deinit_star_system(r, &r->game->star_systems_own[i]);
 	}
+	
+	for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
+		if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) continue;
+		deallocate_buffer(r, r->game->ships.ptr[i].graphics_data->uniform_buffer);
+	}
 
 	vkDestroySampler(r->device, r->skybox_sampler, nullptr);
 	vkDestroySampler(r->device, r->atmo_lut_sampler, nullptr);
@@ -3496,11 +4127,33 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 		destroy_mesh(r, &r->own_sphere_meshes[i]);
 	free(r->own_sphere_meshes);
 
-	for (size_t i = 0; i < r->image_cache.dyna.count; ++i) {
-		deallocate_image(r, r->image_cache.ptr[i].image);
-		free(r->image_cache.ptr[i].fpath_own);
-		r->image_cache.ptr[i].fpath_own = nullptr;
+	for (size_t i = 0; i < r->model_store.dyna.count; ++i) {
+		if (r->model_store.ptr[i]._alive_marker != (size_t)-1) continue;
+		struct vulkan_mesh_model *model = &r->model_store.ptr[i].model;
+		for (size_t j = 0; j < model->part_count; ++j) {
+			destroy_mesh(r, &model->parts_own[j].mesh);
+		}
+		free(model->parts_own);
+		for (size_t j = 0; j < model->material_count; ++j) {
+			deallocate_buffer(r, model->materials_own[j].uniform_buffer);
+			deallocate_image(r, model->materials_own[j].images.ao_metallic_roughness);
+			deallocate_image(r, model->materials_own[j].images.diffuse);
+			deallocate_image(r, model->materials_own[j].images.emissive);
+			deallocate_image(r, model->materials_own[j].images.normal);
+		}
+		free(model->materials_own);
+		free(r->model_store.ptr[i].fpath_own);
+		r->model_store.ptr[i].fpath_own = nullptr;
 	}
+	pshine_free_dyna_(&r->model_store.dyna);
+
+	for (size_t i = 0; i < r->image_store.dyna.count; ++i) {
+		if (r->image_store.ptr[i]._alive_marker != (size_t)-1) continue;
+		deallocate_image(r, r->image_store.ptr[i].image);
+		free(r->image_store.ptr[i].fpath_own);
+		r->image_store.ptr[i].fpath_own = nullptr;
+	}
+	pshine_free_dyna_(&r->image_store.dyna);
 
 	deinit_imgui(r);
 	deinit_frames(r);
@@ -3573,24 +4226,42 @@ static void do_frame(
 
 	double aspect_ratio = r->swapchain_extent.width /(double) r->swapchain_extent.height;
 	double4x4 view_mat = {};
-	setdouble4x4iden(&view_mat);
-	setdouble4x4lookat(
-		&view_mat,
-		camera_pos_scs,
-		double3add(camera_pos_scs, double3vs(r->game->camera_forward.values)),
-		double3xyz(0.0, 1.0, 0.0)
-	);
+	{
+		float3x3 rot_mat_32;
+		setfloat3x3rotationR(&rot_mat_32, floatRinverse(floatRvs(r->game->camera_orientation.values)));
+		double4x4 rot_mat;
+		rot_mat.v4s[0] = double4xyz3w(double3_float3(rot_mat_32.v3s[0]), 0.0);
+		rot_mat.v4s[1] = double4xyz3w(double3_float3(rot_mat_32.v3s[1]), 0.0);
+		rot_mat.v4s[2] = double4xyz3w(double3_float3(rot_mat_32.v3s[2]), 0.0);
+		rot_mat.v4s[3] = double4xyz3w(double3v0(), 1.0);
+
+		double4x4 trans_mat;
+		setdouble4x4trans(&trans_mat, double3neg(camera_pos_scs));
+
+		view_mat = trans_mat;
+		double4x4mul(&view_mat, &rot_mat);
+	}
+	// setdouble4x4lookat(
+	// 	&view_mat,
+	// 	camera_pos_scs,
+	// 	double3add(camera_pos_scs, double3vs(r->game->camera_forward.values)),
+	// 	double3xyz(0.0, 1.0, 0.0)
+	// );
 
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
+	double4x4 near_proj_mat = {};
+	setdouble4x4persp(&near_proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, 0.0001);
+	float4x4 near_proj_mat32 = float4x4_double4x4(near_proj_mat);
+
 	double4x4 proj_mat = {};
-	struct double4x4persp_info persp_info = setdouble4x4persp(&proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, 0.01);
+	struct double4x4persp_info persp_info = setdouble4x4persp(
+		&proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, 0.0001);
 	float4x4 proj_mat32 = float4x4_double4x4(proj_mat);
 
 	{
-		float3 cam_y = float3xyz(0.0f, 1.0f, 0.0f);
-		float3 cam_z = float3_double3(double3norm(double3vs(r->game->camera_forward.values)));
-		float3 cam_x = float3norm(float3cross(cam_y, cam_z));
-		cam_y = float3norm(float3cross(cam_z, cam_x));
+		float3 cam_x = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(1, 0, 0));
+		float3 cam_y = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 1, 0));
+		float3 cam_z = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1));
 		double3 cam_pos = camera_pos_scs;
 		double3 sun_pos = double3v0();
 		struct global_uniform_data new_data = {
@@ -3606,6 +4277,54 @@ static void do_frame(
 		vmaUnmapMemory(r->allocator, r->data.global_uniform_buffer.allocation);
 	}
 
+	for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
+		if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) continue;
+		struct pshine_ship *ship = &r->game->ships.ptr[i];
+		struct std_mesh_uniform_data new_data = {};
+		double4x4 model_mat = {};
+		setdouble4x4iden(&model_mat);
+
+		float3x3 model_rot_mat3;
+		setfloat3x3rotationR(&model_rot_mat3, floatRvs(ship->orientation.values));
+		double4x4 model_rot_mat;
+		model_rot_mat.v4s[0] = double4xyz3w(double3_float3(model_rot_mat3.v3s[0]), 0.0);
+		model_rot_mat.v4s[1] = double4xyz3w(double3_float3(model_rot_mat3.v3s[1]), 0.0);
+		model_rot_mat.v4s[2] = double4xyz3w(double3_float3(model_rot_mat3.v3s[2]), 0.0);
+		model_rot_mat.v4s[3] = double4xyz3w(double3v0(), 1.0);
+
+		double4x4 model_trans_mat;
+		setdouble4x4trans(&model_trans_mat, SCSd3_WCSp3(ship->position));
+		double4x4 model_scale_mat;
+		setdouble4x4scale(&model_scale_mat, double3v(ship->scale * PSHINE_SCS_FACTOR));
+
+		double4x4 unscaled_model = ship->graphics_data->model.transform;
+		double4x4mul(&unscaled_model, &model_rot_mat);
+
+		double4x4mul(&model_mat, &ship->graphics_data->model.transform);
+		double4x4mul(&model_mat, &model_rot_mat);
+		double4x4mul(&model_mat, &model_scale_mat);
+		double4x4mul(&model_mat, &model_trans_mat);
+
+		double4x4 model_view_mat = model_mat;
+		double4x4mul(&model_view_mat, &view_mat);
+		new_data.model_view = float4x4_double4x4(model_view_mat);
+		new_data.model = float4x4_double4x4(model_mat);
+		new_data.unscaled_model = float4x4_double4x4(unscaled_model);
+		new_data.proj = near_proj_mat32;
+
+		double3 sun_pos = double3v0();
+		double3 body_pos = SCSd3_WCSp3(ship->position);
+		new_data.sun = float4xyz3w(float3_double3(double3norm(double3sub(sun_pos, body_pos))), 1.0f);
+
+		new_data.rel_cam_pos = float4xyz3w(float3_double3(double3sub(camera_pos_scs, body_pos)), 0.0);
+
+		vmaCopyMemoryToAllocation(
+			r->allocator, &new_data, ship->graphics_data->uniform_buffer.allocation,
+			get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * current_frame,
+			sizeof(new_data)
+		);
+	}
+	
 	struct pshine_star_system *current_system = &r->game->star_systems_own[r->game->current_star_system];
 
 	for (size_t i = 0; i < current_system->body_count; ++i) {
@@ -3613,7 +4332,7 @@ static void do_frame(
 
 		// Upload static mesh data.
 		{
-			struct static_mesh_uniform_data new_data = {};
+			struct planet_mesh_uniform_data new_data = {};
 			double4x4 model_mat = {};
 			setdouble4x4iden(&model_mat);
 			double4x4 model_rot_mat = {0};
@@ -3694,7 +4413,7 @@ static void do_frame(
 			}
 			char *data_raw;
 			vmaMapMemory(r->allocator, uniform_buffer->allocation, (void**)&data_raw);
-			data_raw += get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame;
+			data_raw += get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame;
 			memcpy(data_raw, &new_data, sizeof(new_data));
 			vmaUnmapMemory(r->allocator, uniform_buffer->allocation);
 			// Rings
@@ -3782,12 +4501,12 @@ static void do_frame(
 			// Upload material data.
 			// TODO: check if this access is valid (why no current_frame)
 			{
-				struct material_uniform_data new_data = {
+				struct planet_material_uniform_data new_data = {
 					.color = float4rgba(0.8f, 0.3f, 0.1f, 1.0f),
-					.view_dir = float3_double3(double3vs(r->game->camera_forward.values)),
+					.view_dir = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1)),
 					.smoothness = r->game->material_smoothness_,
 				};
-				struct material_uniform_data *data;
+				struct planet_material_uniform_data *data;
 				vmaMapMemory(r->allocator, p->graphics_data->material_uniform_buffer.allocation, (void**)&data);
 				memcpy(data, &new_data, sizeof(new_data));
 				vmaUnmapMemory(r->allocator, p->graphics_data->material_uniform_buffer.allocation);
@@ -3853,7 +4572,7 @@ static void do_frame(
 	// vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.tri_pipeline);
 	// vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
 
-	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.mesh_pipeline);
+	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.planet_mesh_pipeline);
 	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
 		.x = 0.0f,
 		.y = 0.0f,
@@ -3871,7 +4590,7 @@ static void do_frame(
 			vkCmdBindDescriptorSets(
 				f->command_buffer,
 				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.mesh_layout,
+				r->pipelines.planet_mesh_layout,
 				0,
 				2,
 				(VkDescriptorSet[]){ r->data.global_descriptor_set, p->graphics_data->material_descriptor_set },
@@ -3885,12 +4604,12 @@ static void do_frame(
 			vkCmdBindDescriptorSets(
 				f->command_buffer,
 				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.mesh_layout,
+				r->pipelines.planet_mesh_layout,
 				2,
 				1,
 				&p->graphics_data->descriptor_set,
 				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame
+					get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame
 				}
 			);
 			vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
@@ -3899,7 +4618,7 @@ static void do_frame(
 		}
 	}
 
-	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.color_mesh_pipeline);
+	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.planet_color_mesh_pipeline);
 	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
 		.x = 0.0f,
 		.y = 0.0f,
@@ -3912,7 +4631,7 @@ static void do_frame(
 	vkCmdBindDescriptorSets(
 		f->command_buffer,
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		r->pipelines.mesh_layout,
+		r->pipelines.planet_mesh_layout,
 		0,
 		1,
 		(VkDescriptorSet[]){ r->data.global_descriptor_set },
@@ -3933,19 +4652,19 @@ static void do_frame(
 				),
 				p->temperature / 20.0f
 			);
-			vkCmdPushConstants(f->command_buffer, r->pipelines.color_mesh_layout,
+			vkCmdPushConstants(f->command_buffer, r->pipelines.planet_color_mesh_layout,
 				VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float4), &color);
 			size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
 			if (lod >= r->sphere_mesh_count) lod = r->sphere_mesh_count - 1;
 			vkCmdBindDescriptorSets(
 				f->command_buffer,
 				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.color_mesh_layout,
+				r->pipelines.planet_color_mesh_layout,
 				1,
 				1,
 				&p->graphics_data->descriptor_set,
 				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct static_mesh_uniform_data)) * current_frame
+					get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame
 				}
 			);
 			vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
@@ -3984,6 +4703,47 @@ static void do_frame(
 		}
 	}
 
+	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_pipeline);
+	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+		.x = 0.0f,
+		.y = 0.0f,
+		.width = (float)r->swapchain_extent.width,
+		.height = (float)r->swapchain_extent.height,
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f,
+	});
+	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
+	for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
+		/// Technically, accessing this might be UB if this is not a valid marker,
+		/// but no compilers care because most code relies on this being non-UB.
+		if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) {
+			continue;
+		}
+		struct pshine_ship *ship = &r->game->ships.ptr[i];
+		vkCmdBindDescriptorSets(
+			f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_layout,
+			2, 1, (VkDescriptorSet[]){ ship->graphics_data->descriptor_set },
+			1, (uint32_t[]){
+				get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * current_frame
+			}
+		);
+		for (size_t j = 0; j < ship->graphics_data->model.material_count; ++j) {
+			vkCmdBindDescriptorSets(
+				f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_layout,
+				1, 1, (VkDescriptorSet[]){ ship->graphics_data->model.materials_own[j].descriptor_set },
+				1, (uint32_t[]){
+					get_padded_uniform_buffer_size(r, sizeof(struct std_material_uniform_data)) * current_frame
+				}
+			);
+			for (size_t k = 0; k < ship->graphics_data->model.part_count; ++k) {
+				if (ship->graphics_data->model.parts_own[k].material_index != j) continue;
+				struct vulkan_mesh *mesh = &ship->graphics_data->model.parts_own[k].mesh;
+				vkCmdBindIndexBuffer(f->command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+				vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &mesh->vertex_buffer.buffer, &(VkDeviceSize){0});
+				vkCmdDrawIndexed(f->command_buffer, mesh->index_count, 1, 0, 0, 0);
+			}
+		}
+	}
 
 	// Skybox
 	{
@@ -4450,15 +5210,22 @@ static void show_gizmos(struct vulkan_renderer *r) {
 	ImVec2 display_size = ImGui_GetIO()->DisplaySize;
 	double2 screen_size = double2xy(display_size.x, display_size.y);
 	double aspect_ratio = screen_size.x / screen_size.y;
-	double4x4 view_mat = {};
 	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);
-	setdouble4x4iden(&view_mat);
-	setdouble4x4lookat(
-		&view_mat,
-		camera_pos_scs,
-		double3add(camera_pos_scs, double3vs(r->game->camera_forward.values)),
-		double3xyz(0.0, 1.0, 0.0)
-	);
+
+	float3x3 rot_mat_32;
+	setfloat3x3rotationR(&rot_mat_32, floatRinverse(floatRvs(r->game->camera_orientation.values)));
+	double4x4 rot_mat;
+	rot_mat.v4s[0] = double4xyz3w(double3_float3(rot_mat_32.v3s[0]), 0.0);
+	rot_mat.v4s[1] = double4xyz3w(double3_float3(rot_mat_32.v3s[1]), 0.0);
+	rot_mat.v4s[2] = double4xyz3w(double3_float3(rot_mat_32.v3s[2]), 0.0);
+	rot_mat.v4s[3] = double4xyz3w(double3v0(), 1.0);
+
+	double4x4 trans_mat;
+	setdouble4x4trans(&trans_mat, double3neg(camera_pos_scs));
+
+	double4x4 view_mat = trans_mat;
+	double4x4mul(&view_mat, &rot_mat);
+
 	double4x4 proj_mat = {};
 	setdouble4x4iden(&proj_mat);
 	double znear = 0.01;
