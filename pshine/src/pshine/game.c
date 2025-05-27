@@ -6,6 +6,7 @@
 #include <cimgui/cimgui.h>
 #include <toml.h>
 #include <errno.h>
+#include <float.h>
 
 // Note: the math in this file is best viewed
 //       with the Julia Mono font, or with UnifontEx.
@@ -105,6 +106,65 @@ static struct time_format_params compute_time_format_params(double secs) {
 	r.years = trunc(r.months / 12.0); r.months = fmod(r.months, 12.0);
 	return r;
 }
+
+struct keybind {
+	enum pshine_key key;
+	const char *name;
+};
+
+struct keybinds {
+	const char *name;
+	struct keybind *keys;
+};
+
+enum {
+	KEYBIND_SHIP_THROTTLE_INC,
+	KEYBIND_SHIP_THROTTLE_DEC,
+	KEYBIND_SHIP_PITCH_UP,
+	KEYBIND_SHIP_PITCH_DOWN,
+	KEYBIND_SHIP_ROLL_LEFT,
+	KEYBIND_SHIP_ROLL_RIGHT,
+	KEYBIND_SHIP_YAW_LEFT,
+	KEYBIND_SHIP_YAW_RIGHT,
+};
+
+static struct keybinds keybinds_ship_movement = {
+	.name = "ship_movement",
+	.keys = (struct keybind[]){
+		[KEYBIND_SHIP_THROTTLE_INC] = (struct keybind){
+			.key = PSHINE_KEY_LEFT_SHIFT,
+			.name = "Throttle Increase",
+		},
+		[KEYBIND_SHIP_THROTTLE_DEC] = (struct keybind){
+			.key = PSHINE_KEY_LEFT_CONTROL,
+			.name = "Throttle Decrease",
+		},
+		[KEYBIND_SHIP_PITCH_UP] = (struct keybind){
+			.key = PSHINE_KEY_S,
+			.name = "Pitch Up",
+		},
+		[KEYBIND_SHIP_PITCH_DOWN] = (struct keybind){
+			.key = PSHINE_KEY_W,
+			.name = "Pitch Down",
+		},
+		[KEYBIND_SHIP_ROLL_LEFT] = (struct keybind){
+			.key = PSHINE_KEY_E,
+			.name = "Roll Right",
+		},
+		[KEYBIND_SHIP_ROLL_RIGHT] = (struct keybind){
+			.key = PSHINE_KEY_Q,
+			.name = "Roll Left",
+		},
+		[KEYBIND_SHIP_YAW_LEFT] = (struct keybind){
+			.key = PSHINE_KEY_A,
+			.name = "Yaw Left",
+		},
+		[KEYBIND_SHIP_YAW_RIGHT] = (struct keybind){
+			.key = PSHINE_KEY_D,
+			.name = "Yaw Right",
+		},
+	},
+};
 
 typedef struct pshine_planet_vertex planet_vertex;
 
@@ -541,6 +601,7 @@ struct pshine_game_data {
 	size_t selected_body;
 	struct eximgui_state eximgui_state;
 	bool is_control_precise;
+	struct keybinds *keybinds_ship_movement;
 };
 
 static void load_star_system_config(struct pshine_game *game, struct pshine_star_system *out, const char *fpath) {
@@ -671,22 +732,10 @@ void pshine_init_game(struct pshine_game *game) {
 	game->time_scale = 1.0;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
 	load_game_config(game, "data/config.toml");
-	// game->celestial_bodies_own[4] = load_celestial_body("data/celestial/moon.toml");
-	// game->celestial_bodies_own[3] = load_celestial_body("data/celestial/venus.toml");
-	// game->celestial_bodies_own[2] = load_celestial_body("data/celestial/mars.toml");
-	// game->celestial_bodies_own[1] = load_celestial_body("data/celestial/sun.toml");
-	// game->celestial_bodies_own[0] = load_celestial_body("data/celestial/earth.toml");
 
 	for (size_t i = 0; i < game->star_system_count; ++i) {
 		init_star_system(game, &game->star_systems_own[i]);
 	}
-
-	// game->celestial_bodies_own[1] = calloc(1, sizeof(struct pshine_star));
-	// init_star((void*)game->celestial_bodies_own[1]);
-	// game->celestial_bodies_own[0] = calloc(1, sizeof(struct pshine_planet));
-	// init_planet((void*)game->celestial_bodies_own[0], game->celestial_bodies_own[1], 6'371'000.0, double3v0());
-	// game->celestial_bodies_own[1] = calloc(2, sizeof(struct pshine_planet));
-	// init_planet((void*)game->celestial_bodies_own[1], 5.0, double3xyz(0.0, -1'000'000.0, 0.0));
 
 	{
 		size_t idx = PSHINE_DYNA_ALLOC(game->ships);
@@ -697,9 +746,10 @@ void pshine_init_game(struct pshine_game *game) {
 		game->ships.ptr[idx].position.xyz.x = 23058677.647 * PSHINE_SCS_SCALE;
 		game->ships.ptr[idx].position.xyz.y = -363.291 * PSHINE_SCS_SCALE;
 		game->ships.ptr[idx].position.xyz.z = 10228938.562 * PSHINE_SCS_SCALE;
-		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(π / 2, 0, 0);
-		// *(floatR*)game->ships.ptr[idx].orientation.values = floatRwxyz(1, 0, 0, 0);
+		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(0, 0, 0);
 		game->ships.ptr[idx].scale = 4.0;
+		game->ships.ptr[idx].max_atmo_velocity = 550.0;
+		game->ships.ptr[idx].max_space_velocity = 8600.0;
 	}
 
 	if (game->star_system_count <= 0) {
@@ -725,6 +775,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->graphics_settings.bloom_threshold = 7.0;
 	game->material_smoothness_ = 0.02;
 	game->data_own->is_control_precise = false;
+	game->data_own->keybinds_ship_movement = &keybinds_ship_movement;
 
 	eximgui_state_init(&game->data_own->eximgui_state);
 }
@@ -1577,42 +1628,81 @@ static void science_gui(struct pshine_game *game, float actual_delta_time) {
 	ImGui_End();
 }
 
-static void update_ships(struct pshine_game *game, float delta_time) {
-	floatR ship_orient = floatRvs(game->ships.ptr[0].orientation.values);
-	double3 ship_pos = double3vs(game->ships.ptr[0].position.values);
+static void update_ship(struct pshine_game *game, struct pshine_ship *ship, float delta_time) {
+	{
+		double min_dist = DBL_MAX;
+		for (size_t i = 0; i < game->star_systems_own[game->current_star_system].body_count; ++i) {
+			struct pshine_celestial_body *body = game->star_systems_own[game->current_star_system].bodies_own[i];
+			double3 body_pos = double3vs(body->position.values);
+			double3 ship_pos = double3vs(ship->position.values);
+			double dist = double3mag2(double3sub(body_pos, ship_pos));
+			if (dist < min_dist) {
+				min_dist = dist;
+				ship->closest_body = body;
+				ship->closest_body_distance = sqrt(dist);
+			}
+		}
+	}
+
+
+	struct keybinds *kbd = game->data_own->keybinds_ship_movement;
+	floatR ship_orient = floatRvs(ship->orientation.values);
+	double3 ship_pos = double3vs(ship->position.values);
 	{
 		float3 delta = {};
-		if (pshine_is_key_down(game->renderer, PSHINE_KEY_LEFT)) delta.x += 1.0;
-		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_RIGHT)) delta.x -= 1.0;
-		if (pshine_is_key_down(game->renderer, PSHINE_KEY_UP)) delta.y += 1.0;
-		else if (pshine_is_key_down(game->renderer, PSHINE_KEY_DOWN)) delta.y -= 1.0;
-		double rot_speed = ROTATE_SPEED * (game->data_own->is_control_precise ? 0.01 : 1.0);
+		
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_PITCH_UP].key)) delta.y += 1.0;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_PITCH_DOWN].key)) delta.y -= 1.0;
+
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_YAW_RIGHT].key)) delta.x += 1.0;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_YAW_LEFT].key)) delta.x -= 1.0;
+		
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_ROLL_RIGHT].key)) delta.z += 1.0;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_ROLL_LEFT].key)) delta.z -= 1.0;
+
+		float rot_speed = ROTATE_SPEED * (game->data_own->is_control_precise ? 0.01 : 1.0);
 		
 		float pitch = -delta.y * rot_speed * delta_time;
-		float yaw = -delta.x * rot_speed * delta_time;
-		floatR delta_orient = floatReuler(pitch, yaw, 0);
+		float yaw = delta.x * rot_speed * delta_time;
+		float roll = delta.z * rot_speed * delta_time;
+		floatR delta_orient = floatReuler(pitch, yaw, roll);
 		ship_orient = floatRcombine(ship_orient, delta_orient);
 	}
+	
 	{
-		float3 delta = {};
-		if (pshine_is_key_down(game->renderer, K_RIGHT)) delta.x += 1.0;
-		else if (pshine_is_key_down(game->renderer, K_LEFT)) delta.x -= 1.0;
-		if (pshine_is_key_down(game->renderer, K_UP)) delta.y += 1.0;
-		else if (pshine_is_key_down(game->renderer, K_DOWN)) delta.y -= 1.0;
-		if (pshine_is_key_down(game->renderer, K_FORWARD)) delta.z += 1.0;
-		else if (pshine_is_key_down(game->renderer, K_BACKWARD)) delta.z -= 1.0;
-		delta = floatRapply(ship_orient, delta);
-		ship_pos = double3add(ship_pos, double3mul(double3norm(double3_float3(delta)),
-			game->data_own->move_speed * delta_time));
+		double delta = 0.0f;
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_THROTTLE_INC].key)) delta += 1.0;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_THROTTLE_DEC].key)) delta -= 1.0;
+		delta *= delta_time * 1000.0f;
+		ship->velocity += delta * 5.0;
+		double height = 0.0; /* 0-1 */
+		bool inside_atmosphere = false;
+		if (ship->closest_body->type == PSHINE_CELESTIAL_BODY_PLANET) {
+			struct pshine_planet *planet = (void*)ship->closest_body;
+			height = ship->closest_body_distance - ship->closest_body->radius;
+			height /= planet->atmosphere.height;
+			inside_atmosphere = height <= 1.0;
+		}
+		if (inside_atmosphere) {
+			double t = exp(-height) * (1 - height);
+			ship->current_max_velocity = lerpd(ship->max_space_velocity, ship->max_atmo_velocity, t * t);
+		} else {
+			ship->current_max_velocity = ship->max_space_velocity;
+		}
+		ship->velocity = clampd(ship->velocity, 0, ship->current_max_velocity);
 	}
-	*(double3*)game->ships.ptr[0].position.values = ship_pos;
-	*(floatR*)game->ships.ptr[0].orientation.values = ship_orient;
+	{
+		float3 delta = floatRapply(ship_orient, float3xyz(0, 0, 1));
+		ship_pos = double3add(ship_pos, double3mul(double3_float3(delta), ship->velocity * delta_time));
+	}
+	*(double3*)ship->position.values = ship_pos;
+	*(floatR*)ship->orientation.values = ship_orient;
 }
 
 static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	struct pshine_ship *ship = &game->ships.ptr[0];
 	floatR ship_orient = floatRvs(ship->orientation.values);
-	double3 right   = double3_float3(floatRapply(ship_orient, float3xyz(1, 0, 0)));
+	// double3 right= double3_float3(floatRapply(ship_orient, float3xyz(1, 0, 0)));
 	double3 up      = double3_float3(floatRapply(ship_orient, float3xyz(0, 1, 0)));
 	double3 forward = double3_float3(floatRapply(ship_orient, float3xyz(0, 0, 1)));
 	double3 pos = double3vs(ship->position.values);
@@ -1628,7 +1718,7 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 		update_star_system(game, &game->star_systems_own[i], actual_delta_time * game->time_scale);
 	}
 
-	update_ships(game, actual_delta_time);
+	update_ship(game, &game->ships.ptr[0], actual_delta_time);
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_P) && !game->data_own->last_key_states[PSHINE_KEY_P]) {
 		game->data_own->is_control_precise = !game->data_own->is_control_precise;
@@ -1850,8 +1940,14 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 		}
 		ImGui_End();
 
+		if (ImGui_Begin("Ship", nullptr, 0)) {
+			ImGui_Text("Max Velocity: %.1f", game->ships.ptr[0].current_max_velocity);
+			ImGui_Text("Velocity: %.1f", game->ships.ptr[0].velocity);
+		}
+		ImGui_End();
+
 		if (body->type == PSHINE_CELESTIAL_BODY_PLANET) {
-			if (ImGui_Begin("Planet", NULL, 0)) {
+			if (ImGui_Begin("Planet", nullptr, 0)) {
 				struct pshine_planet *planet = (struct pshine_planet*)body;
 				ImGui_BeginDisabled(!planet->has_atmosphere);
 				if (eximgui_begin_input_box("Atmosphere", "The paramters of the planet's atmosphere. You may need to recalculate the LUT.")) {

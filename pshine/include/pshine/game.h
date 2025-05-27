@@ -235,15 +235,28 @@ struct pshine_ship {
 	size_t _alive_marker;
 	char* name_own;
 	char* callcode_own;
+
 	/// Used for initialization and debugging.
 	char* model_file_own;
-	pshine_point3d_world position;
-	/// In m/s.
-	pshine_vector3d velocity;
-	pshine_rotor orientation;
+
 	/// Mesh scale.
 	double scale;
 	struct pshine_ship_graphics_data* graphics_data;
+
+	pshine_point3d_world position;
+	pshine_rotor orientation;
+
+	/// In m/s.
+	double velocity, max_atmo_velocity, max_space_velocity;
+
+	/// The next properties are calculated during the ship's update
+
+	/// In m/s.
+	double current_max_velocity;
+
+	/// In meters.
+	double closest_body_distance;
+	struct pshine_celestial_body *closest_body;
 };
 
 typedef struct { int32_t x; } pshine_snorm32;
