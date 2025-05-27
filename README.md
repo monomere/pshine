@@ -15,6 +15,7 @@ Atmosphere and meshing playground. WIP.
   - [ ] Non-elliptic orbits untested.
 - [ ] Terrain generation, textures.
   - [x] Textures.
+  - [ ] Working on terrain in the [`terrain` branch](https://github.com/monomere/pshine/tree/terrain).
 - [ ] Mesh LOD.
   - [x] Primitive sphere LODs.
 
@@ -160,6 +161,15 @@ Key|Action
 <kbd>F2</kbd> | Hide all UI
 <kbd>Shift+F2</kbd> | Only hide the debug windows
 
+#### Ship Mode
+
+Key|Action
+---|---
+<kbd>A</kbd>/<kbd>D</kbd> | Yaw
+<kbd>W</kbd>/<kbd>S</kbd> | Pitch
+<kbd>W</kbd>/<kbd>S</kbd> | Roll
+<kbd>Shift</kbd>/<kbd>Ctrl</kbd> | Increase/decrease velocity
+
 #### Arcball Mode
 
 Key|Action
@@ -189,12 +199,12 @@ Key|Action
 - [x] Bug: ~~mesh scale is wrong~~ forgot to remove `* 5.0f` when passing atmosphere height.
 - [x] ~~The bug is still there :(~~ ~~nevermind, it was correct all along.~~ ~~no, its still a bug....~~
   - [X] THE BUG IS FIXED IT WORKSSS (precision errors)
-- [ ] Separate materials for planets and meshes.
+- [x] Separate materials for planets and meshes.
 - [ ] Better API for materials? Maybe data-driven.
 - [ ] Fix rotation matrices, and matrices in general.
   - [x] Kinda did it? I'm not sure.
 - [ ] Rewrite the math library generation, its so ugly.
-- [ ] Stars
+- [x] Stars
 - [ ] Use near-origin coordinates for the "player".
 - [ ] Velocity reference-frame.
 - [ ] Clean up the renderer (`vk.c`), maybe move to C-ish C++ because its slowly
