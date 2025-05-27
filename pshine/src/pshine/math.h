@@ -23,7 +23,7 @@ MATH_FN_ float maxf(float a, float b) { return a > b ? a : b; }
 /// Return the element-wise clamped components of a value.
 MATH_FN_ float clampf(float x, float a, float b) { return minf(maxf(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
-MATH_FN_ float lerpf(float a, float b, float t) { return a * 1 - t + b * t; }
+MATH_FN_ float lerpf(float a, float b, float t) { return a * (1 - t) + b * t; }
 
 /// A 2-dimensional vector of floats.
 typedef union {
@@ -73,7 +73,7 @@ MATH_FN_ float2 float2max(float2 a, float2 b) { return (float2){{ a.vs[0] > b.vs
 /// Return the element-wise clamped components of a value.
 MATH_FN_ float2 float2clamp(float2 x, float2 a, float2 b) { return float2min(float2max(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
-MATH_FN_ float2 float2lerp(float2 a, float2 b, float t) { return float2add(float2mul(a, 1 - t), float2mul(b, t)); }
+MATH_FN_ float2 float2lerp(float2 a, float2 b, float t) { return float2add(float2mul(a, (1 - t)), float2mul(b, t)); }
 
 /// A 3-dimensional vector of floats.
 typedef union {
@@ -132,7 +132,7 @@ MATH_FN_ float3 float3max(float3 a, float3 b) { return (float3){{ a.vs[0] > b.vs
 /// Return the element-wise clamped components of a value.
 MATH_FN_ float3 float3clamp(float3 x, float3 a, float3 b) { return float3min(float3max(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
-MATH_FN_ float3 float3lerp(float3 a, float3 b, float t) { return float3add(float3mul(a, 1 - t), float3mul(b, t)); }
+MATH_FN_ float3 float3lerp(float3 a, float3 b, float t) { return float3add(float3mul(a, (1 - t)), float3mul(b, t)); }
 
 /// A 4-dimensional vector of floats.
 typedef union {
@@ -185,7 +185,7 @@ MATH_FN_ float4 float4max(float4 a, float4 b) { return (float4){{ a.vs[0] > b.vs
 /// Return the element-wise clamped components of a value.
 MATH_FN_ float4 float4clamp(float4 x, float4 a, float4 b) { return float4min(float4max(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
-MATH_FN_ float4 float4lerp(float4 a, float4 b, float t) { return float4add(float4mul(a, 1 - t), float4mul(b, t)); }
+MATH_FN_ float4 float4lerp(float4 a, float4 b, float t) { return float4add(float4mul(a, (1 - t)), float4mul(b, t)); }
 /// A float rotor, representing rotation in 3D space.
 typedef union {
 	struct { float s, xy, yz, zx; };
@@ -576,7 +576,7 @@ MATH_FN_ double maxd(double a, double b) { return a > b ? a : b; }
 /// Return the element-wise clamped components of a value.
 MATH_FN_ double clampd(double x, double a, double b) { return mind(maxd(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
-MATH_FN_ double lerpd(double a, double b, double t) { return a * 1 - t + b * t; }
+MATH_FN_ double lerpd(double a, double b, double t) { return a * (1 - t) + b * t; }
 
 /// A 2-dimensional vector of doubles.
 typedef union {
@@ -626,7 +626,7 @@ MATH_FN_ double2 double2max(double2 a, double2 b) { return (double2){{ a.vs[0] >
 /// Return the element-wise clamped components of a value.
 MATH_FN_ double2 double2clamp(double2 x, double2 a, double2 b) { return double2min(double2max(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
-MATH_FN_ double2 double2lerp(double2 a, double2 b, double t) { return double2add(double2mul(a, 1 - t), double2mul(b, t)); }
+MATH_FN_ double2 double2lerp(double2 a, double2 b, double t) { return double2add(double2mul(a, (1 - t)), double2mul(b, t)); }
 
 /// A 3-dimensional vector of doubles.
 typedef union {
@@ -685,7 +685,7 @@ MATH_FN_ double3 double3max(double3 a, double3 b) { return (double3){{ a.vs[0] >
 /// Return the element-wise clamped components of a value.
 MATH_FN_ double3 double3clamp(double3 x, double3 a, double3 b) { return double3min(double3max(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
-MATH_FN_ double3 double3lerp(double3 a, double3 b, double t) { return double3add(double3mul(a, 1 - t), double3mul(b, t)); }
+MATH_FN_ double3 double3lerp(double3 a, double3 b, double t) { return double3add(double3mul(a, (1 - t)), double3mul(b, t)); }
 
 /// A 4-dimensional vector of doubles.
 typedef union {
@@ -738,7 +738,7 @@ MATH_FN_ double4 double4max(double4 a, double4 b) { return (double4){{ a.vs[0] >
 /// Return the element-wise clamped components of a value.
 MATH_FN_ double4 double4clamp(double4 x, double4 a, double4 b) { return double4min(double4max(x, a), b); }
 /// Return the linear interpolation of two values by a scalar.
-MATH_FN_ double4 double4lerp(double4 a, double4 b, double t) { return double4add(double4mul(a, 1 - t), double4mul(b, t)); }
+MATH_FN_ double4 double4lerp(double4 a, double4 b, double t) { return double4add(double4mul(a, (1 - t)), double4mul(b, t)); }
 /// A double rotor, representing rotation in 3D space.
 typedef union {
 	struct { double s, xy, yz, zx; };

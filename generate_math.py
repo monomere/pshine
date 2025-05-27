@@ -223,7 +223,7 @@ MATH_FN_ `T `$max(`T a, `T b) { return `[`[a{0},b{0},$Tb,gt,$Gbinop\] ? a{0} : b
 /// Return the element-wise clamped components of a value.
 MATH_FN_ `T `$clamp(`T x, `T a, `T b) { return `[x,a,$max,b,$min]; }
 /// Return the linear interpolation of two values by a scalar.
-MATH_FN_ `T `$lerp(`T a, `T b, `B t) { return `[a,$bOne,t,$Tb,sub,$Gbinop,$muls,b,t,$muls,$add]; }
+MATH_FN_ `T `$lerp(`T a, `T b, `B t) { return `[a,$bOne,t,$Tb,sub,$Gbinop,$Paren,$muls,b,t,$muls,$add]; }
 """.rstrip()),
 	({"m"}, "{name} matrix", R"""
 /// A `[$Dim,0,$At,$Str] by `[$Dim,1,$At,$Str] matrix of `B.s.
@@ -677,6 +677,7 @@ def instantiate(ty: Ty, source: str, vars: dict[str, typing.Any]):
 		"tan": (1, fn_cmath("tan")),
 		"cos": (1, fn_cmath("cos")),
 		"sin": (1, fn_cmath("sin")),
+		"Paren": (1, lambda x: f"({x})"),
 		"Code": (1, lambda a: f"`{a}`"),
 	}
 
