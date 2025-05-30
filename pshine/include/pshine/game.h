@@ -315,6 +315,9 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer);
 void pshine_destroy_renderer(struct pshine_renderer *renderer);
 
 const uint8_t *pshine_get_key_states(struct pshine_renderer *renderer);
+const uint8_t *pshine_get_mouse_states(struct pshine_renderer *renderer);
+void pshine_get_mouse_position(struct pshine_renderer *renderer, double *x, double *y);
+void pshine_get_mouse_scroll_delta(struct pshine_renderer *renderer, double *x, double *y);
 
 struct pshine_graphics_settings {
 	float bloom_threshold;
@@ -339,6 +342,7 @@ struct pshine_game {
 
 	pshine_point3d_world camera_position;
 	pshine_rotor camera_orientation;
+	float actual_camera_fov;
 
 	struct pshine_graphics_settings graphics_settings;
 
@@ -498,6 +502,10 @@ enum pshine_key {
 
 static inline bool pshine_is_key_down(struct pshine_renderer *renderer, enum pshine_key key) {
 	return pshine_get_key_states(renderer)[key];
+}
+
+static inline bool pshine_is_mouse_down(struct pshine_renderer *renderer, int button) {
+	return pshine_get_mouse_states(renderer)[button];
 }
 
 #endif // PSHINE_GAME_H_

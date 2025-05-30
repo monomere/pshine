@@ -12,11 +12,11 @@ layout (location = 0) out vec3 o_position;
 layout (location = 1) out vec3 o_normal;
 layout (location = 2) out vec2 o_texcoord;
 
-layout (location = 3) out mat3 o_tbn;
-// layout (location = 3) out vec3 o_tangent_sun_dir;
-// layout (location = 4) out vec3 o_tangent_cam_pos;
-// layout (location = 5) out vec3 o_tangent_pos;
-// layout (location = 6) out vec3 o_tangent_normal;
+// layout (location = 3) out mat3 o_tbn;
+layout (location = 3) out vec3 o_tangent_sun_dir;
+layout (location = 4) out vec3 o_tangent_cam_pos;
+layout (location = 5) out vec3 o_tangent_pos;
+layout (location = 6) out vec3 o_tangent_normal;
 
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 2, binding = 0) uniform readonly BUFFER(StdMeshUniforms, mesh);
@@ -65,22 +65,24 @@ void main() {
 	o_normal = oct_to_float32x3(i_normal_oct);
 	vec3 tangent = decode_tangent(o_normal, i_tangent_dia);
 	o_texcoord = i_texcoord;
-	o_position = i_position;
 
 	mat3 unscaled_model = transpose(inverse(mat3(mesh.unscaled_model)));
+
+	o_position = i_position; // unscaled_model * 
+
 	vec3 T = normalize(unscaled_model * tangent);
 	vec3 N = normalize(unscaled_model * o_normal);
 	T = normalize(T - dot(T, N) * N);
 	vec3 B = cross(N, T);
 	mat3 TBN = mat3(T, B, N);
-	o_tbn = TBN;
-	// TBN = transpose(TBN);
+	// o_tbn = TBN;
+	TBN = transpose(TBN);
 
-	// vec3 local_model_pos = unscaled_model * i_position;
-	// o_tangent_sun_dir = TBN * mesh.sun.xyz;
-	// o_tangent_cam_pos = TBN * mesh.rel_cam_pos.xyz;
-	// o_tangent_pos = TBN * local_model_pos;
-	// o_tangent_normal = o_normal;
+	vec3 local_model_pos = unscaled_model * i_position;
+	o_tangent_sun_dir = TBN * -mesh.sun.xyz;
+	o_tangent_cam_pos = TBN * mesh.rel_cam_pos.xyz;
+	o_tangent_pos = TBN * local_model_pos;
+	o_tangent_normal = TBN * o_normal;
 
 	gl_Position = mesh.proj * mesh.model_view * vec4(i_position, 1.0);
 }

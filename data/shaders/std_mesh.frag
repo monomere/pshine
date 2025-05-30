@@ -10,11 +10,11 @@ layout (location = 0) in vec3 i_position;
 layout (location = 1) in vec3 i_normal;
 layout (location = 2) in vec2 i_texcoord;
 
-layout (location = 3) in mat3 i_tbn;
-// layout (location = 3) in vec3 i_tangent_sun_dir;
-// layout (location = 4) in vec3 i_tangent_cam_pos;
-// layout (location = 5) in vec3 i_tangent_pos;
-// layout (location = 6) in vec3 i_tangent_normal;
+// layout (location = 3) in mat3 i_tbn;
+layout (location = 3) in vec3 i_tangent_sun_dir;
+layout (location = 4) in vec3 i_tangent_cam_pos;
+layout (location = 5) in vec3 i_tangent_pos;
+layout (location = 6) in vec3 i_tangent_normal;
 
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = 1, binding = 0) uniform readonly BUFFER(StdMaterialUniforms, material);
@@ -75,17 +75,17 @@ void main() {
 	float roughness = ao_rough_metal.g;
 	float metallic = ao_rough_metal.b;
 
-	// vec3 k_normal = i_tangent_normal;
-	// vec3 k_pos = i_tangent_pos;
-	// vec3 k_cam_pos = i_tangent_cam_pos;
-	// vec3 k_sun_dir = i_tangent_sun_dir;
+	vec3 k_pos = i_tangent_pos;
+	vec3 k_normal = normal_map;
+	vec3 k_cam_pos = i_tangent_cam_pos;
+	vec3 k_sun_dir = i_tangent_sun_dir;
 
-	vec3 k_pos = i_position;
-	vec3 k_cam_pos = mesh.rel_cam_pos.xyz;
-	vec3 k_sun_dir = mesh.sun.xyz;
-	vec3 k_normal = i_tbn * normal_map;
+	// vec3 k_pos = i_position;
+	// vec3 k_cam_pos = mesh.rel_cam_pos.xyz;
+	// vec3 k_sun_dir = -mesh.sun.xyz;
+	// vec3 k_normal = i_tbn * normal_map;
 
-	float shadow = clamp(dot(normalize(k_sun_dir), k_normal), 0.06, 1.0);
+	// float shadow = clamp(dot(normalize(k_sun_dir), k_normal), 0.06, 1.0);
 
 	vec3 N = k_normal;
 	vec3 V = normalize(k_cam_pos - k_pos);
@@ -131,5 +131,5 @@ void main() {
 		Lo += (kD * albedo / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
 	}
 	// o_color = _vis(k_normal);
-	o_color = vec4(Lo * shadow * ao_rough_metal.r + emissive * 16.0, 1.0);
+	o_color = vec4(Lo * ao_rough_metal.r + emissive * 16.0, 1.0);
 }

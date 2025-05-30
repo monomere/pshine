@@ -592,9 +592,17 @@ enum movement_mode {
 	MOVEMENT_COUNT_,
 };
 
+
+struct ship_camera_data {
+	float yaw, pitch;
+	double distance;
+	double target_distance;
+};
+
 struct pshine_game_data {
 	double camera_yaw, camera_pitch;
 	double camera_dist;
+	struct ship_camera_data ship_camera_data;
 	enum movement_mode movement_mode;
 	double move_speed;
 	uint8_t last_key_states[PSHINE_KEY_COUNT_];
@@ -602,6 +610,10 @@ struct pshine_game_data {
 	struct eximgui_state eximgui_state;
 	bool is_control_precise;
 	struct keybinds *keybinds_ship_movement;
+
+	double2 mouse_pos;
+	double2 last_mouse_pos;
+	double2 mouse_pos_delta;
 };
 
 static void load_star_system_config(struct pshine_game *game, struct pshine_star_system *out, const char *fpath) {
@@ -749,7 +761,7 @@ void pshine_init_game(struct pshine_game *game) {
 		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(0, 0, 0);
 		game->ships.ptr[idx].scale = 4.0;
 		game->ships.ptr[idx].max_atmo_velocity = 550.0;
-		game->ships.ptr[idx].max_space_velocity = 8600.0;
+		game->ships.ptr[idx].max_space_velocity = 18600.0;
 	}
 
 	if (game->star_system_count <= 0) {
@@ -776,6 +788,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->material_smoothness_ = 0.02;
 	game->data_own->is_control_precise = false;
 	game->data_own->keybinds_ship_movement = &keybinds_ship_movement;
+	game->data_own->ship_camera_data.target_distance = 50.0;
 
 	eximgui_state_init(&game->data_own->eximgui_state);
 }
@@ -1700,25 +1713,55 @@ static void update_ship(struct pshine_game *game, struct pshine_ship *ship, floa
 }
 
 static void update_camera_ship(struct pshine_game *game, float delta_time) {
+	update_ship(game, &game->ships.ptr[0], delta_time);
+
 	struct pshine_ship *ship = &game->ships.ptr[0];
 	floatR ship_orient = floatRvs(ship->orientation.values);
-	// double3 right= double3_float3(floatRapply(ship_orient, float3xyz(1, 0, 0)));
-	double3 up      = double3_float3(floatRapply(ship_orient, float3xyz(0, 1, 0)));
-	double3 forward = double3_float3(floatRapply(ship_orient, float3xyz(0, 0, 1)));
+
+	if (pshine_is_mouse_down(game->renderer, 1)) {
+		game->data_own->ship_camera_data.pitch += game->data_own->mouse_pos_delta.y * 0.001;
+		game->data_own->ship_camera_data.yaw += game->data_own->mouse_pos_delta.x * 0.001;
+	}
+
+	{
+		double scroll = 0.0;
+		pshine_get_mouse_scroll_delta(game->renderer, nullptr, &scroll);
+		game->data_own->ship_camera_data.target_distance -= scroll * 10.0;
+		game->data_own->ship_camera_data.distance
+			= lerpd(game->data_own->ship_camera_data.distance, game->data_own->ship_camera_data.target_distance, 0.5);
+	}
+
+	floatR cam_orient = floatReuler(
+		game->data_own->ship_camera_data.pitch,
+		game->data_own->ship_camera_data.yaw,
+		0.0
+	);
+	floatR cam_global_orient = floatRcombine(ship_orient, cam_orient);
+	double3 forward = double3_float3(floatRapply(cam_global_orient, float3xyz(0, 0, 1)));
 	double3 pos = double3vs(ship->position.values);
-	double3 cam_offset = double3add((double3mul(forward, -65.0)), double3mul(up, 10.0));
+
+	double speed_distance_offset = ship->velocity / ship->max_space_velocity * 5.;
+	game->actual_camera_fov += ship->velocity / ship->max_space_velocity * 25. * cospi();
+	double3 cam_offset = double3mul(forward, -game->data_own->ship_camera_data.distance - speed_distance_offset);
+
 	*(double3*)game->camera_position.values = double3add(cam_offset, pos);
-	*(floatR*)game->camera_orientation.values = ship_orient;
+	*(floatR*)game->camera_orientation.values = cam_global_orient;
 		// floatRfromto(float3xyz(0, 0, 1), float3_double3(forward));
 }
 
 void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 	game->time += actual_delta_time * game->time_scale;
+
+	double2 mouse_pos;
+	pshine_get_mouse_position(game->renderer, &mouse_pos.x, &mouse_pos.y);
+	game->data_own->mouse_pos_delta = double2sub(mouse_pos, game->data_own->last_mouse_pos);
+	game->data_own->last_mouse_pos = mouse_pos;
+
+	game->actual_camera_fov = game->graphics_settings.camera_fov;
+
 	for (size_t i = 0; i < game->star_system_count; ++i) {
 		update_star_system(game, &game->star_systems_own[i], actual_delta_time * game->time_scale);
 	}
-
-	update_ship(game, &game->ships.ptr[0], actual_delta_time);
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_P) && !game->data_own->last_key_states[PSHINE_KEY_P]) {
 		game->data_own->is_control_precise = !game->data_own->is_control_precise;

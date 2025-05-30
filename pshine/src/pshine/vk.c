@@ -344,6 +344,8 @@ struct vulkan_renderer {
 	double lod_ranges[4];
 
 	uint8_t *key_states;
+	uint8_t mouse_states[8];
+	double2 scroll_delta;
 
 	PSHINE_DYNA_(struct image_store_entry) image_store;
 	PSHINE_DYNA_(struct model_store_entry) model_store;
@@ -971,6 +973,16 @@ static struct vulkan_image create_image_from_cgltf_texture_view(
 	int desired_channels,
 	VkFormat format
 ) {
+	if (v == nullptr) {
+		struct vulkan_image img = create_image(r, &(struct vulkan_image_create_info){
+			.name = v->texture->name,
+			.size = (VkExtent2D){ .width = 1, .height = 1 },
+			.format = format,
+			.data = &(uint32_t){ 0 },
+			.data_size = 1 * desired_channels,
+		});
+		return img;
+	}
 	cgltf_buffer_view *buf = v->texture->image->buffer_view;
 	int width, height, channels;
 	stbi_uc *data = stbi_load_from_memory(
@@ -1159,6 +1171,7 @@ static void load_mesh_model_from_gltf(
 		out->materials_own[i].images.normal
 			= create_image_from_cgltf_texture_view(r, &data->materials[i].normal_texture, 4, VK_FORMAT_R8G8B8A8_UNORM);
 		out->materials_own[i].images.emissive
+		// 	= load_texture_from_file(r, "data/textures/1x1_black.png", VK_FORMAT_R8G8B8A8_UNORM, 4, 1, 0);
 			= create_image_from_cgltf_texture_view(r, &data->materials[i].emissive_texture, 4, VK_FORMAT_R8G8B8A8_UNORM);
 		out->materials_own[i].images.diffuse
 			= create_image_from_cgltf_texture_view(r,
@@ -1171,17 +1184,9 @@ static void load_mesh_model_from_gltf(
 		{
 			cgltf_texture_view *occlusion = &data->materials[i].occlusion_texture;
 			cgltf_texture_view *metallic_roughness = &data->materials[i].pbr_metallic_roughness.metallic_roughness_texture;
-			cgltf_buffer_view *buf_r = occlusion->texture->image->buffer_view;
 			cgltf_buffer_view *buf_gb = metallic_roughness->texture->image->buffer_view;
 			int width, height, channels;
 			
-			stbi_uc *data_r = stbi_load_from_memory(
-				(uint8_t*)buf_r->buffer->data + buf_r->offset,
-				buf_r->size, &width, &height, &channels, 1
-			);
-			if (data_r == nullptr) {
-				PSHINE_PANIC("Failed to load embedded image: %s", stbi_failure_reason());
-			}
 			// (Initially only has the green and blue channels.)
 			// The alpha channel exists because most GPUs don't support R8G8B8 images.
 			// We just ignore the channel.
@@ -1193,11 +1198,21 @@ static void load_mesh_model_from_gltf(
 			if (data_rgb == nullptr) {
 				PSHINE_PANIC("Failed to load embedded image: %s", stbi_failure_reason());
 			}
-			// Fill the empty R channel from `data_r`.
-			for (size_t i = 0; i < (size_t)width * (size_t)height; ++i) {
-				data_rgb[i * 4] = data_r[i];
+			if (occlusion->texture != nullptr) {
+				cgltf_buffer_view *buf_r = occlusion->texture->image->buffer_view;
+				stbi_uc *data_r = stbi_load_from_memory(
+					(uint8_t*)buf_r->buffer->data + buf_r->offset,
+					buf_r->size, &width, &height, &channels, 1
+				);
+				if (data_r == nullptr) {
+					PSHINE_PANIC("Failed to load embedded image: %s", stbi_failure_reason());
+				}
+				// Fill the empty R channel from `data_r`.
+				for (size_t i = 0; i < (size_t)width * (size_t)height; ++i) {
+					data_rgb[i * 4] = data_r[i];
+				}
+				stbi_image_free(data_r);
 			}
-			stbi_image_free(data_r);
 			out->materials_own[i].images.ao_metallic_roughness = create_image(r, &(struct vulkan_image_create_info){
 				.size = (VkExtent2D){ .width = (uint32_t)width, .height = (uint32_t)height },
 				.format = VK_FORMAT_R8G8B8A8_UNORM,
@@ -1900,6 +1915,16 @@ static void key_cb_glfw_(GLFWwindow *window, int key, int scancode, int action, 
 	r->key_states[key] = action;
 }
 
+static void mouse_cb_glfw_(GLFWwindow *window, int button, int action, int mods) {
+	struct vulkan_renderer *r = glfwGetWindowUserPointer(window);
+	r->mouse_states[button] = action;
+}
+
+static void scroll_cb_glfw_(GLFWwindow *window, double x, double y) {
+	struct vulkan_renderer *r = glfwGetWindowUserPointer(window);
+	r->scroll_delta = double2xy(x, y);
+}
+
 static void init_glfw(struct vulkan_renderer *r) {
 	glfwInitVulkanLoader(vkGetInstanceProcAddr);
 	PSHINE_DEBUG("GLFW version: %s", glfwGetVersionString());
@@ -1927,6 +1952,8 @@ static void init_glfw(struct vulkan_renderer *r) {
 	glfwSetWindowUserPointer(r->window, r);
 	if (r->window == nullptr) PSHINE_PANIC("could not create window");
 	glfwSetKeyCallback(r->window, &key_cb_glfw_);
+	glfwSetMouseButtonCallback(r->window, &mouse_cb_glfw_);
+	glfwSetScrollCallback(r->window, &scroll_cb_glfw_);
 }
 
 static void deinit_glfw(struct vulkan_renderer *r) {
@@ -4252,12 +4279,12 @@ static void do_frame(
 
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
 	double4x4 near_proj_mat = {};
-	setdouble4x4persp(&near_proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, 0.0001);
+	setdouble4x4persp(&near_proj_mat, r->game->actual_camera_fov, aspect_ratio, 0.0001);
 	float4x4 near_proj_mat32 = float4x4_double4x4(near_proj_mat);
 
 	double4x4 proj_mat = {};
 	struct double4x4persp_info persp_info = setdouble4x4persp(
-		&proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, 0.0001);
+		&proj_mat, r->game->actual_camera_fov, aspect_ratio, 0.0001);
 	float4x4 proj_mat32 = float4x4_double4x4(proj_mat);
 
 	{
@@ -5231,7 +5258,7 @@ static void show_gizmos(struct vulkan_renderer *r) {
 	double4x4 proj_mat = {};
 	setdouble4x4iden(&proj_mat);
 	double znear = 0.01;
-	setdouble4x4persp(&proj_mat, r->game->graphics_settings.camera_fov, aspect_ratio, znear);
+	setdouble4x4persp(&proj_mat, r->game->actual_camera_fov, aspect_ratio, znear);
 
 	double4x4 screen_mat = view_mat;
 	double4x4mul(&screen_mat, &proj_mat);
@@ -5322,6 +5349,7 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 		++frame_number; ++frames_since_dt_reset;
 		float current_time = glfwGetTime();
 		float delta_time = current_time - last_time;
+		r->scroll_delta = double2v0();
 		glfwPollEvents();
 
 		int current_width = 0, current_height = 0;
@@ -5371,4 +5399,20 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 const uint8_t *pshine_get_key_states(struct pshine_renderer *renderer) {
 	struct vulkan_renderer *r = (void*)renderer;
 	return r->key_states;
+}
+
+const uint8_t *pshine_get_mouse_states(struct pshine_renderer *renderer) {
+	struct vulkan_renderer *r = (void*)renderer;
+	return r->mouse_states;
+}
+
+void pshine_get_mouse_position(struct pshine_renderer *renderer, double *x, double *y) {
+	struct vulkan_renderer *r = (void*)renderer;
+	glfwGetCursorPos(r->window, x, y);
+}
+
+void pshine_get_mouse_scroll_delta(struct pshine_renderer *renderer, double *x, double *y) {
+	struct vulkan_renderer *r = (void*)renderer;
+	if (x != nullptr) *x = r->scroll_delta.x;
+	if (y != nullptr) *y = r->scroll_delta.y;
 }
