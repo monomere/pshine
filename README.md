@@ -41,7 +41,7 @@ cflags2 = -DVK_USE_PLATFORM_WIN32_KHR=1    #
 
 > requirements: wget, python, ply
 
-To install ply (needed for dear_bindings), do `python3 -m pip install --user ply` (or similar)
+To install ply (needed for `dear_bindings`), do `python3 -m pip install --user ply` (or similar)
 
 You can do the steps below manually, but there's a bash script that does them for you.
 Make sure to check the contents of the script before running it.
@@ -57,25 +57,32 @@ Make sure to check the contents of the script before running it.
 
 <hr>
 
-### Volk, VMA, stb_image, cgltf
+### Dependencies
 
-The graphics backend uses [stb_image](https://github.com/nothings/stb), [volk](https://github.com/zeux/volk) and
-[VMA](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator), [cgltf](https://github.com/jkuhlmann/cgltf).
-so after cloning (only once):
+The graphics backend uses:
+- [`stb_image`](https://github.com/nothings/stb) for loading images
+- [`volk`](https://github.com/zeux/volk) for loading Vulkan
+- [`VMA`](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) for Vulkan memory allocation
+- [`cgltf`](https://github.com/jkuhlmann/cgltf) for model loading
+
+The game uses:
+- [`clay`](https://raw.githubusercontent.com/nicbarker/clay) for UI layouting
+- [`tomlc99`](https://github.com/cktan/tomlc99) for loading the configuration
+
+So after cloning (only once):
 
 ```bash
 wget -P pshine/include/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.h
 wget -P pshine/src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
+
 wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
+
 wget -P pshine/include/vendor https://raw.githubusercontent.com/nothings/stb/refs/heads/master/stb_image.h
+
 wget -P pshine/include/vendor https://raw.githubusercontent.com/jkuhlmann/cgltf/refs/tags/v1.15/cgltf.h
-```
 
-### Auxiliary libraries
+wget -P pshine/include/vendor https://raw.githubusercontent.com/nicbarker/clay/refs/heads/main/clay.h
 
-Currently, [tomlc99](https://github.com/cktan/tomlc99).
-
-```bash
 wget -P pshine/src/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.c
 wget -P pshine/include/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.h
 ```
@@ -119,8 +126,7 @@ python vendor/dear_bindings/dear_bindings.py \
 
 ## Building
 
-> requirements: ninja modern gcc-compatible c/c++ compiler, glfw, python (optional), cpptrace/ctrace (temporarily a system dependency)
-> requirements: rust (for giraffe, but can be removed by tweaking ninja files, as its not needed *for now*). I might rewrite all of this in Rust.
+> requirements: ninja modern gcc-compatible c/c++ compiler, glfw, python (optional)
 
 To build (incremental)
 ```bash
@@ -148,9 +154,9 @@ to your environment (or maybe not idk).
 build/pshine/main
 ```
 
-**Linux and X11:** By default pshine uses wayland, but you can pass `-x11` to use X11 instead.
+Pass `-fullscreen` for fullscreen.
 
-The planet has a radius of 6371km (Earth), the atmosphere has a height of 100km, and the camera moves at 500km/s by default.
+**Linux and X11:** By default pshine uses wayland, but you can pass `-x11` to use X11 instead.
 
 ### Controls
 

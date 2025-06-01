@@ -1718,6 +1718,8 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	struct pshine_ship *ship = &game->ships.ptr[0];
 	floatR ship_orient = floatRvs(ship->orientation.values);
 
+	float3 ship_forward = floatRapply(ship_orient, float3xyz(0, 0, 1));
+
 	if (pshine_is_mouse_down(game->renderer, 1)) {
 		game->data_own->ship_camera_data.pitch += game->data_own->mouse_pos_delta.y * 0.001;
 		game->data_own->ship_camera_data.yaw += game->data_own->mouse_pos_delta.x * 0.001;
@@ -1737,12 +1739,30 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 		0.0
 	);
 	floatR cam_global_orient = floatRcombine(ship_orient, cam_orient);
-	double3 forward = double3_float3(floatRapply(cam_global_orient, float3xyz(0, 0, 1)));
+	float3 cam_forward = floatRapply(cam_global_orient, float3xyz(0, 0, 1));
+	
+	float3 cam_up = floatRapply(cam_global_orient, float3xyz(0, 1, 0));
+	float3 cam_right = floatRapply(cam_global_orient, float3xyz(1, 0, 0));
+	
+	float shake_x = pshine_pcg64_random_float(&game->rng64);
+	float shake_y = pshine_pcg64_random_float(&game->rng64);
+	float shake_intensity = powf((ship->velocity / ship->max_space_velocity), 5) * 0.2;
+
+	float3 cam_shake
+		= float3add(float3mul(cam_right, shake_x * shake_intensity), float3mul(cam_up, shake_y * shake_intensity));
+
 	double3 pos = double3vs(ship->position.values);
 
 	double speed_distance_offset = ship->velocity / ship->max_space_velocity * 5.;
-	game->actual_camera_fov += ship->velocity / ship->max_space_velocity * 25. * cospi();
-	double3 cam_offset = double3mul(forward, -game->data_own->ship_camera_data.distance - speed_distance_offset);
+	game->actual_camera_fov += ship->velocity / ship->max_space_velocity * 25. * float3dot(cam_forward, ship_forward);
+	double3 cam_offset =
+		double3add(
+			double3mul(
+				double3_float3(cam_forward), 
+				-game->data_own->ship_camera_data.distance - speed_distance_offset
+			),
+			double3_float3(cam_shake)
+		);
 
 	*(double3*)game->camera_position.values = double3add(cam_offset, pos);
 	*(floatR*)game->camera_orientation.values = cam_global_orient;
