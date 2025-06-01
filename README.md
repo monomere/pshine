@@ -163,7 +163,7 @@ Pass `-fullscreen` for fullscreen.
 
 Key|Action
 ---|---
-<kbd>F</kbd> | Switch camera mode (default is arcball)
+<kbd>F</kbd> | Switch camera mode (default is ship)
 <kbd>F2</kbd> | Hide all UI
 <kbd>Shift+F2</kbd> | Only hide the debug windows
 
@@ -175,6 +175,8 @@ Key|Action
 <kbd>W</kbd>/<kbd>S</kbd> | Pitch
 <kbd>W</kbd>/<kbd>S</kbd> | Roll
 <kbd>Shift</kbd>/<kbd>Ctrl</kbd> | Increase/decrease velocity
+
+Hold left mouse button and drag to rotate the camera around the ship.
 
 #### Arcball Mode
 
