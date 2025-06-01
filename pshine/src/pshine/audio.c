@@ -11,12 +11,17 @@ struct group_instance {
 	char *name_own;
 };
 
+struct producer {
+	ma_node_vtable *v;
+};
+
 #define CHECKMA(...) __VA_ARGS__ /* TBD */
 
 struct pshine_audio {
 	ma_engine *engine;
 	PSHINE_DYNA_(struct sound_instance) sounds;
 	PSHINE_DYNA_(struct group_instance) groups;
+	PSHINE_DYNA_(struct producer) producers;
 };
 
 void pshine_init_audio(struct pshine_audio *au) {
@@ -35,7 +40,14 @@ void pshine_deinit_audio(struct pshine_audio *au) {
 pshine_sound pshine_create_sound(struct pshine_audio *au, const struct pshine_sound_info *info) {
 	size_t idx = PSHINE_DYNA_ALLOC(au->sounds);
 	ma_sound *s = au->sounds.ptr[idx].s = calloc(1, sizeof(*s));
-	ma_result res = CHECKMA(ma_sound_init_from_file(au->engine, info->name, 0, nullptr, nullptr, s));
+	ma_result res = CHECKMA(ma_sound_init_from_file(
+		au->engine,
+		info->name,
+		MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC,
+		nullptr,
+		nullptr,
+		s
+	));
 	if (res != MA_SUCCESS) PSHINE_ERROR("Failed to initialize sound %s: %s", info->name, ma_result_description(res));
 	ma_sound_set_volume(s, 1.0f - info->quiet);
 	return (pshine_sound){ idx };
@@ -71,5 +83,42 @@ pshine_sound_group pshine_create_sound_group(struct pshine_audio *au, const stru
 void pshine_destroy_group(struct pshine_audio *au, pshine_sound_group *group) {
 	ma_sound_group *g = au->groups.ptr[group->idx].g;
 	ma_sound_group_uninit(g);
+	free(g);
 	group->idx = 0;
+}
+
+struct producer_node {
+	ma_node_base as_base;
+	pshine_sound_producer_callback cb;
+	char user[];
+};
+
+static void sound_producer_ma_callback(
+	ma_node* node,
+	const float **ppFramesIn,
+	ma_uint32 *pFrameCountIn,
+	float **ppFramesOut,
+	ma_uint32 *pFrameCountOut
+) {
+	struct producer_node *n = (void *)node;
+	n->cb(pFrameCountOut, ppFramesOut, (void*)n->user);
+}
+
+pshine_sound_producer pshine_create_sound_producer(
+	struct pshine_audio *au, const struct pshine_sound_producer_info *info
+) {
+	size_t idx = PSHINE_DYNA_ALLOC(au->producers);
+	ma_node_vtable *v = au->producers.ptr[idx].v = calloc(1, sizeof(*v));
+	v->flags = MA_NODE_FLAG_CONTINUOUS_PROCESSING | MA_NODE_FLAG_ALLOW_NULL_INPUT;
+	v->inputBusCount = 0;
+	v->onGetRequiredInputFrameCount = nullptr;
+	v->outputBusCount = info->output_channels;
+	v->onProcess = &sound_producer_ma_callback;
+	return (pshine_sound_producer){ idx };
+}
+
+void pshine_destroy_sound_producer(struct pshine_audio *au, pshine_sound_producer *producer) {
+	ma_node_vtable *v = au->producers.ptr[producer->idx].v;
+	free(v);
+	producer->idx = 0;
 }

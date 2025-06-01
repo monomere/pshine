@@ -1,5 +1,6 @@
 /// Wrapper around MiniAudio, so that we don't have to include the giant header file everywhere.
 #include <stddef.h>
+#include <stdint.h>
 
 struct pshine_audio;
 
@@ -31,3 +32,26 @@ struct pshine_sound_group_info {
 
 pshine_sound_group pshine_create_sound_group(struct pshine_audio *au, const struct pshine_sound_group_info *info);
 void pshine_destroy_group(struct pshine_audio *au, pshine_sound_group *group);
+
+typedef struct { size_t idx; } pshine_sound_producer;
+
+typedef void (*pshine_sound_producer_callback)(
+	uint32_t *output_frames_counts,
+	float **output_frames,
+	void *user_data
+);
+
+struct pshine_sound_producer_info {
+	const char *name;
+	pshine_sound_producer_callback callback;
+	size_t output_channels;
+	size_t user_data_size;
+};
+
+pshine_sound_producer pshine_create_sound_producer(
+	struct pshine_audio *au, const struct pshine_sound_producer_info *info
+);
+void pshine_destroy_sound_producer(struct pshine_audio *au, pshine_sound_producer *producer);
+
+// TODO
+pshine_sound pshine_create_produced_sound();
