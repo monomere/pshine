@@ -8,14 +8,21 @@ build $mod/src/pshine/math.h: python generate_math.py
 # giraffe/ffi/include/giraffe/giraffe.h
 
 build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/src/pshine/math.h
-build $builddir/pshine/game.c.o      : cc $mod/src/pshine/game.c      || $mod/src/pshine/math.h
 build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h
 build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c    || $mod/src/pshine/math.h
 build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h
-# build $builddir/pshine/eximgui.cc.o  : cxx $mod/src/pshine/eximgui.cc
 
-build $builddir/pshine/cgltf.c.o         : cc $mod/src/pshine/cgltf.c
-build $builddir/pshine/stb.c.o           : cc $mod/src/pshine/stb.c
+build $builddir/pshine/game/game.c.o      : cc $mod/src/pshine/game/game.c     || $mod/src/pshine/math.h
+build $builddir/pshine/game/ship.c.o      : cc $mod/src/pshine/game/ship.c     || $mod/src/pshine/math.h
+build $builddir/pshine/game/orbit.c.o     : cc $mod/src/pshine/game/orbit.c    || $mod/src/pshine/math.h
+build $builddir/pshine/game/imgui.c.o     : cc $mod/src/pshine/game/imgui.c    || $mod/src/pshine/math.h
+build $builddir/pshine/game/debug.c.o     : cc $mod/src/pshine/game/debug.c    || $mod/src/pshine/math.h
+build $builddir/pshine/game/config.c.o    : cc $mod/src/pshine/game/config.c   || $mod/src/pshine/math.h
+build $builddir/pshine/game/terrain.c.o   : cc $mod/src/pshine/game/terrain.c  || $mod/src/pshine/math.h
+
+build $builddir/pshine/cgltf.c.o         : cc  $mod/src/pshine/cgltf.c
+build $builddir/pshine/stb.c.o           : cc  $mod/src/pshine/stb.c
+build $builddir/pshine/clay.c.o          : cc  $mod/src/pshine/clay.c
 build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/vk_mem_alloc.cc
 build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
 build $builddir/vendor/toml.c.o          : cc  $mod/src/vendor/toml.c
@@ -57,12 +64,19 @@ build $builddir/data/shaders/bloom_downsample.comp.spv : glslc data/shaders/bloo
 
 build $builddir/main: ld $
   $builddir/pshine/vk.c.o $
-  $builddir/pshine/game.c.o $
   $builddir/pshine/main.c.o $
   $builddir/pshine/$osapi.c.o $
   $builddir/pshine/util.c.o $
+  $builddir/pshine/game/game.c.o $
+  $builddir/pshine/game/ship.c.o $
+  $builddir/pshine/game/orbit.c.o $
+  $builddir/pshine/game/imgui.c.o $
+  $builddir/pshine/game/debug.c.o $
+  $builddir/pshine/game/config.c.o $
+  $builddir/pshine/game/terrain.c.o $
   $builddir/vendor/volk.c.o $
   $builddir/vendor/toml.c.o $
+  $builddir/pshine/clay.c.o $
   $builddir/pshine/stb.c.o $
   $builddir/pshine/cgltf.c.o $
   $builddir/pshine/vk_mem_alloc.cc.o $

@@ -2255,7 +2255,7 @@ static void reinit_swapchain(struct vulkan_renderer *r) {
 	glfwGetFramebufferSize(r->window, &width, &height);
 	r->swapchain_extent.width = width;
 	r->swapchain_extent.height = height;
-	PSHINE_INFO("swapchain extent: %ux%u", r->swapchain_extent.width, r->swapchain_extent.height);
+	// PSHINE_INFO("swapchain extent: %ux%u", r->swapchain_extent.width, r->swapchain_extent.height);
 	CHECKVK(vkCreateSwapchainKHR(r->device, &(VkSwapchainCreateInfoKHR){
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 		.surface = r->surface,
