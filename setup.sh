@@ -62,6 +62,9 @@ if [ "$DO_DOWNLOAD" -eq "1" ]; then
 
 	printf $BOLD'Downloading Clay'$NORMAL
 	wget -P pshine/include/vendor https://raw.githubusercontent.com/nicbarker/clay/refs/heads/main/clay.h
+
+	printf $BOLD'Downloading MiniAudio'$NORMAL
+	wget -P pshine/include/vendor https://raw.githubusercontent.com/mackron/miniaudio/refs/heads/master/miniaudio.h
 fi
 
 if [ "$DO_BINDINGS" -eq "1" ]; then

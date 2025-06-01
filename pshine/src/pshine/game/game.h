@@ -16,7 +16,7 @@ enum si_prefix {
 	SI_QUETTA,
 };
 
-static enum si_prefix find_optimal_si_prefix(double value) {
+static inline enum si_prefix find_optimal_si_prefix(double value) {
 	value = fabs(value);
 	if (value < 1'000.0) return SI_ONE;
 	if (value < 1'000'000.0) return SI_KILO;
@@ -27,7 +27,7 @@ static enum si_prefix find_optimal_si_prefix(double value) {
 }
 
 [[maybe_unused]]
-static const char *si_prefix_string(enum si_prefix p) {
+static inline const char *si_prefix_string(enum si_prefix p) {
 	switch (p) {
 	case SI_ONE:    return "";
 	case SI_KILO:   return "k";
@@ -43,7 +43,7 @@ static const char *si_prefix_string(enum si_prefix p) {
 	return "";
 }
 
-static const char *si_prefix_english(enum si_prefix p) {
+static inline const char *si_prefix_english(enum si_prefix p) {
 	switch (p) {
 	case SI_ONE:    return "";
 	case SI_KILO:   return "thousand";
@@ -59,7 +59,7 @@ static const char *si_prefix_english(enum si_prefix p) {
 	return "";
 }
 
-static double apply_si_prefix(enum si_prefix p, double value) {
+static inline double apply_si_prefix(enum si_prefix p, double value) {
 	switch (p) {
 	case SI_ONE:    return value;
 	case SI_KILO:   return value / 1'000.0;
@@ -85,7 +85,7 @@ struct time_format_params {
 	double seconds;
 };
 #define TIME_FORMAT_ARGS(P) ((P).years), ((P).months), ((P).days), ((P).hours), ((P).minutes), ((P).seconds)
-static struct time_format_params compute_time_format_params(double secs) {
+static inline struct time_format_params compute_time_format_params(double secs) {
 	struct time_format_params r = {0};
 	r.seconds = fabs(secs);
 	r.minutes = trunc(r.seconds / 60.0); r.seconds = fmod(r.seconds, 60.0);

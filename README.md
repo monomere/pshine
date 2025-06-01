@@ -47,11 +47,6 @@ To install ply (needed for `dear_bindings`), do `python3 -m pip install --user p
 You can do the steps below manually, but there's a bash script that does them for you.
 Make sure to check the contents of the script before running it.
 
-
-
-> **NB:** if the script is different from the README, trust the script because I might've
-> forgotten to update the README.
-
 ```bash
 ./setup.sh
 ```
@@ -67,7 +62,8 @@ The graphics backend uses:
 - [`cgltf`](https://github.com/jkuhlmann/cgltf) for model loading
 
 The game uses:
-- [`clay`](https://raw.githubusercontent.com/nicbarker/clay) for UI layouting
+- [`miniaudio`](https://github.com/mackron/miniaudio) for audio playback
+- [`clay`](https://github.com/nicbarker/clay) for UI layouting
 - [`tomlc99`](https://github.com/cktan/tomlc99) for loading the configuration
 
 So after cloning (only once):

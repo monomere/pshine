@@ -20,10 +20,11 @@ build $builddir/pshine/game/debug.c.o     : cc $mod/src/pshine/game/debug.c    |
 build $builddir/pshine/game/config.c.o    : cc $mod/src/pshine/game/config.c   || $mod/src/pshine/math.h
 build $builddir/pshine/game/terrain.c.o   : cc $mod/src/pshine/game/terrain.c  || $mod/src/pshine/math.h
 
-build $builddir/pshine/cgltf.c.o         : cc  $mod/src/pshine/cgltf.c
-build $builddir/pshine/stb.c.o           : cc  $mod/src/pshine/stb.c
-build $builddir/pshine/clay.c.o          : cc  $mod/src/pshine/clay.c
-build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/vk_mem_alloc.cc
+build $builddir/pshine/cgltf.c.o         : cc  $mod/src/pshine/single_header/cgltf.c
+build $builddir/pshine/stb.c.o           : cc  $mod/src/pshine/single_header/stb.c
+build $builddir/pshine/clay.c.o          : cc  $mod/src/pshine/single_header/clay.c
+build $builddir/pshine/miniaudio.c.o     : cc  $mod/src/pshine/single_header/miniaudio.c
+build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/single_header/vk_mem_alloc.cc
 build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
 build $builddir/vendor/toml.c.o          : cc  $mod/src/vendor/toml.c
 #  cflags2 = -DVK_USE_PLATFORM_MACOS_MVK=1
@@ -79,6 +80,7 @@ build $builddir/main: ld $
   $builddir/pshine/clay.c.o $
   $builddir/pshine/stb.c.o $
   $builddir/pshine/cgltf.c.o $
+  $builddir/pshine/miniaudio.c.o $
   $builddir/pshine/vk_mem_alloc.cc.o $
   $builddir/vendor/cimgui/cimgui.cpp.o $
   $builddir/vendor/imgui/imgui.cpp.o $
