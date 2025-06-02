@@ -149,6 +149,51 @@ char *pshine_read_file(const char *fname, size_t *size);
 // in KiB
 size_t pshine_get_mem_usage();
 
+typedef void (*pshine_rbuf_item_deinit_fn)(void *item, void *user);
+
+/// A ring buffer
+struct pshine_rbuf_ {
+	void *ptr;
+	size_t count, cap;
+	bool is_full;
+	void *user;
+	pshine_rbuf_item_deinit_fn item_deinit_fn;
+};
+
+#define PSHINE_INIT_RBUF(a, cap) (pshine_init_rbuf_(&(a).rbuf, sizeof(*(a).ptr), (cap)))
+
+static inline void pshine_init_rbuf_(struct pshine_rbuf_ *rbuf, const size_t item_size, const size_t cap) {
+	rbuf->ptr = calloc(cap, item_size);
+	rbuf->cap = cap;
+	rbuf->count = 0;
+	rbuf->is_full = false;
+}
+
+#define PSHINE_RBUF_INSERT(a, i) (pshine_rbuf_insert_(&(a).rbuf, sizeof(*(a).ptr), (i)))
+
+static inline void* pshine_rbuf_insert_(struct pshine_rbuf_ *rbuf, const size_t item_size, void *item) {
+	if (rbuf->count == rbuf->cap) {
+		rbuf->is_full = true;
+		rbuf->count = 0;
+	}
+	void *ptr = (char*)rbuf + rbuf->count * item_size;
+	if (rbuf->is_full) rbuf->item_deinit_fn(ptr, rbuf->user);
+	memcpy(ptr, item, item_size);
+	rbuf->count += 1;
+	return ptr;
+}
+
+static inline void pshine_deinit_rbuf(struct pshine_rbuf_ *rbuf) {
+	free(rbuf->ptr);
+	rbuf->cap = rbuf->count = 0;
+	rbuf->is_full = false;
+}
+
+#define PSHINE_RBUF_(T) union { \
+	struct pshine_rbuf_ rbuf; \
+	T *ptr; \
+}
+
 struct pshine_dyna_dead_item_ {
 	size_t next;
 };
@@ -181,11 +226,11 @@ static inline void pshine_free_dyna_(struct pshine_dyna_ *dyna) {
 }
 
 #define PSHINE_DYNA_ALLOC(a) (pshine_dyna_alloc_(&(a).dyna, sizeof(*(a).ptr)))
-static inline size_t pshine_dyna_alloc_(struct pshine_dyna_ *d, size_t item_size) {
+static inline size_t pshine_dyna_alloc_(struct pshine_dyna_ *d, const size_t item_size) {
 	if (d->next_free >= d->count) {
-		// next_free points outside of the array, we should increase count.
+		// next_free points outside the array, we should increase count.
 
-		// set the next free to be outside of the array.
+		// set the next free to be outside the array.
 		d->next_free = 1 + d->count;
 
 		size_t old_cap = d->cap; // if 0, calloc, else realloc.

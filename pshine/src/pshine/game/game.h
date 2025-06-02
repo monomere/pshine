@@ -2,6 +2,7 @@
 #define GAME_H_INCLUDED_
 #include <pshine/game.h>
 #include "../math.h"
+#include "../audio.h"
 
 enum si_prefix {
 	SI_ONE,
@@ -211,6 +212,8 @@ struct pshine_game_data {
 	double2 mouse_pos;
 	double2 last_mouse_pos;
 	double2 mouse_pos_delta;
+
+	struct pshine_audio *audio;
 };
 
 void load_game_config(struct pshine_game *game, const char *fpath);

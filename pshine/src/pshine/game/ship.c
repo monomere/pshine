@@ -1,5 +1,6 @@
 #include "game.h"
 #include <float.h>
+#include "../audio.h"
 
 void update_ship(struct pshine_game *game, struct pshine_ship *ship, float delta_time) {
 	{
@@ -24,16 +25,16 @@ void update_ship(struct pshine_game *game, struct pshine_ship *ship, float delta
 	{
 		float3 delta = {};
 		
-		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_PITCH_UP].key)) delta.y += 1.0;
-		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_PITCH_DOWN].key)) delta.y -= 1.0;
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_PITCH_UP].key)) delta.y += 1.0f;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_PITCH_DOWN].key)) delta.y -= 1.0f;
 
-		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_YAW_RIGHT].key)) delta.x += 1.0;
-		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_YAW_LEFT].key)) delta.x -= 1.0;
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_YAW_RIGHT].key)) delta.x += 1.0f;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_YAW_LEFT].key)) delta.x -= 1.0f;
 		
-		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_ROLL_RIGHT].key)) delta.z += 1.0;
-		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_ROLL_LEFT].key)) delta.z -= 1.0;
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_ROLL_RIGHT].key)) delta.z += 1.0f;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_ROLL_LEFT].key)) delta.z -= 1.0f;
 
-		float rot_speed = 1.0 * (game->data_own->is_control_precise ? 0.01 : 1.0);
+		float rot_speed = 1.0f * (game->data_own->is_control_precise ? 0.01f : 1.0f);
 		
 		float pitch = -delta.y * rot_speed * delta_time;
 		float yaw = delta.x * rot_speed * delta_time;
@@ -47,6 +48,12 @@ void update_ship(struct pshine_game *game, struct pshine_ship *ship, float delta
 		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_THROTTLE_INC].key)) delta += 1.0;
 		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_THROTTLE_DEC].key)) delta -= 1.0;
 		delta *= delta_time * 1000.0f;
+		if (ship->velocity < 0.0001 && delta > 0.0001) {
+			pshine_create_sound_from_file(game->data_own->audio, &(struct pshine_sound_info){
+				.name = "data/audio/engine_start.flac",
+				.quiet = 0.0f,
+			});
+		}
 		ship->velocity += delta * 5.0;
 		double height = 0.0; /* 0-1 */
 		bool inside_atmosphere = false;

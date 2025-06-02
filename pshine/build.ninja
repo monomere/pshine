@@ -11,6 +11,7 @@ build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/sr
 build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h
 build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c    || $mod/src/pshine/math.h
 build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h
+build $builddir/pshine/audio.c.o     : cc $mod/src/pshine/audio.c     || $mod/src/pshine/math.h
 
 build $builddir/pshine/game/game.c.o      : cc $mod/src/pshine/game/game.c     || $mod/src/pshine/math.h
 build $builddir/pshine/game/ship.c.o      : cc $mod/src/pshine/game/ship.c     || $mod/src/pshine/math.h
@@ -68,6 +69,7 @@ build $builddir/main: ld $
   $builddir/pshine/main.c.o $
   $builddir/pshine/$osapi.c.o $
   $builddir/pshine/util.c.o $
+  $builddir/pshine/audio.c.o $
   $builddir/pshine/game/game.c.o $
   $builddir/pshine/game/ship.c.o $
   $builddir/pshine/game/orbit.c.o $

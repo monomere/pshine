@@ -153,7 +153,7 @@ void pshine_init_game(struct pshine_game *game) {
 		struct pshine_timeval now = pshine_timeval_now();
 		pshine_pcg64_init(&game->rng64, now.sec, now.nsec);
 	}
-	game->time_scale = 1.0;
+	game->time_scale = 1.0f;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
 	load_game_config(game, "data/config.toml");
 
@@ -186,18 +186,18 @@ void pshine_init_game(struct pshine_game *game) {
 	game->data_own->camera_yaw = π/2;
 	game->data_own->camera_pitch = 0.0;
 	memset(game->data_own->last_key_states, 0, sizeof(game->data_own->last_key_states));
-	game->atmo_blend_factor = 0.0;
+	game->atmo_blend_factor = 0.0f;
 	game->data_own->movement_mode = MOVEMENT_SHIP;
 	game->data_own->move_speed = 500'000.0;
-	game->time_scale = 0.0;
+	game->time_scale = 0.0f;
 	game->camera_position.xyz.x = 31483290.911 * PSHINE_SCS_SCALE;
 	game->camera_position.xyz.y = 75.221 * PSHINE_SCS_SCALE;
 	game->camera_position.xyz.z = 13965308.151 * PSHINE_SCS_SCALE;
-	game->graphics_settings.camera_fov = 60.0;
-	game->graphics_settings.exposure = 1.0;
-	game->graphics_settings.bloom_knee = 7.0;
-	game->graphics_settings.bloom_threshold = 7.0;
-	game->material_smoothness_ = 0.02;
+	game->graphics_settings.camera_fov = 60.0f;
+	game->graphics_settings.exposure = 1.0f;
+	game->graphics_settings.bloom_knee = 7.0f;
+	game->graphics_settings.bloom_threshold = 7.0f;
+	game->material_smoothness_ = 0.02f;
 	game->data_own->is_control_precise = false;
 	game->data_own->ship_camera_data.target_distance = 50.0;
 	
@@ -224,7 +224,7 @@ static void deinit_star_system(struct pshine_game *game, struct pshine_star_syst
 		switch (b->type) {
 			case PSHINE_CELESTIAL_BODY_PLANET: deinit_planet((void*)b); break;
 			case PSHINE_CELESTIAL_BODY_STAR: deinit_star((void*)b); break;
-			default: PSHINE_PANIC("bad b->type: %d", (int)b->type); break;
+			default: PSHINE_PANIC("bad b->type: %d", (int)b->type);
 		}
 #define FREE_IF_NOTNULL(X) if ((X) != nullptr) free((X))
 		FREE_IF_NOTNULL(b->surface.albedo_texture_path_own);
@@ -273,16 +273,16 @@ static void update_camera_fly(struct pshine_game *game, float delta_time) {
 		game->data_own->camera_yaw += delta.x * rot_speed * delta_time;
 	}
 
-	floatR cam_rot = floatReuler(-game->data_own->camera_pitch, -game->data_own->camera_yaw, 0);
+	floatR cam_rot = floatReuler(-(float)game->data_own->camera_pitch, -(float)game->data_own->camera_yaw, 0.0f);
 	double3 cam_pos = double3vs(game->camera_position.values);
 	{
 		float3 delta = {};
-		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_RIGHT].key)) delta.x += 1.0;
-		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_LEFT].key)) delta.x -= 1.0;
-		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_UP].key)) delta.y += 1.0;
-		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_DOWN].key)) delta.y -= 1.0;
-		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_FORWARD].key)) delta.z += 1.0;
-		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_BACKWARD].key)) delta.z -= 1.0;
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_RIGHT].key)) delta.x += 1.0f;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_LEFT].key)) delta.x -= 1.0f;
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_UP].key)) delta.y += 1.0f;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_DOWN].key)) delta.y -= 1.0f;
+		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_FORWARD].key)) delta.z += 1.0f;
+		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_FLY_MOVE_BACKWARD].key)) delta.z -= 1.0f;
 		delta = floatRapply(cam_rot, delta);
 		cam_pos = double3add(cam_pos, double3mul(double3norm(double3_float3(delta)),
 			game->data_own->move_speed * delta_time));
@@ -357,8 +357,8 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	float3 ship_forward = floatRapply(ship_orient, float3xyz(0, 0, 1));
 
 	if (pshine_is_mouse_down(game->renderer, 1)) {
-		game->data_own->ship_camera_data.pitch += game->data_own->mouse_pos_delta.y * 0.001;
-		game->data_own->ship_camera_data.yaw += game->data_own->mouse_pos_delta.x * 0.001;
+		game->data_own->ship_camera_data.pitch += (float)game->data_own->mouse_pos_delta.y * 0.001f;
+		game->data_own->ship_camera_data.yaw += (float)game->data_own->mouse_pos_delta.x * 0.001f;
 	}
 
 	{
@@ -372,7 +372,7 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	floatR cam_orient = floatReuler(
 		game->data_own->ship_camera_data.pitch,
 		game->data_own->ship_camera_data.yaw,
-		0.0
+		0.0f
 	);
 	floatR cam_global_orient = floatRcombine(ship_orient, cam_orient);
 	float3 cam_forward = floatRapply(cam_global_orient, float3xyz(0, 0, 1));
@@ -382,7 +382,7 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	
 	float shake_x = pshine_pcg64_random_float(&game->rng64);
 	float shake_y = pshine_pcg64_random_float(&game->rng64);
-	float shake_intensity = powf((ship->velocity / ship->max_space_velocity), 5) * 0.2;
+	float shake_intensity = powf((float)(ship->velocity / ship->max_space_velocity), 5.0f) * 0.2f;
 
 	float3 cam_shake
 		= float3add(float3mul(cam_right, shake_x * shake_intensity), float3mul(cam_up, shake_y * shake_intensity));
@@ -390,7 +390,7 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	double3 pos = double3vs(ship->position.values);
 
 	double speed_distance_offset = ship->velocity / ship->max_space_velocity * 5.;
-	game->actual_camera_fov += ship->velocity / ship->max_space_velocity * 25. * float3dot(cam_forward, ship_forward);
+	game->actual_camera_fov += (float)(ship->velocity / ship->max_space_velocity) * 25.f * float3dot(cam_forward, ship_forward);
 	double3 cam_offset =
 		double3add(
 			double3mul(
