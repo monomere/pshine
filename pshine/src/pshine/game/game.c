@@ -114,6 +114,10 @@ static struct keybinds keybinds_ship_movement = {
 			.key = PSHINE_KEY_D,
 			.name = "Yaw Right",
 		},
+		[KEYBIND_SHIP_WARP] = (struct keybind){
+			.key = PSHINE_KEY_Y,
+			.name = "Enter/exit Warp",
+		},
 	},
 };
 
@@ -153,9 +157,12 @@ void pshine_init_game(struct pshine_game *game) {
 		struct pshine_timeval now = pshine_timeval_now();
 		pshine_pcg64_init(&game->rng64, now.sec, now.nsec);
 	}
+
 	game->time_scale = 1.0f;
 	game->data_own = calloc(1, sizeof(struct pshine_game_data));
 	load_game_config(game, "data/config.toml");
+
+	game->data_own->audio = pshine_create_audio();
 
 	for (size_t i = 0; i < game->star_system_count; ++i) {
 		init_star_system(game, &game->star_systems_own[i]);
@@ -167,13 +174,14 @@ void pshine_init_game(struct pshine_game *game) {
 		game->ships.ptr[idx].name_own = pshine_strdup("Red Menace");
 		game->ships.ptr[idx].callcode_own = pshine_strdup("NG-XK-AP-421620");
 		game->ships.ptr[idx].model_file_own = pshine_strdup("data/models/red_menace.glb");
-		game->ships.ptr[idx].position.xyz.x = 23058677.647 * PSHINE_SCS_SCALE;
-		game->ships.ptr[idx].position.xyz.y = -363.291 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.x = 23058277.647 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.y = -366.291 * PSHINE_SCS_SCALE;
 		game->ships.ptr[idx].position.xyz.z = 10228938.562 * PSHINE_SCS_SCALE;
 		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(0, 0, 0);
 		game->ships.ptr[idx].scale = 4.0;
 		game->ships.ptr[idx].max_atmo_velocity = 550.0;
 		game->ships.ptr[idx].max_space_velocity = 18600.0;
+		game->ships.ptr[idx].max_warp_velocity = PSHINE_SPEED_OF_LIGHT * 10.0;
 	}
 
 	if (game->star_system_count <= 0) {
@@ -248,6 +256,7 @@ void pshine_deinit_game(struct pshine_game *game) {
 		deinit_star_system(game, &game->star_systems_own[i]);
 	}
 	free(game->star_systems_own);
+	pshine_destroy_audio(&game->data_own->audio);
 	free(game->data_own);
 }
 
@@ -380,17 +389,19 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	float3 cam_up = floatRapply(cam_global_orient, float3xyz(0, 1, 0));
 	float3 cam_right = floatRapply(cam_global_orient, float3xyz(1, 0, 0));
 	
+	double velocity_frac = ship->is_in_warp ? 1.0 : ship->velocity / ship->max_space_velocity;
+
 	float shake_x = pshine_pcg64_random_float(&game->rng64);
 	float shake_y = pshine_pcg64_random_float(&game->rng64);
-	float shake_intensity = powf((float)(ship->velocity / ship->max_space_velocity), 5.0f) * 0.2f;
+	float shake_intensity = powf((float)velocity_frac, 5.0f) * 0.2f;
 
 	float3 cam_shake
 		= float3add(float3mul(cam_right, shake_x * shake_intensity), float3mul(cam_up, shake_y * shake_intensity));
 
 	double3 pos = double3vs(ship->position.values);
 
-	double speed_distance_offset = ship->velocity / ship->max_space_velocity * 5.;
-	game->actual_camera_fov += (float)(ship->velocity / ship->max_space_velocity) * 25.f * float3dot(cam_forward, ship_forward);
+	double speed_distance_offset = velocity_frac * 5.;
+	game->actual_camera_fov += (float)velocity_frac * 25.f * float3dot(cam_forward, ship_forward);
 	double3 cam_offset =
 		double3add(
 			double3mul(
@@ -424,7 +435,11 @@ void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
 	}
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F) && !game->data_own->last_key_states[PSHINE_KEY_F]) {
-		game->data_own->movement_mode = (game->data_own->movement_mode + 1) % MOVEMENT_COUNT_;
+		if (pshine_is_key_down(game->renderer, PSHINE_KEY_LEFT_SHIFT)) {
+			game->data_own->movement_mode = (game->data_own->movement_mode - 1) % MOVEMENT_COUNT_;
+		} else {
+			game->data_own->movement_mode = (game->data_own->movement_mode + 1) % MOVEMENT_COUNT_;
+		}
 	}
 
 	if (pshine_is_key_down(game->renderer, PSHINE_KEY_F2) && !game->data_own->last_key_states[PSHINE_KEY_F2]) {

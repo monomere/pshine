@@ -30,7 +30,8 @@ struct producer {
 #define CHECKMA(...) __VA_ARGS__ /* TBD */
 
 struct pshine_audio {
-	ma_engine *engine;
+	// must be first so that we can get this struct from the engine pointer.
+	ma_engine engine;
 	PSHINE_DYNA_(struct sound_instance) sounds;
 	PSHINE_DYNA_(struct group_instance) groups;
 	PSHINE_DYNA_(struct producer) producers;
@@ -47,38 +48,47 @@ void deinit_ma_sound(void *item, void *user) {
 	}
 }
 
-void pshine_init_audio(struct pshine_audio *au) {
-	au->engine = calloc(1, sizeof(*au->engine));
-	ma_result res = CHECKMA(ma_engine_init(nullptr, au->engine));
+struct pshine_audio *pshine_create_audio() {
+	struct pshine_audio *au = calloc(1, sizeof(*au));
+	ma_result res = CHECKMA(ma_engine_init(nullptr, &au->engine));
 	if (res != MA_SUCCESS) PSHINE_PANIC("Failed to initialize audio engine: %s", ma_result_description(res));
 	au->sounds_ma.rbuf.user = au;
 	au->sounds_ma.rbuf.item_deinit_fn = &deinit_ma_sound;
 	PSHINE_INIT_RBUF(au->sounds_ma, 64);
+	return au;
 }
 
-void pshine_deinit_audio(struct pshine_audio *au) {
+void pshine_destroy_audio(struct pshine_audio **au_ptr) {
+	struct pshine_audio *au = *au_ptr;
 	pshine_deinit_rbuf(&au->sounds_ma.rbuf);
 	pshine_free_dyna_(&au->sounds.dyna);
 	pshine_free_dyna_(&au->groups.dyna);
 	pshine_free_dyna_(&au->producers.dyna);
-	ma_engine_uninit(au->engine);
-	free(au->engine);
-	au->engine = nullptr;
+	ma_engine_uninit(&au->engine);
+	free(au);
+	*au_ptr = nullptr;
+}
+
+void sound_destroy_on_end_cb(void *user, ma_sound *sound) {
+	[[maybe_unused]] size_t idx = (size_t)(uintptr_t)user;
+	deinit_ma_sound(sound, user);
 }
 
 pshine_sound pshine_create_sound_from_file(struct pshine_audio *au, const struct pshine_sound_info *info) {
 	size_t idx = PSHINE_DYNA_ALLOC(au->sounds);
-	ma_sound *s = au->sounds.ptr[idx].s = PSHINE_RBUF_INSERT(au->sounds_ma, &(ma_sound){});
-	ma_result res = CHECKMA(ma_sound_init_from_file(
-		au->engine,
-		info->name,
-		MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC,
-		nullptr,
-		nullptr,
-		s
-	));
+	ma_sound *s = au->sounds.ptr[idx].s = calloc(1, sizeof(*s)); // PSHINE_RBUF_INSERT(au->sounds_ma, &(ma_sound){});
+
+	ma_sound_config cfg = ma_sound_config_init();
+	cfg.pFilePath = info->name;
+	cfg.flags = MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC;
+	cfg.isLooping = info->looping;
+	cfg.pEndCallbackUserData = (void*)(uintptr_t)idx;
+	if (!info->dont_destroy_on_stop) cfg.endCallback = sound_destroy_on_end_cb;
+	cfg.channelsOut = 0;
+	ma_result res = CHECKMA(ma_sound_init_ex(&au->engine, &cfg, s));
 	if (res != MA_SUCCESS) PSHINE_ERROR("Failed to initialize sound %s: %s", info->name, ma_result_description(res));
 	ma_sound_set_volume(s, 1.0f - info->quiet);
+
 	return (pshine_sound){ idx };
 }
 
@@ -105,13 +115,14 @@ void pshine_destroy_sound(struct pshine_audio *au, pshine_sound *sound) {
 		// Set the ma_sound structure to be uninitialized.
 		au->sounds.ptr[sound->idx].s->engineNode.baseNode.vtable = nullptr;
 	}
+	PSHINE_DYNA_KILL(au->sounds, sound->idx);
 	sound->idx = 0;
 }
 
 pshine_sound_group pshine_create_sound_group(struct pshine_audio *au, const struct pshine_sound_group_info *info) {
 	size_t idx = PSHINE_DYNA_ALLOC(au->groups);
 	ma_sound_group *g = au->groups.ptr[idx].g = calloc(1, sizeof(*g));
-	ma_result res = CHECKMA(ma_sound_group_init(au->engine, 0, nullptr, g));
+	ma_result res = CHECKMA(ma_sound_group_init(&au->engine, 0, nullptr, g));
 	if (res != MA_SUCCESS) PSHINE_ERROR("Failed to initialize sound group %s: %s", info->name, ma_result_description(res));
 	au->groups.ptr[idx].name_own = pshine_strdup(info->name);
 	return (pshine_sound_group){ idx };
@@ -121,6 +132,7 @@ void pshine_destroy_group(struct pshine_audio *au, pshine_sound_group *group) {
 	ma_sound_group *g = au->groups.ptr[group->idx].g;
 	ma_sound_group_uninit(g);
 	free(g);
+	PSHINE_DYNA_KILL(au->groups, group->idx);
 	group->idx = 0;
 }
 
@@ -154,13 +166,14 @@ pshine_sound_producer pshine_create_sound_producer(
 void pshine_destroy_sound_producer(struct pshine_audio *au, pshine_sound_producer *producer) {
 	ma_node_vtable *v = au->producers.ptr[producer->idx].v;
 	free(v);
+	PSHINE_DYNA_KILL(au->producers, producer->idx);
 	producer->idx = 0;
 }
 
 pshine_sound pshine_create_produced_sound(struct pshine_audio *au, pshine_sound_producer producer) {
 	size_t idx = PSHINE_DYNA_ALLOC(au->sounds);
 	au->sounds.ptr[idx].is_produced = true;
-	ma_node_graph *graph = ma_engine_get_node_graph(au->engine);
+	ma_node_graph *graph = ma_engine_get_node_graph(&au->engine);
 	struct producer *p = &au->producers.ptr[producer.idx];
 	struct producer_node *n = malloc(sizeof(*n) + 1);
 	au->sounds.ptr[idx].n = n;

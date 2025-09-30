@@ -404,8 +404,10 @@ void draw_debug_windows(struct pshine_game *game, float actual_delta_time) {
 	ImGui_End();
 
 	if (ImGui_Begin("Ship", nullptr, 0)) {
-		ImGui_Text("Max Velocity: %.1f", game->ships.ptr[0].current_max_velocity);
-		ImGui_Text("Velocity: %.1f", game->ships.ptr[0].velocity);
+		struct pshine_ship *ship = &game->ships.ptr[0];
+		ImGui_Text("Max Velocity: %.1fm/s", ship->current_max_velocity);
+		ImGui_Text("Velocity: %.1fm/s", ship->velocity);
+		ImGui_Text("Warp: %s", ship->is_in_warp ? "Active" : ship->is_warp_safe ? "Safe" : "Unsafe");
 	}
 	ImGui_End();
 

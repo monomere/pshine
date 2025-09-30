@@ -80,6 +80,8 @@ wget -P pshine/include/vendor https://raw.githubusercontent.com/jkuhlmann/cgltf/
 
 wget -P pshine/include/vendor https://raw.githubusercontent.com/nicbarker/clay/refs/heads/main/clay.h
 
+wget -P pshine/include/vendor https://raw.githubusercontent.com/mackron/miniaudio/refs/heads/master/miniaudio.h
+
 wget -P pshine/src/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.c
 wget -P pshine/include/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.h
 ```
@@ -162,6 +164,7 @@ Key|Action
 <kbd>F</kbd> | Switch camera mode (default is ship)
 <kbd>F2</kbd> | Hide all UI
 <kbd>Shift+F2</kbd> | Only hide the debug windows
+<kbd>P</kbd> | Toggle precise rotation
 
 #### Ship Mode
 
@@ -171,6 +174,7 @@ Key|Action
 <kbd>W</kbd>/<kbd>S</kbd> | Pitch
 <kbd>W</kbd>/<kbd>S</kbd> | Roll
 <kbd>Shift</kbd>/<kbd>Ctrl</kbd> | Increase/decrease velocity
+<kbd>Y</kbd> | Enter/exit Warp (10c).
 
 Hold left mouse button and drag to rotate the camera around the ship.
 

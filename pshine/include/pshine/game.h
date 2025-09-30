@@ -249,6 +249,11 @@ struct pshine_ship {
 	/// In m/s.
 	double velocity, max_atmo_velocity, max_space_velocity;
 
+	/// In m/s.
+	double max_warp_velocity;
+
+	bool is_in_warp;
+
 	/// The next properties are calculated during the ship's update
 
 	/// In m/s.
@@ -257,6 +262,8 @@ struct pshine_ship {
 	/// In meters.
 	double closest_body_distance;
 	struct pshine_celestial_body *closest_body;
+
+	bool is_warp_safe;
 };
 
 typedef struct { int32_t x; } pshine_snorm32;

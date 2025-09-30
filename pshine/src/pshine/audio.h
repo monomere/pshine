@@ -8,8 +8,8 @@
 
 struct pshine_audio;
 
-void pshine_init_audio(struct pshine_audio *au);
-void pshine_deinit_audio(struct pshine_audio *au);
+struct pshine_audio *pshine_create_audio();
+void pshine_destroy_audio(struct pshine_audio **au);
 
 struct pshine_sound_info {
 	const char *name;
