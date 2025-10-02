@@ -382,13 +382,62 @@ impl Surfgen for KJ631 {
 	}
 }
 
+struct Alpha2;
+impl Surfgen for Alpha2 {
+	fn noise() -> impl noise::NoiseFn<f64, 3> {
+		let mut rng = rand_chacha::ChaCha12Rng::from_seed([6; 32]);
+		noise::Add::new(
+			noise::Add::new(
+				noise::Add::new(
+					make_displacement(2, 20.0, 0.01,
+						noise::Exponent::new(
+							make_noise_scale(0.5, 0.5, 1.0,
+								noise::Fbm::<noise::Perlin>::new(6534)
+									.set_frequency(0.1)
+									.set_lacunarity(2.3)
+									.set_persistence(0.9)
+									.set_octaves(10)))
+							.set_exponent(2.0)),
+					make_noise_scale(0.2, 0.1, 1.0,
+						make_displacement(9432, 5.0, 0.02,
+							noise::RidgedMulti::<noise::OpenSimplex>::new(9784)
+								.set_frequency(0.2)
+								.set_lacunarity(1.49)
+								.set_persistence(0.8)
+								.set_attenuation(0.14)))
+				),
+				make_noise_scale(0.0, 0.3, 1.0,
+					make_displacement(5938, 0.003, 50.0,
+						tom_bombardil(16, &BombardmentConfig {
+							radius_bias: 5.2,
+							radius_range: 0.6..=0.9,
+							..Default::default()
+						}, &mut rng)))),
+			make_noise_scale(0.0, -0.2, 4.0,
+				noise::RidgedMulti::<noise::OpenSimplex>::new(4376)
+					.set_persistence(1.8))
+		)
+	}
+
+	fn gradient() -> noise::utils::ColorGradient {
+		noise::utils::ColorGradient::new()
+			.add_gradient_point(-1.0, [82, 29, 12, 255])
+			.add_gradient_point(0.0, [100, 62, 50, 255])
+			.add_gradient_point(0.99, [210, 201, 190, 255])
+	}
+}
+
 fn main() {
-	type S = KJ631;
+	type S = Alpha2;
 	let final_noise = S::noise();
 
+	let out = std::fs::File::create(std::env::args().nth(1)
+		.expect("expected an output path")).unwrap();
+
+	const SIZE: usize = 256;
 	let noise_map = noise::utils::SphereMapBuilder::new(final_noise)
 		.set_bounds(-90.0, 90.0, -180.0, 180.0)
-		.set_size(2048, 1024)
+		.set_size(SIZE * 2, SIZE)
 		.build();
 
 	let noise_image = noise::utils::ImageRenderer::new()
@@ -399,8 +448,6 @@ fn main() {
 		noise_image.size().0 as _,
 		noise_image.size().1 as _,
 	);
-	let out = std::fs::File::create(std::env::args().nth(1)
-		.expect("expected an output path")).unwrap();
 	let mut wr = std::io::BufWriter::new(out);
 	for (i, v) in noise_image.iter().enumerate() {
 		buf.as_flat_samples_mut().as_mut_slice()

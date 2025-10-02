@@ -195,6 +195,7 @@ struct ship_camera_data {
 	float yaw, pitch;
 	double distance;
 	double target_distance;
+	floatR prev_orient;
 };
 
 struct pshine_game_data {

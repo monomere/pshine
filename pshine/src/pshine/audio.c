@@ -64,6 +64,7 @@ void pshine_destroy_audio(struct pshine_audio **au_ptr) {
 	pshine_free_dyna_(&au->sounds.dyna);
 	pshine_free_dyna_(&au->groups.dyna);
 	pshine_free_dyna_(&au->producers.dyna);
+	PSHINE_DEBUG("ma_engine_uninit");
 	ma_engine_uninit(&au->engine);
 	free(au);
 	*au_ptr = nullptr;

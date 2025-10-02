@@ -171,9 +171,9 @@ void pshine_init_game(struct pshine_game *game) {
 	{
 		size_t idx = PSHINE_DYNA_ALLOC(game->ships);
 		game->ships.ptr[idx]._alive_marker = (size_t)-1;
-		game->ships.ptr[idx].name_own = pshine_strdup("Red Menace");
+		game->ships.ptr[idx].name_own = pshine_strdup("The Sunslicer");
 		game->ships.ptr[idx].callcode_own = pshine_strdup("NG-XK-AP-421620");
-		game->ships.ptr[idx].model_file_own = pshine_strdup("data/models/red_menace.glb");
+		game->ships.ptr[idx].model_file_own = pshine_strdup("data/models/kerem_kavalci.glb");
 		game->ships.ptr[idx].position.xyz.x = 23058277.647 * PSHINE_SCS_SCALE;
 		game->ships.ptr[idx].position.xyz.y = -366.291 * PSHINE_SCS_SCALE;
 		game->ships.ptr[idx].position.xyz.z = 10228938.562 * PSHINE_SCS_SCALE;
@@ -251,11 +251,14 @@ static void deinit_star_system(struct pshine_game *game, struct pshine_star_syst
 }
 
 void pshine_deinit_game(struct pshine_game *game) {
+	PSHINE_DEBUG("eximgui_deinit()");
 	eximgui_deinit();
 	for (size_t i = 0; i < game->star_system_count; ++i) {
+		PSHINE_DEBUG("deinit_star_system %zu", i);
 		deinit_star_system(game, &game->star_systems_own[i]);
 	}
 	free(game->star_systems_own);
+	PSHINE_DEBUG("Destroying Audio");
 	pshine_destroy_audio(&game->data_own->audio);
 	free(game->data_own);
 }
@@ -383,7 +386,11 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 		game->data_own->ship_camera_data.yaw,
 		0.0f
 	);
-	floatR cam_global_orient = floatRcombine(ship_orient, cam_orient);
+	floatR *prev_orient = &game->data_own->ship_camera_data.prev_orient;
+	// const float smoothness = 1 - 0.99f;
+	floatR target_orient = floatRcombine(ship_orient, cam_orient);
+	floatR cam_global_orient = floatRnlerp(*prev_orient, target_orient, 0.1);
+	*prev_orient = cam_global_orient;
 	float3 cam_forward = floatRapply(cam_global_orient, float3xyz(0, 0, 1));
 	
 	float3 cam_up = floatRapply(cam_global_orient, float3xyz(0, 1, 0));

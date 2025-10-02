@@ -1021,14 +1021,19 @@ static void load_mesh_model_from_gltf(
 	res = cgltf_parse_file(&(cgltf_options){
 		.type = cgltf_file_type_glb,
 	}, fpath, &data);
-	if (res != cgltf_result_success) PSHINE_PANIC("Failed to load glb model at '%s': %s (%u)", fpath, pshine_cgltf_result_string(res), res);
+
+	if (res != cgltf_result_success)
+		PSHINE_PANIC("Failed to load glb model at '%s': %s (%u)", fpath, pshine_cgltf_result_string(res), res);
+
 	cgltf_load_buffers(&(cgltf_options){
 		.type = cgltf_file_type_glb,
 	}, data, fpath);
+
 	size_t total_primitive_count = 0;
 	for (size_t i = 0; i < data->meshes_count; ++i) {
-		total_primitive_count += data->meshes[0].primitives_count;
+		total_primitive_count += data->meshes[i].primitives_count;
 	}
+
 	out->part_count = total_primitive_count;
 	out->parts_own = calloc(out->part_count, sizeof(*out->parts_own));
 	for (size_t i = 0, current_part = 0; i < data->meshes_count; ++i) {
@@ -1151,7 +1156,7 @@ static void load_mesh_model_from_gltf(
 				default: PSHINE_PANIC("Bad index accessor component type, expected integers.");
 			}
 
-			out->parts_own[current_part].material_index = data->materials - prim->material;
+			out->parts_own[current_part].material_index = prim->material - data->materials;
 
 			create_mesh(r, &(struct pshine_mesh_data){
 				.vertex_type = PSHINE_VERTEX_STATIC_MESH,
@@ -1233,8 +1238,6 @@ static void load_mesh_model_from_gltf(
 		});
 		NAME_VK_OBJECT(r, out->materials_own[i].uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER,
 			"Material UB #%zu for %s", i, fpath);
-		
-		
 
 		CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,

@@ -198,6 +198,7 @@ Key|Action
 ## Credits
 
 - Spaceship model by FilipZelinka, from [SketchFab](https://sketchfab.com/3d-models/spaceship-clipper-v2-red-menace-632da93e0e4c4ebab699ecb641803898). Under CC BY 4.0.
+- Spaceship model by Kerem Kavalci, from [SketchFab](https://sketchfab.com/3d-models/light-fighter-spaceship-free-51616ef53af84fe595c5603cd3e0f3e1). Under Free Standard License.
 
 ## TODO
 

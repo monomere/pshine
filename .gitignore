@@ -34,3 +34,6 @@ nohup.out
 
 # This is in the source tree, but writes are ignored???
 ninja/set-platform.ninja
+
+# CLion
+.idea

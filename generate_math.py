@@ -172,6 +172,30 @@ MATH_FN_ `T `$fromto(`B3 from_dir, `B3 to_dir) {
 		(halfway.z * from_dir.x) - (halfway.x * from_dir.z)
 	);
 }
+	
+MATH_FN_ `T `$nlerp(`T lhs, `T rhs, `B t) {
+	const float dot = lhs.s*rhs.s + lhs.xy*rhs.xy + lhs.yz*rhs.yz + lhs.zx*rhs.zx;
+	if (dot < 0.0f) {
+		rhs.s = -rhs.s;
+		rhs.xy = -rhs.xy;
+		rhs.yz = -rhs.yz;
+		rhs.zx = -rhs.zx;
+	}
+
+	`T r = {};
+	r.s = `[$Tb,lerp,$TyFmt](lhs.s, rhs.s, t);
+	r.xy = `[$Tb,lerp,$TyFmt](lhs.xy, rhs.xy, t);
+	r.yz = `[$Tb,lerp,$TyFmt](lhs.yz, rhs.yz, t);
+	r.zx = `[$Tb,lerp,$TyFmt](lhs.zx, rhs.zx, t);
+
+	const float magnitude = `[r.s*r.s + r.xy*r.xy + r.yz*r.yz + r.zx*r.zx,$sqrt];
+	r.s /= magnitude;
+	r.xy /= magnitude;
+	r.yz /= magnitude;
+	r.zx /= magnitude;
+	return r;
+}
+
 """.strip()),
 	({"cast"}, "", R"""
 /// Create a `Ta from a `Tb with each component casted.
@@ -616,6 +640,13 @@ def instantiate(ty: Ty, source: str, vars: dict[str, typing.Any]):
 		if ds == (1,): return [s.format("")]
 		return [s.format(prefix + "".join(f"[{v}]" for v in vs)) for vs in itertools.product(*map(range, ds))]
 	
+	def fn_gmath(name: str):
+		ty2 = ty.base_ty if isinstance(ty, (CompositeTy, RotorTy)) else ty
+		if ty2.name == "float": name = f"{name}f"
+		elif ty2.name == "double": name = f"{name}"
+		else: name = ty2.fmt(name)
+		return lambda x: f"{name}({x})"
+	
 	def fn_cmath(name: str):
 		ty2 = ty.base_ty if isinstance(ty, (CompositeTy, RotorTy)) else ty
 		if ty2.name == "float": name = f"{name}f"
@@ -679,6 +710,7 @@ def instantiate(ty: Ty, source: str, vars: dict[str, typing.Any]):
 		"sin": (1, fn_cmath("sin")),
 		"Paren": (1, lambda x: f"({x})"),
 		"Code": (1, lambda a: f"`{a}`"),
+		"TyFmt": (2, lambda t, n: t.fmt(n))
 	}
 
 	def repl(m: re.Match) -> str:

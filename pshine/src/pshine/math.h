@@ -259,6 +259,29 @@ MATH_FN_ floatR floatRfromto(float3 from_dir, float3 to_dir) {
 		(halfway.z * from_dir.x) - (halfway.x * from_dir.z)
 	);
 }
+	
+MATH_FN_ floatR floatRnlerp(floatR lhs, floatR rhs, float t) {
+	const float dot = lhs.s*rhs.s + lhs.xy*rhs.xy + lhs.yz*rhs.yz + lhs.zx*rhs.zx;
+	if (dot < 0.0f) {
+		rhs.s = -rhs.s;
+		rhs.xy = -rhs.xy;
+		rhs.yz = -rhs.yz;
+		rhs.zx = -rhs.zx;
+	}
+
+	floatR r = {};
+	r.s = lerpf(lhs.s, rhs.s, t);
+	r.xy = lerpf(lhs.xy, rhs.xy, t);
+	r.yz = lerpf(lhs.yz, rhs.yz, t);
+	r.zx = lerpf(lhs.zx, rhs.zx, t);
+
+	const float magnitude = sqrtf(r.s*r.s + r.xy*r.xy + r.yz*r.yz + r.zx*r.zx);
+	r.s /= magnitude;
+	r.xy /= magnitude;
+	r.yz /= magnitude;
+	r.zx /= magnitude;
+	return r;
+}
 
 /// A 2 by 2 matrix of floats.
 typedef union {
@@ -811,6 +834,29 @@ MATH_FN_ doubleR doubleRfromto(double3 from_dir, double3 to_dir) {
 		(halfway.y * from_dir.z) - (halfway.z * from_dir.y),
 		(halfway.z * from_dir.x) - (halfway.x * from_dir.z)
 	);
+}
+	
+MATH_FN_ doubleR doubleRnlerp(doubleR lhs, doubleR rhs, double t) {
+	// const double dot = from.s*to.s + from.xy*to.xy + from.yz*to.yz + from.zx*to.zx;
+	// if (dot < 0.0f) {
+	// 	to.scalar = -to.scalar;
+	// 	to.xy = -to.xy;
+	// 	to.yz = -to.yz;
+	// 	to.zx = -to.zx;
+	// }
+
+	doubleR r = {};
+	r.s = lerpd(lhs.s, rhs.s, t);
+	r.xy = lerpd(lhs.xy, rhs.xy, t);
+	r.yz = lerpd(lhs.yz, rhs.yz, t);
+	r.zx = lerpd(lhs.zx, rhs.zx, t);
+
+	const float magnitude = sqrt(r.s*r.s + r.xy*r.xy + r.yz*r.yz + r.zx*r.zx);
+	r.s /= magnitude;
+	r.xy /= magnitude;
+	r.yz /= magnitude;
+	r.zx /= magnitude;
+	return r;
 }
 
 /// A 2 by 2 matrix of doubles.
