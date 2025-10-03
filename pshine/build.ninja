@@ -53,6 +53,7 @@ build $builddir/data/shaders/atmo.vert.spv             : glslc data/shaders/atmo
 build $builddir/data/shaders/atmo.frag.spv             : glslc data/shaders/atmo.frag
 build $builddir/data/shaders/blit.vert.spv             : glslc data/shaders/blit.vert
 build $builddir/data/shaders/blit.frag.spv             : glslc data/shaders/blit.frag
+build $builddir/data/shaders/light.frag.spv            : glslc data/shaders/light.frag
 build $builddir/data/shaders/rings.vert.spv            : glslc data/shaders/rings.vert
 build $builddir/data/shaders/rings.frag.spv            : glslc data/shaders/rings.frag
 build $builddir/data/shaders/skybox.vert.spv           : glslc data/shaders/skybox.vert
@@ -61,6 +62,8 @@ build $builddir/data/shaders/atmo_lut.comp.spv         : glslc data/shaders/atmo
 build $builddir/data/shaders/std_mesh.vert.spv         : glslc data/shaders/std_mesh.vert
 build $builddir/data/shaders/std_mesh.frag.spv         : glslc data/shaders/std_mesh.frag
 build $builddir/data/shaders/std_mesh.de.frag.spv      : glslc data/shaders/std_mesh.de.frag
+build $builddir/data/shaders/std_mesh.shadow.frag.spv  : glslc data/shaders/std_mesh.shadow.frag
+build $builddir/data/shaders/std_mesh.shadow.vert.spv  : glslc data/shaders/std_mesh.shadow.vert
 build $builddir/data/shaders/solid_color.frag.spv      : glslc data/shaders/solid_color.frag
 build $builddir/data/shaders/bloom_upsample.comp.spv   : glslc data/shaders/bloom_upsample.comp
 build $builddir/data/shaders/bloom_downsample.comp.spv : glslc data/shaders/bloom_downsample.comp
@@ -105,6 +108,7 @@ build $builddir/main: ld $
   $builddir/data/shaders/atmo.frag.spv $
   $builddir/data/shaders/blit.vert.spv $
   $builddir/data/shaders/blit.frag.spv $
+  $builddir/data/shaders/light.frag.spv $
   $builddir/data/shaders/rings.vert.spv $
   $builddir/data/shaders/rings.frag.spv $
   $builddir/data/shaders/skybox.vert.spv $
@@ -112,6 +116,8 @@ build $builddir/main: ld $
   $builddir/data/shaders/std_mesh.vert.spv $
   $builddir/data/shaders/std_mesh.frag.spv $
   $builddir/data/shaders/std_mesh.de.frag.spv $
+  $builddir/data/shaders/std_mesh.shadow.vert.spv $
+  $builddir/data/shaders/std_mesh.shadow.frag.spv $
   $builddir/data/shaders/bloom_upsample.comp.spv $
   $builddir/data/shaders/bloom_downsample.comp.spv $
   vk_layer_settings.txt
