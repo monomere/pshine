@@ -251,7 +251,7 @@ MATH_FN_ `T `$lerp(`T a, `T b, `B t) { return `[a,$bOne,t,$Tb,sub,$Gbinop,$Paren
 """.rstrip()),
 	({"m"}, "{name} matrix", R"""
 /// A `[$Dim,0,$At,$Str] by `[$Dim,1,$At,$Str] matrix of `B.s.
-typedef union {
+typedef union [[gnu::aligned(`[$Dim,0,$At,4,$Int,$Mul,$CeilPot,$Str])]] {
 	struct { `B vvs[`[$Dim,0,$At,$Dim,1,$At,$Mul,$Str]]; };
 	struct { `B vs[`[$Dim,0,$At,$Str]][`[$Dim,1,$At,$Str]]; };
 	struct { `B`[$Dim,0,$At,$Str] v`[$Dim,0,$At,$Str]s[`[$Dim,1,$At,$Str]]; };
@@ -462,6 +462,304 @@ MATH_FN_ void set`B4x4lookat(`B4x4 *m, `B3 eye, `B3 center, `B3 up) {
 	m->vs[3][2] = -`B3dot(f, eye);
 	m->vs[3][3] = 1.0f;
 }
+
+"""),
+
+({"m4x4f"}, "Optimized float matrix operations", R"""
+// for Clang/LLVM, use intrinsics
+#ifdef __clang__
+// https://github.com/niswegmann/small-matrix-inverse
+MATH_FN_ __attribute__((__always_inline__, __nodebug__)) void float4x4invert(const float * src, float * dst) {
+	typedef __attribute__((__ext_vector_type__(4))) float float4;
+
+	float4 row0, row1, row2, row3;
+	float4 col0, col1, col2, col3;
+	float4 det, tmp1;
+
+	/* Load matrix: */
+
+	col0 = ((float4 *) src)[0];
+	col1 = ((float4 *) src)[1];
+	col2 = ((float4 *) src)[2];
+	col3 = ((float4 *) src)[3];
+
+	/* Transpose: */
+
+	tmp1 = __builtin_shufflevector(col0, col2, 0, 4, 1, 5);
+	row1 = __builtin_shufflevector(col1, col3, 0, 4, 1, 5);
+
+	row0 = __builtin_shufflevector(tmp1, row1, 0, 4, 1, 5);
+	row1 = __builtin_shufflevector(tmp1, row1, 2, 6, 3, 7);
+
+	tmp1 = __builtin_shufflevector(col0, col2, 2, 6, 3, 7);
+	row3 = __builtin_shufflevector(col1, col3, 2, 6, 3, 7);
+
+	row2 = __builtin_shufflevector(tmp1, row3, 0, 4, 1, 5);
+	row3 = __builtin_shufflevector(tmp1, row3, 2, 6, 3, 7);
+
+	/* Compute adjoint: */
+
+	row1 = __builtin_shufflevector(row1, row1, 2, 3, 0, 1);
+	row3 = __builtin_shufflevector(row3, row3, 2, 3, 0, 1);
+
+	tmp1 = row2 * row3;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col0 = row1 * tmp1;
+	col1 = row0 * tmp1;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col0 = row1 * tmp1 - col0;
+	col1 = row0 * tmp1 - col1;
+	col1 = __builtin_shufflevector(col1, col1, 2, 3, 4, 5);
+
+	tmp1 = row1 * row2;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col0 = row3 * tmp1 + col0;
+	col3 = row0 * tmp1;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col0 = col0 - row3 * tmp1;
+	col3 = row0 * tmp1 - col3;
+	col3 = __builtin_shufflevector(col3, col3, 2, 3, 4, 5);
+
+	tmp1 = __builtin_shufflevector(row1, row1, 2, 3, 4, 5) * row3;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+	row2 = __builtin_shufflevector(row2, row2, 2, 3, 4, 5);
+
+	col0 = row2 * tmp1 + col0;
+	col2 = row0 * tmp1;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col0 = col0 - row2 * tmp1;
+	col2 = row0 * tmp1 - col2;
+	col2 = __builtin_shufflevector(col2, col2, 2, 3, 4, 5);
+
+	tmp1 = row0 * row1;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col2 = row3 * tmp1 + col2;
+	col3 = row2 * tmp1 - col3;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col2 = row3 * tmp1 - col2;
+	col3 = col3 - row2 * tmp1;
+
+	tmp1 = row0 * row3;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col1 = col1 - row2 * tmp1;
+	col2 = row1 * tmp1 + col2;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col1 = row2 * tmp1 + col1;
+	col2 = col2 - row1 * tmp1;
+
+	tmp1 = row0 * row2;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col1 = row3 * tmp1 + col1;
+	col3 = col3 - row1 * tmp1;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col1 = col1 - row3 * tmp1;
+	col3 = row1 * tmp1 + col3;
+
+	/* Compute determinant: */
+
+	det = row0 * col0;
+	det = __builtin_shufflevector(det, det, 2, 3, 4, 5) + det;
+	det = __builtin_shufflevector(det, det, 1, 0, 7, 6) + det;
+
+	/* Compute reciprocal of determinant: */
+
+	det = 1.0f / det;
+
+	/* Multiply matrix of cofactors with reciprocal of determinant: */
+
+	col0 = col0 * det;
+	col1 = col1 * det;
+	col2 = col2 * det;
+	col3 = col3 * det;
+
+	/* Store inverted matrix: */
+
+	((float4 *) dst)[0] = col0;
+	((float4 *) dst)[1] = col1;
+	((float4 *) dst)[2] = col2;
+	((float4 *) dst)[3] = col3;
+}
+
+#else // defined(__clang__)
+
+MATH_FN_ void float4x4invert(const float * src, float * dst)
+{
+	float det;
+
+	/* Compute adjoint: */
+
+	dst[0] =
+		+ src[ 5] * src[10] * src[15]
+		- src[ 5] * src[11] * src[14]
+		- src[ 9] * src[ 6] * src[15]
+		+ src[ 9] * src[ 7] * src[14]
+		+ src[13] * src[ 6] * src[11]
+		- src[13] * src[ 7] * src[10];
+
+	dst[1] =
+		- src[ 1] * src[10] * src[15]
+		+ src[ 1] * src[11] * src[14]
+		+ src[ 9] * src[ 2] * src[15]
+		- src[ 9] * src[ 3] * src[14]
+		- src[13] * src[ 2] * src[11]
+		+ src[13] * src[ 3] * src[10];
+
+	dst[2] =
+		+ src[ 1] * src[ 6] * src[15]
+		- src[ 1] * src[ 7] * src[14]
+		- src[ 5] * src[ 2] * src[15]
+		+ src[ 5] * src[ 3] * src[14]
+		+ src[13] * src[ 2] * src[ 7]
+		- src[13] * src[ 3] * src[ 6];
+
+	dst[3] =
+		- src[ 1] * src[ 6] * src[11]
+		+ src[ 1] * src[ 7] * src[10]
+		+ src[ 5] * src[ 2] * src[11]
+		- src[ 5] * src[ 3] * src[10]
+		- src[ 9] * src[ 2] * src[ 7]
+		+ src[ 9] * src[ 3] * src[ 6];
+
+	dst[4] =
+		- src[ 4] * src[10] * src[15]
+		+ src[ 4] * src[11] * src[14]
+		+ src[ 8] * src[ 6] * src[15]
+		- src[ 8] * src[ 7] * src[14]
+		- src[12] * src[ 6] * src[11]
+		+ src[12] * src[ 7] * src[10];
+
+	dst[5] =
+		+ src[ 0] * src[10] * src[15]
+		- src[ 0] * src[11] * src[14]
+		- src[ 8] * src[ 2] * src[15]
+		+ src[ 8] * src[ 3] * src[14]
+		+ src[12] * src[ 2] * src[11]
+		- src[12] * src[ 3] * src[10];
+
+	dst[6] =
+		- src[ 0] * src[ 6] * src[15]
+		+ src[ 0] * src[ 7] * src[14]
+		+ src[ 4] * src[ 2] * src[15]
+		- src[ 4] * src[ 3] * src[14]
+		- src[12] * src[ 2] * src[ 7]
+		+ src[12] * src[ 3] * src[ 6];
+
+	dst[7] =
+		+ src[ 0] * src[ 6] * src[11]
+		- src[ 0] * src[ 7] * src[10]
+		- src[ 4] * src[ 2] * src[11]
+		+ src[ 4] * src[ 3] * src[10]
+		+ src[ 8] * src[ 2] * src[ 7]
+		- src[ 8] * src[ 3] * src[ 6];
+
+	dst[8] =
+		+ src[ 4] * src[ 9] * src[15]
+		- src[ 4] * src[11] * src[13]
+		- src[ 8] * src[ 5] * src[15]
+		+ src[ 8] * src[ 7] * src[13]
+		+ src[12] * src[ 5] * src[11]
+		- src[12] * src[ 7] * src[ 9];
+
+	dst[9] =
+		- src[ 0] * src[ 9] * src[15]
+		+ src[ 0] * src[11] * src[13]
+		+ src[ 8] * src[ 1] * src[15]
+		- src[ 8] * src[ 3] * src[13]
+		- src[12] * src[ 1] * src[11]
+		+ src[12] * src[ 3] * src[ 9];
+
+	dst[10] =
+		+ src[ 0] * src[ 5] * src[15]
+		- src[ 0] * src[ 7] * src[13]
+		- src[ 4] * src[ 1] * src[15]
+		+ src[ 4] * src[ 3] * src[13]
+		+ src[12] * src[ 1] * src[ 7]
+		- src[12] * src[ 3] * src[ 5];
+
+	dst[11] =
+		- src[ 0] * src[ 5] * src[11]
+		+ src[ 0] * src[ 7] * src[ 9]
+		+ src[ 4] * src[ 1] * src[11]
+		- src[ 4] * src[ 3] * src[ 9]
+		- src[ 8] * src[ 1] * src[ 7]
+		+ src[ 8] * src[ 3] * src[ 5];
+
+	dst[12] =
+		- src[ 4] * src[ 9] * src[14]
+		+ src[ 4] * src[10] * src[13]
+		+ src[ 8] * src[ 5] * src[14]
+		- src[ 8] * src[ 6] * src[13]
+		- src[12] * src[ 5] * src[10]
+		+ src[12] * src[ 6] * src[ 9];
+
+	dst[13] =
+		+ src[ 0] * src[ 9] * src[14]
+		- src[ 0] * src[10] * src[13]
+		- src[ 8] * src[ 1] * src[14]
+		+ src[ 8] * src[ 2] * src[13]
+		+ src[12] * src[ 1] * src[10]
+		- src[12] * src[ 2] * src[ 9];
+
+	dst[14] =
+		- src[ 0] * src[ 5] * src[14]
+		+ src[ 0] * src[ 6] * src[13]
+		+ src[ 4] * src[ 1] * src[14]
+		- src[ 4] * src[ 2] * src[13]
+		- src[12] * src[ 1] * src[ 6]
+		+ src[12] * src[ 2] * src[ 5];
+
+	dst[15] =
+		+ src[ 0] * src[ 5] * src[10]
+		- src[ 0] * src[ 6] * src[ 9]
+		- src[ 4] * src[ 1] * src[10]
+		+ src[ 4] * src[ 2] * src[ 9]
+		+ src[ 8] * src[ 1] * src[ 6]
+		- src[ 8] * src[ 2] * src[ 5];
+
+	/* Compute determinant: */
+
+	det = + src[0] * dst[0] + src[1] * dst[4] + src[2] * dst[8] + src[3] * dst[12];
+
+	/* Multiply adjoint with reciprocal of determinant: */
+
+	det = 1.0f / det;
+
+	dst[ 0] *= det;
+	dst[ 1] *= det;
+	dst[ 2] *= det;
+	dst[ 3] *= det;
+	dst[ 4] *= det;
+	dst[ 5] *= det;
+	dst[ 6] *= det;
+	dst[ 7] *= det;
+	dst[ 8] *= det;
+	dst[ 9] *= det;
+	dst[10] *= det;
+	dst[11] *= det;
+	dst[12] *= det;
+	dst[13] *= det;
+	dst[14] *= det;
+	dst[15] *= det;
+}
+
+#endif
 
 """)
 ]
@@ -710,7 +1008,8 @@ def instantiate(ty: Ty, source: str, vars: dict[str, typing.Any]):
 		"sin": (1, fn_cmath("sin")),
 		"Paren": (1, lambda x: f"({x})"),
 		"Code": (1, lambda a: f"`{a}`"),
-		"TyFmt": (2, lambda t, n: t.fmt(n))
+		"TyFmt": (2, lambda t, n: t.fmt(n)),
+		"CeilPot": (1, lambda x: 1 << (x - 1).bit_length()),
 	}
 
 	def repl(m: re.Match) -> str:

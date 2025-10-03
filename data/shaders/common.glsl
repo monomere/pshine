@@ -18,6 +18,9 @@ struct GlobalUniforms {
 	vec4 camera;        // xyz, w=near_plane.z
 	vec4 camera_right;  // xyz, w=near_plane.x
 	vec4 camera_up;     // xyz, w=near_plane.y
+	mat4 inv_view;
+	mat4 inv_proj;
+	mat4 local_view;
 };
 
 struct AtmosphereUniforms {
@@ -80,6 +83,11 @@ struct GraphicsSettingsConsts {
 	float exposure;
 	float camera_fov;
 };
+
+// struct LightUniforms {
+// 	vec4 cam_sun;
+// 	vec4 cam_pos;
+// };
 
 float luma_from_rgb(vec3 rgb) {
 	return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;

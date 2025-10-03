@@ -60,6 +60,7 @@ build $builddir/data/shaders/skybox.frag.spv           : glslc data/shaders/skyb
 build $builddir/data/shaders/atmo_lut.comp.spv         : glslc data/shaders/atmo_lut.comp
 build $builddir/data/shaders/std_mesh.vert.spv         : glslc data/shaders/std_mesh.vert
 build $builddir/data/shaders/std_mesh.frag.spv         : glslc data/shaders/std_mesh.frag
+build $builddir/data/shaders/std_mesh.de.frag.spv      : glslc data/shaders/std_mesh.de.frag
 build $builddir/data/shaders/solid_color.frag.spv      : glslc data/shaders/solid_color.frag
 build $builddir/data/shaders/bloom_upsample.comp.spv   : glslc data/shaders/bloom_upsample.comp
 build $builddir/data/shaders/bloom_downsample.comp.spv : glslc data/shaders/bloom_downsample.comp
@@ -108,6 +109,9 @@ build $builddir/main: ld $
   $builddir/data/shaders/rings.frag.spv $
   $builddir/data/shaders/skybox.vert.spv $
   $builddir/data/shaders/skybox.frag.spv $
+  $builddir/data/shaders/std_mesh.vert.spv $
+  $builddir/data/shaders/std_mesh.frag.spv $
+  $builddir/data/shaders/std_mesh.de.frag.spv $
   $builddir/data/shaders/bloom_upsample.comp.spv $
   $builddir/data/shaders/bloom_downsample.comp.spv $
   vk_layer_settings.txt

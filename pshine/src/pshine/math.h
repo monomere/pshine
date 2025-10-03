@@ -284,7 +284,7 @@ MATH_FN_ floatR floatRnlerp(floatR lhs, floatR rhs, float t) {
 }
 
 /// A 2 by 2 matrix of floats.
-typedef union {
+typedef union [[gnu::aligned(8)]] {
 	struct { float vvs[4]; };
 	struct { float vs[2][2]; };
 	struct { float2 v2s[2]; };
@@ -320,28 +320,28 @@ MATH_FN_ void float2x2mul(float2x2 *m1, const float2x2 *m2) {
 
 
 /// A 2 by 3 matrix of floats.
-typedef union {
+typedef union [[gnu::aligned(8)]] {
 	struct { float vvs[6]; };
 	struct { float vs[2][3]; };
 	struct { float2 v2s[3]; };
 } float2x3;
 
 /// A 2 by 4 matrix of floats.
-typedef union {
+typedef union [[gnu::aligned(8)]] {
 	struct { float vvs[8]; };
 	struct { float vs[2][4]; };
 	struct { float2 v2s[4]; };
 } float2x4;
 
 /// A 3 by 2 matrix of floats.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { float vvs[6]; };
 	struct { float vs[3][2]; };
 	struct { float3 v3s[2]; };
 } float3x2;
 
 /// A 3 by 3 matrix of floats.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { float vvs[9]; };
 	struct { float vs[3][3]; };
 	struct { float3 v3s[3]; };
@@ -378,28 +378,28 @@ MATH_FN_ void float3x3mul(float3x3 *m1, const float3x3 *m2) {
 
 
 /// A 3 by 4 matrix of floats.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { float vvs[12]; };
 	struct { float vs[3][4]; };
 	struct { float3 v3s[4]; };
 } float3x4;
 
 /// A 4 by 2 matrix of floats.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { float vvs[8]; };
 	struct { float vs[4][2]; };
 	struct { float4 v4s[2]; };
 } float4x2;
 
 /// A 4 by 3 matrix of floats.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { float vvs[12]; };
 	struct { float vs[4][3]; };
 	struct { float4 v4s[3]; };
 } float4x3;
 
 /// A 4 by 4 matrix of floats.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { float vvs[16]; };
 	struct { float vs[4][4]; };
 	struct { float4 v4s[4]; };
@@ -589,6 +589,303 @@ MATH_FN_ void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, float3 u
 	m->vs[3][2] = -float3dot(f, eye);
 	m->vs[3][3] = 1.0f;
 }
+
+
+
+// for Clang/LLVM, use intrinsics
+#ifdef __clang__
+// https://github.com/niswegmann/small-matrix-inverse
+MATH_FN_ __attribute__((__always_inline__, __nodebug__)) void float4x4invert(const float * src, float * dst) {
+	typedef __attribute__((__ext_vector_type__(4))) float float4;
+
+	float4 row0, row1, row2, row3;
+	float4 col0, col1, col2, col3;
+	float4 det, tmp1;
+
+	/* Load matrix: */
+
+	col0 = ((float4 *) src)[0];
+	col1 = ((float4 *) src)[1];
+	col2 = ((float4 *) src)[2];
+	col3 = ((float4 *) src)[3];
+
+	/* Transpose: */
+
+	tmp1 = __builtin_shufflevector(col0, col2, 0, 4, 1, 5);
+	row1 = __builtin_shufflevector(col1, col3, 0, 4, 1, 5);
+
+	row0 = __builtin_shufflevector(tmp1, row1, 0, 4, 1, 5);
+	row1 = __builtin_shufflevector(tmp1, row1, 2, 6, 3, 7);
+
+	tmp1 = __builtin_shufflevector(col0, col2, 2, 6, 3, 7);
+	row3 = __builtin_shufflevector(col1, col3, 2, 6, 3, 7);
+
+	row2 = __builtin_shufflevector(tmp1, row3, 0, 4, 1, 5);
+	row3 = __builtin_shufflevector(tmp1, row3, 2, 6, 3, 7);
+
+	/* Compute adjoint: */
+
+	row1 = __builtin_shufflevector(row1, row1, 2, 3, 0, 1);
+	row3 = __builtin_shufflevector(row3, row3, 2, 3, 0, 1);
+
+	tmp1 = row2 * row3;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col0 = row1 * tmp1;
+	col1 = row0 * tmp1;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col0 = row1 * tmp1 - col0;
+	col1 = row0 * tmp1 - col1;
+	col1 = __builtin_shufflevector(col1, col1, 2, 3, 4, 5);
+
+	tmp1 = row1 * row2;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col0 = row3 * tmp1 + col0;
+	col3 = row0 * tmp1;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col0 = col0 - row3 * tmp1;
+	col3 = row0 * tmp1 - col3;
+	col3 = __builtin_shufflevector(col3, col3, 2, 3, 4, 5);
+
+	tmp1 = __builtin_shufflevector(row1, row1, 2, 3, 4, 5) * row3;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+	row2 = __builtin_shufflevector(row2, row2, 2, 3, 4, 5);
+
+	col0 = row2 * tmp1 + col0;
+	col2 = row0 * tmp1;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col0 = col0 - row2 * tmp1;
+	col2 = row0 * tmp1 - col2;
+	col2 = __builtin_shufflevector(col2, col2, 2, 3, 4, 5);
+
+	tmp1 = row0 * row1;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col2 = row3 * tmp1 + col2;
+	col3 = row2 * tmp1 - col3;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col2 = row3 * tmp1 - col2;
+	col3 = col3 - row2 * tmp1;
+
+	tmp1 = row0 * row3;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col1 = col1 - row2 * tmp1;
+	col2 = row1 * tmp1 + col2;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col1 = row2 * tmp1 + col1;
+	col2 = col2 - row1 * tmp1;
+
+	tmp1 = row0 * row2;
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 1, 0, 7, 6);
+
+	col1 = row3 * tmp1 + col1;
+	col3 = col3 - row1 * tmp1;
+
+	tmp1 = __builtin_shufflevector(tmp1, tmp1, 2, 3, 4, 5);
+
+	col1 = col1 - row3 * tmp1;
+	col3 = row1 * tmp1 + col3;
+
+	/* Compute determinant: */
+
+	det = row0 * col0;
+	det = __builtin_shufflevector(det, det, 2, 3, 4, 5) + det;
+	det = __builtin_shufflevector(det, det, 1, 0, 7, 6) + det;
+
+	/* Compute reciprocal of determinant: */
+
+	det = 1.0f / det;
+
+	/* Multiply matrix of cofactors with reciprocal of determinant: */
+
+	col0 = col0 * det;
+	col1 = col1 * det;
+	col2 = col2 * det;
+	col3 = col3 * det;
+
+	/* Store inverted matrix: */
+
+	((float4 *) dst)[0] = col0;
+	((float4 *) dst)[1] = col1;
+	((float4 *) dst)[2] = col2;
+	((float4 *) dst)[3] = col3;
+}
+
+#else // defined(__clang__)
+
+MATH_FN_ void float4x4invert(const float * src, float * dst)
+{
+	float det;
+
+	/* Compute adjoint: */
+
+	dst[0] =
+		+ src[ 5] * src[10] * src[15]
+		- src[ 5] * src[11] * src[14]
+		- src[ 9] * src[ 6] * src[15]
+		+ src[ 9] * src[ 7] * src[14]
+		+ src[13] * src[ 6] * src[11]
+		- src[13] * src[ 7] * src[10];
+
+	dst[1] =
+		- src[ 1] * src[10] * src[15]
+		+ src[ 1] * src[11] * src[14]
+		+ src[ 9] * src[ 2] * src[15]
+		- src[ 9] * src[ 3] * src[14]
+		- src[13] * src[ 2] * src[11]
+		+ src[13] * src[ 3] * src[10];
+
+	dst[2] =
+		+ src[ 1] * src[ 6] * src[15]
+		- src[ 1] * src[ 7] * src[14]
+		- src[ 5] * src[ 2] * src[15]
+		+ src[ 5] * src[ 3] * src[14]
+		+ src[13] * src[ 2] * src[ 7]
+		- src[13] * src[ 3] * src[ 6];
+
+	dst[3] =
+		- src[ 1] * src[ 6] * src[11]
+		+ src[ 1] * src[ 7] * src[10]
+		+ src[ 5] * src[ 2] * src[11]
+		- src[ 5] * src[ 3] * src[10]
+		- src[ 9] * src[ 2] * src[ 7]
+		+ src[ 9] * src[ 3] * src[ 6];
+
+	dst[4] =
+		- src[ 4] * src[10] * src[15]
+		+ src[ 4] * src[11] * src[14]
+		+ src[ 8] * src[ 6] * src[15]
+		- src[ 8] * src[ 7] * src[14]
+		- src[12] * src[ 6] * src[11]
+		+ src[12] * src[ 7] * src[10];
+
+	dst[5] =
+		+ src[ 0] * src[10] * src[15]
+		- src[ 0] * src[11] * src[14]
+		- src[ 8] * src[ 2] * src[15]
+		+ src[ 8] * src[ 3] * src[14]
+		+ src[12] * src[ 2] * src[11]
+		- src[12] * src[ 3] * src[10];
+
+	dst[6] =
+		- src[ 0] * src[ 6] * src[15]
+		+ src[ 0] * src[ 7] * src[14]
+		+ src[ 4] * src[ 2] * src[15]
+		- src[ 4] * src[ 3] * src[14]
+		- src[12] * src[ 2] * src[ 7]
+		+ src[12] * src[ 3] * src[ 6];
+
+	dst[7] =
+		+ src[ 0] * src[ 6] * src[11]
+		- src[ 0] * src[ 7] * src[10]
+		- src[ 4] * src[ 2] * src[11]
+		+ src[ 4] * src[ 3] * src[10]
+		+ src[ 8] * src[ 2] * src[ 7]
+		- src[ 8] * src[ 3] * src[ 6];
+
+	dst[8] =
+		+ src[ 4] * src[ 9] * src[15]
+		- src[ 4] * src[11] * src[13]
+		- src[ 8] * src[ 5] * src[15]
+		+ src[ 8] * src[ 7] * src[13]
+		+ src[12] * src[ 5] * src[11]
+		- src[12] * src[ 7] * src[ 9];
+
+	dst[9] =
+		- src[ 0] * src[ 9] * src[15]
+		+ src[ 0] * src[11] * src[13]
+		+ src[ 8] * src[ 1] * src[15]
+		- src[ 8] * src[ 3] * src[13]
+		- src[12] * src[ 1] * src[11]
+		+ src[12] * src[ 3] * src[ 9];
+
+	dst[10] =
+		+ src[ 0] * src[ 5] * src[15]
+		- src[ 0] * src[ 7] * src[13]
+		- src[ 4] * src[ 1] * src[15]
+		+ src[ 4] * src[ 3] * src[13]
+		+ src[12] * src[ 1] * src[ 7]
+		- src[12] * src[ 3] * src[ 5];
+
+	dst[11] =
+		- src[ 0] * src[ 5] * src[11]
+		+ src[ 0] * src[ 7] * src[ 9]
+		+ src[ 4] * src[ 1] * src[11]
+		- src[ 4] * src[ 3] * src[ 9]
+		- src[ 8] * src[ 1] * src[ 7]
+		+ src[ 8] * src[ 3] * src[ 5];
+
+	dst[12] =
+		- src[ 4] * src[ 9] * src[14]
+		+ src[ 4] * src[10] * src[13]
+		+ src[ 8] * src[ 5] * src[14]
+		- src[ 8] * src[ 6] * src[13]
+		- src[12] * src[ 5] * src[10]
+		+ src[12] * src[ 6] * src[ 9];
+
+	dst[13] =
+		+ src[ 0] * src[ 9] * src[14]
+		- src[ 0] * src[10] * src[13]
+		- src[ 8] * src[ 1] * src[14]
+		+ src[ 8] * src[ 2] * src[13]
+		+ src[12] * src[ 1] * src[10]
+		- src[12] * src[ 2] * src[ 9];
+
+	dst[14] =
+		- src[ 0] * src[ 5] * src[14]
+		+ src[ 0] * src[ 6] * src[13]
+		+ src[ 4] * src[ 1] * src[14]
+		- src[ 4] * src[ 2] * src[13]
+		- src[12] * src[ 1] * src[ 6]
+		+ src[12] * src[ 2] * src[ 5];
+
+	dst[15] =
+		+ src[ 0] * src[ 5] * src[10]
+		- src[ 0] * src[ 6] * src[ 9]
+		- src[ 4] * src[ 1] * src[10]
+		+ src[ 4] * src[ 2] * src[ 9]
+		+ src[ 8] * src[ 1] * src[ 6]
+		- src[ 8] * src[ 2] * src[ 5];
+
+	/* Compute determinant: */
+
+	det = + src[0] * dst[0] + src[1] * dst[4] + src[2] * dst[8] + src[3] * dst[12];
+
+	/* Multiply adjoint with reciprocal of determinant: */
+
+	det = 1.0f / det;
+
+	dst[ 0] *= det;
+	dst[ 1] *= det;
+	dst[ 2] *= det;
+	dst[ 3] *= det;
+	dst[ 4] *= det;
+	dst[ 5] *= det;
+	dst[ 6] *= det;
+	dst[ 7] *= det;
+	dst[ 8] *= det;
+	dst[ 9] *= det;
+	dst[10] *= det;
+	dst[11] *= det;
+	dst[12] *= det;
+	dst[13] *= det;
+	dst[14] *= det;
+	dst[15] *= det;
+}
+
+#endif
 
 
 
@@ -837,13 +1134,13 @@ MATH_FN_ doubleR doubleRfromto(double3 from_dir, double3 to_dir) {
 }
 	
 MATH_FN_ doubleR doubleRnlerp(doubleR lhs, doubleR rhs, double t) {
-	// const double dot = from.s*to.s + from.xy*to.xy + from.yz*to.yz + from.zx*to.zx;
-	// if (dot < 0.0f) {
-	// 	to.scalar = -to.scalar;
-	// 	to.xy = -to.xy;
-	// 	to.yz = -to.yz;
-	// 	to.zx = -to.zx;
-	// }
+	const float dot = lhs.s*rhs.s + lhs.xy*rhs.xy + lhs.yz*rhs.yz + lhs.zx*rhs.zx;
+	if (dot < 0.0f) {
+		rhs.s = -rhs.s;
+		rhs.xy = -rhs.xy;
+		rhs.yz = -rhs.yz;
+		rhs.zx = -rhs.zx;
+	}
 
 	doubleR r = {};
 	r.s = lerpd(lhs.s, rhs.s, t);
@@ -860,7 +1157,7 @@ MATH_FN_ doubleR doubleRnlerp(doubleR lhs, doubleR rhs, double t) {
 }
 
 /// A 2 by 2 matrix of doubles.
-typedef union {
+typedef union [[gnu::aligned(8)]] {
 	struct { double vvs[4]; };
 	struct { double vs[2][2]; };
 	struct { double2 v2s[2]; };
@@ -896,28 +1193,28 @@ MATH_FN_ void double2x2mul(double2x2 *m1, const double2x2 *m2) {
 
 
 /// A 2 by 3 matrix of doubles.
-typedef union {
+typedef union [[gnu::aligned(8)]] {
 	struct { double vvs[6]; };
 	struct { double vs[2][3]; };
 	struct { double2 v2s[3]; };
 } double2x3;
 
 /// A 2 by 4 matrix of doubles.
-typedef union {
+typedef union [[gnu::aligned(8)]] {
 	struct { double vvs[8]; };
 	struct { double vs[2][4]; };
 	struct { double2 v2s[4]; };
 } double2x4;
 
 /// A 3 by 2 matrix of doubles.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { double vvs[6]; };
 	struct { double vs[3][2]; };
 	struct { double3 v3s[2]; };
 } double3x2;
 
 /// A 3 by 3 matrix of doubles.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { double vvs[9]; };
 	struct { double vs[3][3]; };
 	struct { double3 v3s[3]; };
@@ -954,28 +1251,28 @@ MATH_FN_ void double3x3mul(double3x3 *m1, const double3x3 *m2) {
 
 
 /// A 3 by 4 matrix of doubles.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { double vvs[12]; };
 	struct { double vs[3][4]; };
 	struct { double3 v3s[4]; };
 } double3x4;
 
 /// A 4 by 2 matrix of doubles.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { double vvs[8]; };
 	struct { double vs[4][2]; };
 	struct { double4 v4s[2]; };
 } double4x2;
 
 /// A 4 by 3 matrix of doubles.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { double vvs[12]; };
 	struct { double vs[4][3]; };
 	struct { double4 v4s[3]; };
 } double4x3;
 
 /// A 4 by 4 matrix of doubles.
-typedef union {
+typedef union [[gnu::aligned(16)]] {
 	struct { double vvs[16]; };
 	struct { double vs[4][4]; };
 	struct { double4 v4s[4]; };
