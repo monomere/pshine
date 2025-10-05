@@ -33,6 +33,7 @@ build $builddir/vendor/toml.c.o          : cc  $mod/src/vendor/toml.c
 
 build $builddir/vendor/cimgui/backends/cimgui_impl_glfw.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_glfw.cpp
 build $builddir/vendor/cimgui/backends/cimgui_impl_vulkan.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_vulkan.cpp
+  cflags2 = -DIMGUI_IMPL_VULKAN_USE_VOLK=1
 build $builddir/vendor/imgui/backends/imgui_impl_glfw.cpp.o : cxx vendor/imgui/backends/imgui_impl_glfw.cpp
 build $builddir/vendor/imgui/backends/imgui_impl_vulkan.cpp.o : cxx vendor/imgui/backends/imgui_impl_vulkan.cpp
 build $builddir/vendor/cimgui/cimgui.cpp.o       : cxx $mod/src/vendor/cimgui/cimgui.cpp

@@ -4,7 +4,8 @@
 #include <vulkan/vulkan_core.h>
 #include <cgltf.h>
 
-const char *pshine_vk_result_string(VkResult result) {
+[[maybe_unused]]
+static const char *pshine_vk_result_string(VkResult result) {
 	switch (result) {
 	case VK_SUCCESS: return "Success";
 	case VK_NOT_READY: return "Not Ready";
@@ -40,7 +41,8 @@ const char *pshine_vk_result_string(VkResult result) {
 	}
 }
 
-const char *pshine_vk_format_string(VkFormat format) {
+[[maybe_unused]]
+static const char *pshine_vk_format_string(VkFormat format) {
 	switch (format) {
 	case VK_FORMAT_UNDEFINED: return "UNDEFINED";
 	case VK_FORMAT_R4G4_UNORM_PACK8: return "R4G4 UNORM PACK8";
@@ -294,7 +296,8 @@ const char *pshine_vk_format_string(VkFormat format) {
 	}
 }
 
-const char *pshine_vk_color_space_string(VkColorSpaceKHR v) {
+[[maybe_unused]]
+static const char *pshine_vk_color_space_string(VkColorSpaceKHR v) {
 	switch (v) {
 	case VK_COLOR_SPACE_SRGB_NONLINEAR_KHR: return "SRGB NONLINEAR KHR";
 	case VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT: return "DISPLAY P3 NONLINEAR EXT";
@@ -316,6 +319,7 @@ const char *pshine_vk_color_space_string(VkColorSpaceKHR v) {
 	}
 }
 
+[[maybe_unused]]
 static const char *pshine_cgltf_result_string(cgltf_result res) {
 	switch (res) {
 		case cgltf_result_success: return "Success";
@@ -332,5 +336,64 @@ static const char *pshine_cgltf_result_string(cgltf_result res) {
 	}
 }
 
+[[maybe_unused]]
+static const char *pshine_vk_stage_bit_string(VkPipelineStageFlagBits2 bit) {
+	switch (bit) {
+		case VK_PIPELINE_STAGE_2_NONE: return "NONE";
+		case VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT: return "TOP_OF_PIPE";
+		case VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT: return "DRAW_INDIRECT";
+		case VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT: return "VERTEX_INPUT";
+		case VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT: return "VERTEX_SHADER";
+		case VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT: return "TESSELLATION_CONTROL_SHADER";
+		case VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT: return "TESSELLATION_EVALUATION_SHADER";
+		case VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT: return "GEOMETRY_SHADER";
+		case VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT: return "FRAGMENT_SHADER";
+		case VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT: return "EARLY_FRAGMENT_TESTS";
+		case VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT: return "LATE_FRAGMENT_TESTS";
+		case VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT: return "COLOR_ATTACHMENT_OUTPUT";
+		case VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT: return "COMPUTE_SHADER";
+		case VK_PIPELINE_STAGE_2_TRANSFER_BIT: return "TRANSFER";
+		case VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT: return "BOTTOM_OF_PIPE";
+		case VK_PIPELINE_STAGE_2_HOST_BIT: return "HOST";
+		case VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT: return "ALL_GRAPHICS";
+		case VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT: return "ALL_COMMANDS";
+		case VK_PIPELINE_STAGE_2_COPY_BIT: return "COPY";
+		case VK_PIPELINE_STAGE_2_RESOLVE_BIT: return "RESOLVE";
+		case VK_PIPELINE_STAGE_2_BLIT_BIT: return "BLIT";
+		case VK_PIPELINE_STAGE_2_CLEAR_BIT: return "CLEAR";
+		case VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT: return "INDEX_INPUT";
+		case VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT: return "VERTEX_ATTRIBUTE_INPUT";
+		case VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT: return "PRE_RASTERIZATION_SHADERS";
+		default: return "?";
+	}
+}
+
+[[maybe_unused]]
+static const char *pshine_vk_access_bit_string(VkAccessFlagBits2 bit) {
+	switch (bit) {
+		case VK_ACCESS_2_NONE: return "NONE";
+		case VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT: return "INDIRECT_COMMAND_READ";
+		case VK_ACCESS_2_INDEX_READ_BIT: return "INDEX_READ";
+		case VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT: return "VERTEX_ATTRIBUTE_READ";
+		case VK_ACCESS_2_UNIFORM_READ_BIT: return "UNIFORM_READ";
+		case VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT: return "INPUT_ATTACHMENT_READ";
+		case VK_ACCESS_2_SHADER_READ_BIT: return "SHADER_READ";
+		case VK_ACCESS_2_SHADER_WRITE_BIT: return "SHADER_WRITE";
+		case VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT: return "COLOR_ATTACHMENT_READ";
+		case VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT: return "COLOR_ATTACHMENT_WRITE";
+		case VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT: return "DEPTH_STENCIL_ATTACHMENT_READ";
+		case VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT: return "DEPTH_STENCIL_ATTACHMENT_WRITE";
+		case VK_ACCESS_2_TRANSFER_READ_BIT: return "TRANSFER_READ";
+		case VK_ACCESS_2_TRANSFER_WRITE_BIT: return "TRANSFER_WRITE";
+		case VK_ACCESS_2_HOST_READ_BIT: return "HOST_READ";
+		case VK_ACCESS_2_HOST_WRITE_BIT: return "HOST_WRITE";
+		case VK_ACCESS_2_MEMORY_READ_BIT: return "MEMORY_READ";
+		case VK_ACCESS_2_MEMORY_WRITE_BIT: return "MEMORY_WRITE";
+		case VK_ACCESS_2_SHADER_SAMPLED_READ_BIT: return "SHADER_SAMPLED_READ";
+		case VK_ACCESS_2_SHADER_STORAGE_READ_BIT: return "SHADER_STORAGE_READ";
+		case VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT: return "SHADER_STORAGE_WRITE";
+		default: return "?";
+	}
+}
 
 #endif // PSHINE_IMPL_VK_UTIL_H_

@@ -58,7 +58,7 @@ Make sure to check the contents of the script before running it.
 The graphics backend uses:
 - [`stb_image`](https://github.com/nothings/stb) for loading images
 - [`volk`](https://github.com/zeux/volk) for loading Vulkan
-- [`VMA`](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) for Vulkan memory allocation
+- [`VMA`](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) (v3.3.0) for Vulkan memory allocation
 - [`cgltf`](https://github.com/jkuhlmann/cgltf) for model loading
 
 The game uses:

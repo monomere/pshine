@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
 
 	struct pshine_game game = {};
 	PSHINE_INFO("initializing game");
-	pshine_init_game(&game);
+	// pshine_init_game(&game);
 	struct pshine_renderer *renderer = pshine_create_renderer();
 	PSHINE_INFO("initializing renderer");
 	pshine_init_renderer(renderer, &game);
