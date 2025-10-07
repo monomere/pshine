@@ -707,7 +707,7 @@ RG_GRAPH_FN_ void rg_graph_begin_frame(
 	uint32_t image_barrier_count = 0;
 	VkImageMemoryBarrier2 image_barriers[8] = {};
 	for (uint32_t i = 0; i < graph->image_count + 1; ++i) {
-		uint32_t image_index = i != graph->image_count ? i : UINT32_MAX;
+		// uint32_t image_index = i != graph->image_count ? i : UINT32_MAX;
 		struct rg_graph_image *image = i != graph->image_count
 			? &graph->images_own[i]
 			: &graph->current.swapchain_image;
