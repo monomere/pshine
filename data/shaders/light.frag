@@ -1,4 +1,3 @@
-#version 460
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
 #include "common.glsl"
@@ -6,11 +5,12 @@
 layout (location = 0) out vec4 o_col;
 layout (location = 0) in vec2 i_uv;
 
-layout (input_attachment_index = 0, set = 0, binding = 0) uniform SUBPASS_INPUT(u_depth);
-layout (input_attachment_index = 1, set = 0, binding = 1) uniform SUBPASS_INPUT(u_diffuse_o);
-layout (input_attachment_index = 2, set = 0, binding = 2) uniform SUBPASS_INPUT(u_normal_r_m);
-layout (input_attachment_index = 3, set = 0, binding = 3) uniform SUBPASS_INPUT(u_emissive);
-layout (set = 0, binding = 4) uniform readonly BUFFER(GlobalUniforms, u_global);
+layout (input_attachment_index = 0, set = 0, binding = 0) uniform SUBPASS_INPUT(u_color0);
+layout (input_attachment_index = 1, set = 0, binding = 1) uniform SUBPASS_INPUT(u_depth);
+layout (input_attachment_index = 2, set = 0, binding = 2) uniform SUBPASS_INPUT(u_diffuse_o);
+layout (input_attachment_index = 3, set = 0, binding = 3) uniform SUBPASS_INPUT(u_normal_r_m);
+layout (input_attachment_index = 4, set = 0, binding = 4) uniform SUBPASS_INPUT(u_emissive);
+layout (set = 0, binding = 5) uniform readonly BUFFER(GlobalUniforms, u_global);
 
 float distribution_ggx(vec3 N, vec3 H, float roughness) {
 	float a      = roughness*roughness;
@@ -78,7 +78,9 @@ vec3 world_pos_from_depth(float depth) {
 }
 
 vec3 gbuffer_light() {
+	vec4 u_color0 = subpassLoad(u_color0).rgba;
 	vec4 i_diffuse_o = subpassLoad(u_diffuse_o).rgba;
+	vec3 bg_color = (1.0 - float(any(greaterThan(i_diffuse_o.rgb, vec3(0))))) * u_color0.rgb;
 	vec4 i_normal_r_m = subpassLoad(u_normal_r_m).rgba;
 	vec3 i_emissive = subpassLoad(u_emissive).rgb;
 	float i_depth = subpassLoad(u_depth).r;
@@ -152,7 +154,7 @@ vec3 gbuffer_light() {
 		Lo += (kD * albedo / PI + specular) * radiance * NdotL;
 	}
 	// o_color = _vis(k_normal);
-	return Lo * metallic + emissive * 16.0;
+	return Lo * metallic + emissive * 16.0 + bg_color;
 }
 
 void main() {

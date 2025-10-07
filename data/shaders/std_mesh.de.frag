@@ -1,10 +1,9 @@
-#version 450
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
 #include "common.glsl"
 #include "noise.glsl"
 
-layout (location = 0) out vec4 o_color0;
+layout (location = 0) out vec4 o_color0; // unused
 layout (location = 1) out vec4 o_diffuse_o;
 layout (location = 2) out vec4 o_normal_r_m;
 layout (location = 3) out vec4 o_emissive;
@@ -64,5 +63,4 @@ void main() {
 	o_diffuse_o = vec4(diffuse, occlusion);
 	o_normal_r_m = vec4(float32x3_to_oct(normalize(tbn * normal_map)), roughness, metallic); //  * normal_map
 	o_emissive = vec4(emissive, 0.0);
-	o_color0 = vec4(emissive * 16.0, 1.0);
 }

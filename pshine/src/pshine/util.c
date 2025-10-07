@@ -530,6 +530,7 @@ static const uint64_t pcg32_increment  = 1442695040888963407u;
 
 typedef struct pshine_uint128_ { uint64_t lo, hi; } pshine_uint128;
 
+[[maybe_unused]]
 static const pshine_uint128 pcg64_multiplier = { 2549297995355413924ull, 4865540595714422341ull };
 static const pshine_uint128 pcg64_increment  = { 6364136223846793005ull, 1442695040888963407ull };
 
@@ -557,8 +558,10 @@ static inline pshine_uint128 pshine_uint64mul(uint64_t x, uint64_t y) {
 	w2 = t >> 32;
 	w1 += x0 * y1;
 	r.hi = x1 * y1 + w2 + (w1 >> 32);
+	return r;
 }
 
+[[maybe_unused]]
 static inline pshine_uint128 pshine_uint128mul(pshine_uint128 a, pshine_uint128 b) {
 	pshine_uint128 r = pshine_uint64mul(a.lo, b.lo);
 	r.hi += a.hi * b.lo + a.lo * b.hi;
@@ -571,6 +574,7 @@ uint32_t pshine_pcg32_random_uint32(struct pshine_pcg32_state *state) {
 	return pshine_rotr32((uint32_t)((x ^ (x >> 18)) >> 27), x >> 59);
 }
 
+[[maybe_unused]]
 uint64_t pshine_pcg64_random_uint64(struct pshine_pcg64_state *state) {
 	return ((uint64_t)pshine_pcg32_random_uint32((void*)state))
 		| ((uint64_t)pshine_pcg32_random_uint32((void*)state) << 32);

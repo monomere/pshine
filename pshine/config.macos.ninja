@@ -1,1 +1,2 @@
 libs_vulkan = -lvulkan -lMoltenVK -L/opt/homebrew/lib
+extra_debug_command = dsymutil

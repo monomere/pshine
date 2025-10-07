@@ -1,4 +1,3 @@
-#version 460
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
 #include "common.glsl"
@@ -12,6 +11,7 @@ layout (location = 0) out vec4 o_col;
 layout (location = 0) in vec2 i_uv;
 layout (input_attachment_index = 0, set = 2, binding = 1) uniform SUBPASS_INPUT(u_input_color);
 layout (input_attachment_index = 1, set = 2, binding = 2) uniform SUBPASS_INPUT(u_input_depth);
+layout (input_attachment_index = 2, set = 2, binding = 4) uniform SUBPASS_INPUT(u_input_diffuse_o);
 
 // modified from https://www.shadertoy.com/view/lslXDr thank you GLtracy
 
@@ -168,7 +168,7 @@ float linearize_depth(float depth) {
 }
 
 void main() {
-	vec4 color = subpassLoad(u_input_color).rgba;
+	vec4 color = subpassLoad(u_input_color).rgba + subpassLoad(u_input_diffuse_o).rgba;
 	// o_col = color;
 	float depth = subpassLoad(u_input_depth).r;
 	float linear_depth = linearize_depth(depth);

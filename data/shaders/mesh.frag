@@ -1,4 +1,3 @@
-#version 450
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
 #include "common.glsl"
@@ -64,5 +63,5 @@ void main() {
 	float spec = compute_specular_highlight(world_normal
 		* mix(1.0 - noise_strength, 1.0 + noise_strength, snoiseFractal(50.0 * normal)), material.smoothness);
 	float spec_mask = texture(texture_specular, texcoord).r;
-	o_color = vec4((col + spec * spec_mask) * shadow, 1.0);
+	o_color = vec4((col + spec * spec_mask) * shadow, 0.0);
 }

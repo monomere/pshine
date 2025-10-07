@@ -1,4 +1,3 @@
-#version 450
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
 #include "common.glsl"
@@ -10,5 +9,5 @@ struct Vec4 {
 layout (push_constant) uniform BUFFER(Vec4, u_consts);
 
 void main() {
-	o_color = vec4(u_consts.v.rgb * u_consts.v.w, 1.0);
+	o_color = vec4(u_consts.v.rgb * u_consts.v.w, 0.0);
 }

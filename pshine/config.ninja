@@ -20,8 +20,12 @@ libs_cpptrace = -lcpptrace
 libs_cpptrace =
 
 libs_vulkan = -lvulkan
+extra_debug_command = touch
 
 include $mod/config.$platform.ninja
+
+rule extra_debug_file
+  command = $extra_debug_command $in
 
 osapi = unix
 

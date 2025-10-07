@@ -30,6 +30,7 @@
 #define SCSd_WCSd(wcs) ((wcs) * PSHINE_SCS_FACTOR)
 
 #define BLOOM_STAGE_COUNT 8
+#define SHADOW_CASCADE_COUNT 4
 
 struct vulkan_renderer;
 enum queue_family {
@@ -228,6 +229,7 @@ struct render_pass_transients {
 	struct gbuffer_image gbuffer[GBUFFER_IMAGE_COUNT_];
 	struct vulkan_image color_0;
 	struct vulkan_image bloom[BLOOM_STAGE_COUNT];
+	struct vulkan_image shadow[SHADOW_CASCADE_COUNT];
 };
 
 struct model_store_entry {
@@ -249,6 +251,27 @@ struct render_pass_info {
 	VkFormat color_attachment_formats[8];
 	VkFormat depth_attachment_format;
 	VkFormat stencil_attachment_format;
+};
+
+enum : uint32_t {
+	RPIMG_COLOR0,
+	RPIMG_DEPTH0,
+	RPIMG_GBUFFER0,
+	RPIMG_GBUFFER1,
+	RPIMG_GBUFFER2,
+	RPIMG_SHADOW0,
+	RPIMG_COUNT_
+};
+
+enum : uint32_t {
+	RPASS_SHADOW,
+	RPASS_HDR_GEOMETRY,
+	RPASS_HDR_ATMOSPHERE,
+	RPASS_HDR_LIGHTING,
+	RPASS_BLOOM,
+	RPASS_SDR_TONEMAP,
+	RPASS_SDR_GUI,
+	RPASS_COUNT_,
 };
 
 struct vulkan_renderer {
@@ -324,13 +347,15 @@ struct vulkan_renderer {
 		VkPipeline first_downsample_bloom_pipeline;
 	} pipelines;
 
-	struct {
-		struct render_pass_info shadow_pass;
-		struct render_pass_info hdr_geometry_pass;
-		struct render_pass_info hdr_atmosphere_pass;
-		struct render_pass_info hdr_lighting_pass;
-		struct render_pass_info sdr_tonemap_pass;
-	} render_passes;
+	// struct {
+	// 	struct render_pass_info shadow_pass;
+	// 	struct render_pass_info hdr_geometry_pass;
+	// 	struct render_pass_info hdr_atmosphere_pass;
+	// 	struct render_pass_info hdr_lighting_pass;
+	// 	struct render_pass_info sdr_tonemap_pass;
+	// } render_passes;
+
+	struct rg_graph rgraph;
 
 	VkCommandPool command_pool_graphics;
 	VkCommandPool command_pool_transfer;
@@ -420,6 +445,7 @@ static void init_swapchain(struct vulkan_renderer *r); static void deinit_swapch
 // static void init_rpasses(struct vulkan_renderer *r); static void deinit_rpasses(struct vulkan_renderer *r);
 static void init_pipelines(struct vulkan_renderer *r); static void deinit_pipelines(struct vulkan_renderer *r);
 static void init_transients(struct vulkan_renderer *r); static void deinit_transients(struct vulkan_renderer *r);
+static void init_rendergraph(struct vulkan_renderer *r); static void deinit_rendergraph(struct vulkan_renderer *r);
 // static void init_fbufs(struct vulkan_renderer *r); static void deinit_fbufs(struct vulkan_renderer *r);
 static void init_cmdbufs(struct vulkan_renderer *r); static void deinit_cmdbufs(struct vulkan_renderer *r);
 static void init_sync(struct vulkan_renderer *r); static void deinit_sync(struct vulkan_renderer *r);
@@ -1481,7 +1507,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 
 			// TODO: Storage buffer with all mesh data and another with all atmosphere data.
 
-			vkUpdateDescriptorSets(r->device, 9, (VkWriteDescriptorSet[9]){
+			vkUpdateDescriptorSets(r->device, 10, (VkWriteDescriptorSet[10]){
 				(VkWriteDescriptorSet){
 					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 					.descriptorCount = 1,
@@ -1581,7 +1607,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 					.dstBinding = 1,
 					.dstArrayElement = 0,
 					.pImageInfo = &(VkDescriptorImageInfo){
-						.imageLayout = VK_IMAGE_LAYOUT_GENERAL, // SHADER_READ_ONLY_OPTIMAL
+						.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 						.imageView = r->transients.color_0.view,
 						.sampler = VK_NULL_HANDLE,
 					}
@@ -1594,8 +1620,21 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 					.dstBinding = 2,
 					.dstArrayElement = 0,
 					.pImageInfo = &(VkDescriptorImageInfo){
-						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 						.imageView = r->depth_image.view,
+						.sampler = VK_NULL_HANDLE
+					}
+				},
+				(VkWriteDescriptorSet){
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+					.dstSet = p->graphics_data->atmo_descriptor_set,
+					.dstBinding = 4,
+					.dstArrayElement = 0,
+					.pImageInfo = &(VkDescriptorImageInfo){
+						.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
+						.imageView = r->transients.gbuffer[GBUFFER_IMAGE_DIFFUSE_O].image.view,
 						.sampler = VK_NULL_HANDLE
 					}
 				},
@@ -1672,40 +1711,6 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 }
 
 void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *game) {
-	{
-		struct rg_graph graph;
-		example_render_graph(&graph);
-		// for (uint32_t i = 0; i < graph.pass_count; ++i) {
-		// 	struct rg_pass *pass = &graph.passes_own[i];
-		// 	printf("pass '%s':\n", pass->name);
-		// 	for (uint32_t j = 0; j < pass->image_ref_count; ++j) {
-		// 		struct rg_image_ref *ref = &pass->image_refs_own[j];
-		// 		printf("  %d%s\n",
-		// 			ref->image_index, ref->image_index == UINT32_MAX ? " (swapchain)" : "");
-		// 	}
-		// }
-		rg_graph_create_dot_file(&graph, "tmp.dot");
-		rg_graph_begin_frame(&graph, (VkRect2D){}, 0, 0, 0, 0);
-		rg_graph_begin_pass(&graph); // shadow
-		rg_graph_end_pass(&graph); // shadow
-		rg_graph_begin_pass(&graph); // hdr geometry
-		rg_graph_end_pass(&graph); // hdr geometry
-		rg_graph_begin_pass(&graph); // hdr atmosphere
-		rg_graph_end_pass(&graph); // hdr atmosphere
-		rg_graph_begin_pass(&graph); // hdr lighting
-		rg_graph_end_pass(&graph); // hdr lighting
-		rg_graph_begin_pass(&graph); // bloom
-		rg_graph_end_pass(&graph); // bloom
-		rg_graph_begin_pass(&graph); // sdr tonemap
-		rg_graph_end_pass(&graph); // sdr tonemap
-		rg_graph_begin_pass(&graph); // sdr gui
-		rg_graph_end_pass(&graph); // sdr gui
-		rg_graph_end_frame(&graph);
-		rg_free_graph(&graph);
-		exit(1);
-	}
-
-
 	struct vulkan_renderer *r = (void*)renderer;
 	r->game = game;
 	r->as_base.name = "Vulkan Renderer";
@@ -1722,12 +1727,13 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	init_glfw(r);
 	init_vulkan(r);
 	init_swapchain(r);
+	init_cmdbufs(r);
 	init_transients(r);
 	// init_rpasses(r);
+	init_rendergraph(r);
 	init_descriptors(r);
 	// init_fbufs(r);
 	init_pipelines(r);
-	init_cmdbufs(r);
 	init_sync(r);
 	init_ubufs(r);
 	init_frames(r);
@@ -1990,7 +1996,7 @@ static void error_cb_glfw_(int error, const char *msg) {
 
 static void key_cb_glfw_(GLFWwindow *window, int key, int scancode, int action, int mods) {
 	struct vulkan_renderer *r = glfwGetWindowUserPointer(window);
-	r->key_states[key] = action;
+	if (0 <= key && key < PSHINE_KEY_COUNT_) r->key_states[key] = action;
 }
 
 static void mouse_cb_glfw_(GLFWwindow *window, int button, int action, int mods) {
@@ -2038,6 +2044,18 @@ static void deinit_glfw(struct vulkan_renderer *r) {
 	glfwDestroyWindow(r->window);
 	glfwTerminate();
 }
+
+// static VKAPI_ATTR VkBool32 VKAPI_CALL vulkan_debug_callback(
+// 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+// 	VkDebugUtilsMessageTypeFlagsEXT messageType,
+// 	const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+// 	void *pUserData
+// ) {
+
+// 	return VK_FALSE;
+// }
+
+
 static void init_vulkan(struct vulkan_renderer *r) {
 	CHECKVK(volkInitialize());
 
@@ -2212,6 +2230,8 @@ static void init_vulkan(struct vulkan_renderer *r) {
 			.pNext = &(VkPhysicalDeviceVulkan13Features){
 				.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
 				.dynamicRendering = true,
+				.synchronization2 = true,
+				.shaderDemoteToHelperInvocation = true,
 				.pNext = &(VkPhysicalDeviceVulkan14Features){
 					.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES,
 					.dynamicRenderingLocalRead = true,
@@ -2231,9 +2251,6 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	}
 
 	volkLoadDevice(r->device);
-
-	// Sneaky
-	vkCmdPipelineBarrier2 = vkCmdPipelineBarrier2KHR;
 
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_GRAPHICS], 0, &r->queues[QUEUE_GRAPHICS]);
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_PRESENT], 0, &r->queues[QUEUE_PRESENT]);
@@ -2426,557 +2443,28 @@ static void deinit_swapchain(struct vulkan_renderer *r) {
 	vkDestroySwapchainKHR(r->device, r->swapchain, nullptr);
 }
 
-
-// Render passes
-
-#if 0
-
-static void init_shadow_rpass(struct vulkan_renderer *r) {
-	enum {
-		main_subpass_index,
-		subpass_count
-	};
-	enum {
-		shadow_cascades_attachment_index,
-		attachment_count
-	};
-
-	VkSubpassDependency subpass_dependencies[] = {
-		// synchronize previous compute shader transient_color_attachment write
-		// before current tonemap_subpass transient_color_attachment read.
-		(VkSubpassDependency){
-			.srcSubpass = VK_SUBPASS_EXTERNAL,
-			.dstSubpass = main_subpass_index,
-			.srcStageMask = r->opt_bloom
-				? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-				: VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = r->opt_bloom
-				? VK_ACCESS_SHADER_WRITE_BIT
-				: VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
-		},
-		// synchronize previous swapchain_attachment_index write
-		// before current tonemap_subpass swapchain_attachment_index write.
-		(VkSubpassDependency){
-			.srcSubpass = VK_SUBPASS_EXTERNAL,
-			.dstSubpass = main_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-		},
-	};
-
-	vkCreateRenderPass2(r->device, &(VkRenderPassCreateInfo2){
-		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
-		.pNext = nullptr,
-		.subpassCount = 1,
-		.pSubpasses = &(VkSubpassDescription2){
-			.sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,
-			.viewMask = 0,
-
-		},
-		.dependencyCount = 0,
-		.pDependencies = nullptr,
-		.attachmentCount = 1,
-		.pAttachments = &(VkAttachmentDescription2){
-			.sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
-			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-			.format = r->depth_format,
-			.flags = 0,
-			.samples = VK_SAMPLE_COUNT_1_BIT,
-		},
-	}, nullptr, &r->render_passes.shadow_pass);
-	// CHECKVK(vkCreateRenderPass(r->device, &(VkRenderPassCreateInfo){
-	// 	.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-	// 	.pNext = nullptr,
-	// 	.flags = 0,
-	// 	.subpassCount = subpass_count,
-	// 	.pSubpasses = (VkSubpassDescription[subpass_count]){
-	// 		[main_subpass_index] = (VkSubpassDescription){
-	// 			.colorAttachmentCount = 1,
-	// 			.pColorAttachments = (VkAttachmentReference[]){
-	// 				(VkAttachmentReference){
-	// 					.attachment = main,
-	// 					.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-	// 				},
-	// 			},
-	// 			.inputAttachmentCount = 2,
-	// 			.pInputAttachments = (VkAttachmentReference[]){
-	// 				(VkAttachmentReference){
-	// 					.attachment = transient_color_attachment_index,
-	// 					.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-	// 				},
-	// 				(VkAttachmentReference){
-	// 					.attachment = transient_depth_attachment_index,
-	// 					.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-	// 				},
-	// 			},
-	// 		},
-	// 	},
-	// 	.attachmentCount = attachment_count,
-	// 	.pAttachments = (VkAttachmentDescription[attachment_count]){
-	// 		[swapchain_attachment_index] = (VkAttachmentDescription){
-	// 			.format = r->surface_format.format,
-	// 			.samples = VK_SAMPLE_COUNT_1_BIT,
-	// 			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-	// 			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-	// 			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-	// 			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-	// 			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-	// 			.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-	// 		},
-	// 		[transient_color_attachment_index] = (VkAttachmentDescription){
-	// 			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-	// 			.samples = VK_SAMPLE_COUNT_1_BIT,
-	// 			.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-	// 			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-	// 			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-	// 			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-	// 			.initialLayout = r->opt_bloom
-	// 				? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-	// 				: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-	// 			.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // TODO: figure out if this is good
-	// 		},
-	// 		[transient_depth_attachment_index] = (VkAttachmentDescription){
-	// 			.format = r->depth_format,
-	// 			.samples = VK_SAMPLE_COUNT_1_BIT,
-	// 			.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-	// 			.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-	// 			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-	// 			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-	// 			.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-	// 			.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-	// 		},
-	// 	},
-	// 	.dependencyCount = sizeof(subpass_dependencies) / sizeof(*subpass_dependencies),
-	// 	.pDependencies = subpass_dependencies,
-	// }, nullptr, &r->render_passes.sdr_pass));
-	NAME_VK_OBJECT(r, r->render_passes.shadow_pass, VK_OBJECT_TYPE_RENDER_PASS, "sdr render pass");
+static void pipeline_barrier_now(struct vulkan_renderer *r, const VkDependencyInfo *info) {
+	VkCommandBuffer command_buffer;
+	CHECKVK(vkAllocateCommandBuffers(r->device, &(VkCommandBufferAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		.commandBufferCount = 1,
+		.commandPool = r->command_pool_transfer,
+		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+	}, &command_buffer));
+	CHECKVK(vkBeginCommandBuffer(command_buffer, &(VkCommandBufferBeginInfo){
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+	}));
+	vkCmdPipelineBarrier2(command_buffer, info);
+	CHECKVK(vkEndCommandBuffer(command_buffer));
+	vkQueueSubmit(r->queues[QUEUE_GRAPHICS], 1, &(VkSubmitInfo){
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		.commandBufferCount = 1,
+		.pCommandBuffers = &command_buffer
+	}, VK_NULL_HANDLE);
+	vkQueueWaitIdle(r->queues[QUEUE_GRAPHICS]);
+	vkFreeCommandBuffers(r->device, r->command_pool_transfer, 1, &command_buffer);
 }
-
-static void init_hdr_rpass(struct vulkan_renderer *r) {
-	enum {
-		geometry_subpass_index,
-		atmosphere_subpass_index,
-		lighting_subpass_index,
-		subpass_count
-	};
-	enum {
-		transient_color_attachment_index,
-		transient_depth_attachment_index,
-		transient_gbuffer_attachment_index_start_,
-		transient_gbuffer_attachment_index_end_
-			= transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_COUNT_ - 1,
-		attachment_count
-	};
-
-	VkSubpassDependency subpass_dependencies[] = {
-		// synchronize previous geometry_subpass transient_color/gbuffer_attachment write
-		// before current geometry_subpass transient_color/gbuffer_attachment write.
-		(VkSubpassDependency){
-			.srcSubpass = VK_SUBPASS_EXTERNAL,
-			.dstSubpass = geometry_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-		},
-		// synchronize previous geometry_subpass transient_depth_attachment write
-		// before current geometry_subpass transient_depth_attachment clear.
-		(VkSubpassDependency){
-			.srcSubpass = VK_SUBPASS_EXTERNAL,
-			.dstSubpass = geometry_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // earlier write
-			.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-			.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // WRITE because loadOp is CLEAR
-		},
-		// synchronize previous composite_subpass output_attachment write and read
-		// before current composite_subpass output_attachment write.
-		(VkSubpassDependency){
-			.srcSubpass = VK_SUBPASS_EXTERNAL,
-			.dstSubpass = atmosphere_subpass_index,
-			.srcStageMask
-				= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-				| VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			.srcAccessMask
-				= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-				| VK_ACCESS_INPUT_ATTACHMENT_READ_BIT, // earlier write/read
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // current write
-		},
-		// synchronize lighting_subpass transient_color_attachment write
-		// before external bloom transient_color_attachment blit/transfer.
-		(VkSubpassDependency){
-			.srcSubpass = lighting_subpass_index,
-			.dstSubpass = VK_SUBPASS_EXTERNAL,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // earlier write
-			.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT, // later read
-		},
-		// synchronize lighting_subpass transient_depth_attachment write
-		// before external bloom transient_depth_attachment blit/transfer.
-		// (VkSubpassDependency){
-		// 	.srcSubpass = atmosphere_subpass_index,
-		// 	.dstSubpass = VK_SUBPASS_EXTERNAL,
-		// 	.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-		// 	.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // earlier write
-		// 	.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-		// 	.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT, // later read
-		// 	.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-		// },
-		// ...
-		// (VkSubpassDependency){
-		// 	.srcSubpass = geometry_subpass_index,
-		// 	.dstSubpass = VK_SUBPASS_EXTERNAL,
-		// 	.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		// 	.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // earlier write
-		// 	.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		// 	.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT, // later read
-		// },
-		// synchronize composite_subpass transient_color_attachment write
-		// before composite_subpass transient_color_attachment read.
-		(VkSubpassDependency){
-			.srcSubpass = atmosphere_subpass_index,
-			.dstSubpass = atmosphere_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, // earlier write
-			.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT, // later read
-			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-		},
-		// synchronize geometry_subpass transient_color_attachment write
-		// before composite_subpass transient_color_attachment (as input attachment) read.
-		// synchronize geometry_subpass transient_depth_attachment write
-		// before composite_subpass transient_depth_attachment (as input attachment) read
-		(VkSubpassDependency){
-			.srcSubpass = geometry_subpass_index,
-			.dstSubpass = atmosphere_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask
-				= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-				| VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-				| VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-			.dstAccessMask = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
-			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-		},
-		// ...
-		(VkSubpassDependency){
-			.srcSubpass = atmosphere_subpass_index,
-			.dstSubpass = lighting_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask
-				= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-				| VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask
-				= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-				| VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
-			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-		},
-		// ...
-		(VkSubpassDependency){
-			.srcSubpass = geometry_subpass_index,
-			.dstSubpass = atmosphere_subpass_index,
-			.srcStageMask
-				= VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
-				| VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask
-				= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
-				| VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask
-				= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-				| VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask
-				= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-				| VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
-			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-		},
-		// ...
-		(VkSubpassDependency){
-			.srcSubpass = lighting_subpass_index,
-			.dstSubpass = VK_SUBPASS_EXTERNAL,
-			.srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-			.dstStageMask
-				= VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
-				| VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			.dstAccessMask
-				= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
-				| VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
-			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-		},
-	};
-
-	CHECKVK(vkCreateRenderPass(r->device, &(VkRenderPassCreateInfo){
-		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-		.pNext = nullptr,
-		.flags = 0,
-		.subpassCount = subpass_count,
-		.pSubpasses = (VkSubpassDescription[subpass_count]){
-			[geometry_subpass_index] = (VkSubpassDescription){
-				.colorAttachmentCount = 4,
-				.pColorAttachments = (VkAttachmentReference[]){
-					(VkAttachmentReference){
-						.attachment = transient_color_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-					},
-					(VkAttachmentReference){
-						.attachment = transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_DIFFUSE_O,
-						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-					},
-					(VkAttachmentReference){
-						.attachment = transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_NORMAL_R_M,
-						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-					},
-					(VkAttachmentReference){
-						.attachment = transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_EMISSIVE,
-						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-					},
-				},
-				.pDepthStencilAttachment = &(VkAttachmentReference){
-					.attachment = transient_depth_attachment_index,
-					.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-				},
-			},
-			[atmosphere_subpass_index] = (VkSubpassDescription){
-				.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-				.colorAttachmentCount = 1,
-				.pColorAttachments = (VkAttachmentReference[]) {
-					(VkAttachmentReference){
-						.attachment = transient_color_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_GENERAL,
-					},
-				},
-				.inputAttachmentCount = 2,
-				.pInputAttachments = (VkAttachmentReference[]) {
-					(VkAttachmentReference){
-						.attachment = transient_color_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_GENERAL,
-					},
-					(VkAttachmentReference){
-						.attachment = transient_depth_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					},
-				}
-			},
-			[lighting_subpass_index] = (VkSubpassDescription){
-				.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-				.colorAttachmentCount = 1,
-				.pColorAttachments = (VkAttachmentReference[]) {
-					(VkAttachmentReference){
-						.attachment = transient_color_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-					},
-				},
-				.inputAttachmentCount = 4,
-				.pInputAttachments = (VkAttachmentReference[]) {
-					(VkAttachmentReference){
-						.attachment = transient_depth_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					},
-					(VkAttachmentReference){
-						.attachment = transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_DIFFUSE_O,
-						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					},
-					(VkAttachmentReference){
-						.attachment = transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_NORMAL_R_M,
-						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					},
-					(VkAttachmentReference){
-						.attachment = transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_EMISSIVE,
-						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					},
-				}
-			},
-		},
-		.attachmentCount = attachment_count,
-		.pAttachments = (VkAttachmentDescription[]){
-			[transient_color_attachment_index] = (VkAttachmentDescription){
-				.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-				.samples = VK_SAMPLE_COUNT_1_BIT,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			},
-			[transient_depth_attachment_index] = (VkAttachmentDescription){
-				.format = r->depth_format,
-				.samples = VK_SAMPLE_COUNT_1_BIT,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			},
-			[transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_DIFFUSE_O] = (VkAttachmentDescription){
-				.format = r->transients.gbuffer[GBUFFER_IMAGE_DIFFUSE_O].format,
-				.samples = VK_SAMPLE_COUNT_1_BIT,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			},
-			[transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_NORMAL_R_M] = (VkAttachmentDescription){
-				.format = r->transients.gbuffer[GBUFFER_IMAGE_NORMAL_R_M].format,
-				.samples = VK_SAMPLE_COUNT_1_BIT,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			},
-			[transient_gbuffer_attachment_index_start_ + GBUFFER_IMAGE_EMISSIVE] = (VkAttachmentDescription){
-				.format = r->transients.gbuffer[GBUFFER_IMAGE_EMISSIVE].format,
-				.samples = VK_SAMPLE_COUNT_1_BIT,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			},
-		},
-		.dependencyCount = sizeof(subpass_dependencies) / sizeof(*subpass_dependencies),
-		.pDependencies = subpass_dependencies,
-	}, nullptr, &r->render_passes.hdr_pass));
-	NAME_VK_OBJECT(r, r->render_passes.hdr_pass, VK_OBJECT_TYPE_RENDER_PASS, "hdr render pass");
-}
-
-static void init_sdr_rpass(struct vulkan_renderer *r) {
-	enum {
-		tonemap_subpass_index,
-		subpass_count
-	};
-	enum {
-		swapchain_attachment_index,
-		transient_color_attachment_index,
-		transient_depth_attachment_index,
-		attachment_count
-	};
-
-	VkSubpassDependency subpass_dependencies[] = {
-		// synchronize previous compute shader transient_color_attachment write
-		// before current tonemap_subpass transient_color_attachment read.
-		(VkSubpassDependency){
-			.srcSubpass = VK_SUBPASS_EXTERNAL,
-			.dstSubpass = tonemap_subpass_index,
-			.srcStageMask = r->opt_bloom
-				? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-				: VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = r->opt_bloom
-				? VK_ACCESS_SHADER_WRITE_BIT
-				: VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
-		},
-		// synchronize previous swapchain_attachment_index write
-		// before current tonemap_subpass swapchain_attachment_index write.
-		(VkSubpassDependency){
-			.srcSubpass = VK_SUBPASS_EXTERNAL,
-			.dstSubpass = tonemap_subpass_index,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-		},
-	};
-
-	CHECKVK(vkCreateRenderPass(r->device, &(VkRenderPassCreateInfo){
-		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-		.pNext = nullptr,
-		.flags = 0,
-		.subpassCount = subpass_count,
-		.pSubpasses = (VkSubpassDescription[subpass_count]){
-			[tonemap_subpass_index] = (VkSubpassDescription){
-				.colorAttachmentCount = 1,
-				.pColorAttachments = (VkAttachmentReference[]){
-					(VkAttachmentReference){
-						.attachment = swapchain_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-					},
-				},
-				.inputAttachmentCount = 2,
-				.pInputAttachments = (VkAttachmentReference[]){
-					(VkAttachmentReference){
-						.attachment = transient_color_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					},
-					(VkAttachmentReference){
-						.attachment = transient_depth_attachment_index,
-						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					},
-				},
-			},
-		},
-		.attachmentCount = attachment_count,
-		.pAttachments = (VkAttachmentDescription[attachment_count]){
-			[swapchain_attachment_index] = (VkAttachmentDescription){
-				.format = r->surface_format.format,
-				.samples = VK_SAMPLE_COUNT_1_BIT,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			},
-			[transient_color_attachment_index] = (VkAttachmentDescription){
-				.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-				.samples = VK_SAMPLE_COUNT_1_BIT,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = r->opt_bloom
-					? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-					: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // TODO: figure out if this is good
-			},
-			[transient_depth_attachment_index] = (VkAttachmentDescription){
-				.format = r->depth_format,
-				.samples = VK_SAMPLE_COUNT_1_BIT,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-				.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			},
-		},
-		.dependencyCount = sizeof(subpass_dependencies) / sizeof(*subpass_dependencies),
-		.pDependencies = subpass_dependencies,
-	}, nullptr, &r->render_passes.sdr_pass));
-	NAME_VK_OBJECT(r, r->render_passes.sdr_pass, VK_OBJECT_TYPE_RENDER_PASS, "sdr render pass");
-}
-
-static void init_rpasses(struct vulkan_renderer *r) {
-	init_shadow_rpass(r);
-	init_hdr_rpass(r);
-	init_sdr_rpass(r);
-}
-
-static void deinit_rpasses(struct vulkan_renderer *r) {
-	vkDestroyRenderPass(r->device, r->render_passes.sdr_pass, nullptr);
-	vkDestroyRenderPass(r->device, r->render_passes.hdr_pass, nullptr);
-}
-
-#endif
 
 static void init_transients(struct vulkan_renderer *r) {
 	r->depth_image = allocate_image(r, &(struct vulkan_image_alloc_info){
@@ -3000,6 +2488,57 @@ static void init_transients(struct vulkan_renderer *r) {
 				= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT // the the geometry rendering
 				| VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT // for the atmosphere rendering
 				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT, // for the downsampling blit
+		},
+		.view_info = &(VkImageViewCreateInfo){
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = r->depth_format,
+			.subresourceRange = (VkImageSubresourceRange){
+				.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+				.baseArrayLayer = 0,
+				.layerCount = 1,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+			}
+		}
+	});
+	pipeline_barrier_now(r, &(VkDependencyInfo){
+		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		.imageMemoryBarrierCount = 1,
+		.pImageMemoryBarriers = &(VkImageMemoryBarrier2){
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+			.image = r->depth_image.image,
+			.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+			.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.newLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
+			.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+			.subresourceRange.layerCount = 1,
+			.subresourceRange.levelCount = 1,
+			.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+		},
+	});
+
+	r->transients.shadow[0] = allocate_image(r, &(struct vulkan_image_alloc_info){
+		.memory_usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+		.preferred_memory_property_flags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
+		// .allocation_flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+		.image_info = &(VkImageCreateInfo){
+			.imageType = VK_IMAGE_TYPE_2D,
+			.arrayLayers = 1,
+			.extent = {
+				.width = 1024,
+				.height = 1024,
+				.depth = 1,
+			},
+			.format = r->depth_format,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.mipLevels = 1,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.usage
+				= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+				| VK_IMAGE_USAGE_SAMPLED_BIT
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -3067,6 +2606,23 @@ static void init_transients(struct vulkan_renderer *r) {
 			r->transients.gbuffer[i].name);
 		NAME_VK_OBJECT(r, r->transients.gbuffer[i].image.view, VK_OBJECT_TYPE_IMAGE_VIEW, "GBuffer %s image view",
 			r->transients.gbuffer[i].name);
+			pipeline_barrier_now(r, &(VkDependencyInfo){
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &(VkImageMemoryBarrier2){
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.image = r->transients.gbuffer[i].image.image,
+				.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+				.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.newLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
+				.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.subresourceRange.layerCount = 1,
+				.subresourceRange.levelCount = 1,
+				.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			},
+		});
 	}
 
 	r->transients.color_0 = allocate_image(r, &(struct vulkan_image_alloc_info){
@@ -3105,7 +2661,23 @@ static void init_transients(struct vulkan_renderer *r) {
 			},
 		},
 	});
-
+	pipeline_barrier_now(r, &(VkDependencyInfo){
+		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		.imageMemoryBarrierCount = 1,
+		.pImageMemoryBarriers = &(VkImageMemoryBarrier2){
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+			.image = r->transients.color_0.image,
+			.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+			.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.newLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
+			.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.subresourceRange.layerCount = 1,
+			.subresourceRange.levelCount = 1,
+			.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+		},
+	});
 	VkExtent2D bloom_stage_extent = r->swapchain_extent;
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 		bloom_stage_extent.width /= 2;
@@ -3160,63 +2732,143 @@ static void deinit_transients(struct vulkan_renderer *r) {
 	for (size_t i = 0; i < GBUFFER_IMAGE_COUNT_; ++i)
 		deallocate_image(r, r->transients.gbuffer[i].image);
 	deallocate_image(r, r->depth_image);
+	deallocate_image(r, r->transients.shadow[0]);
 	deallocate_image(r, r->transients.color_0);
 	for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
 		deallocate_image(r, r->transients.bloom[i]);
 }
 
 
-#if 0
-// Framebuffers
-static void init_fbufs(struct vulkan_renderer *r) {
-	r->sdr_framebuffers_own = calloc(r->swapchain_image_count, sizeof(VkFramebuffer));
-	for (uint32_t i = 0; i < r->swapchain_image_count; ++i) {
-		CHECKVK(vkCreateFramebuffer(r->device, &(VkFramebufferCreateInfo){
-			.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-			.attachmentCount = 3,
-			.pAttachments = (VkImageView[]){
-				r->swapchain_image_views_own[i],
-				r->transients.color_0.view,
-				r->depth_image.view,
+static void init_rendergraph(struct vulkan_renderer *r) {
+	struct rg_pass_spec rpasses[RPASS_COUNT_] = {
+		[RPASS_SHADOW] = (struct rg_pass_spec){
+			.name = "Shadow",
+			.image_ref_count = 1,
+			.image_refs = (struct rg_image_ref_spec[]){
+				{ RPIMG_SHADOW0, RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT | RG_IMAGE_USE_CLEARED_BIT },
 			},
-			.renderPass = r->render_passes.sdr_pass,
-			.width = r->swapchain_extent.width,
-			.height = r->swapchain_extent.height,
-			.layers = 1,
-		}, nullptr, &r->sdr_framebuffers_own[i]));
-	}
-	r->hdr_framebuffers_own = calloc(r->swapchain_image_count, sizeof(VkFramebuffer));
-	for (uint32_t i = 0; i < r->swapchain_image_count; ++i) {
-		CHECKVK(vkCreateFramebuffer(r->device, &(VkFramebufferCreateInfo){
-			.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-			.attachmentCount = 5,
-			.pAttachments = (VkImageView[]){
-				r->transients.color_0.view,
-				r->depth_image.view,
-				r->transients.gbuffer[GBUFFER_IMAGE_DIFFUSE_O].image.view,
-				r->transients.gbuffer[GBUFFER_IMAGE_NORMAL_R_M].image.view,
-				r->transients.gbuffer[GBUFFER_IMAGE_EMISSIVE].image.view,
+			.render_area = (VkRect2D){ .extent = { 1024, 1024 } },
+		},
+		[RPASS_HDR_GEOMETRY] = (struct rg_pass_spec){
+			.name = "HDR Geometry",
+			.image_ref_count = 5,
+			.image_refs = (struct rg_image_ref_spec[]){
+				{ RPIMG_COLOR0, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT | RG_IMAGE_USE_CLEARED_BIT },
+				{ RPIMG_DEPTH0, RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT | RG_IMAGE_USE_CLEARED_BIT },
+				{ RPIMG_GBUFFER0, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT | RG_IMAGE_USE_CLEARED_BIT },
+				{ RPIMG_GBUFFER1, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT | RG_IMAGE_USE_CLEARED_BIT },
+				{ RPIMG_GBUFFER2, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT | RG_IMAGE_USE_CLEARED_BIT },
 			},
-			.renderPass = r->render_passes.hdr_pass,
-			.width = r->swapchain_extent.width,
-			.height = r->swapchain_extent.height,
-			.layers = 1,
-		}, nullptr, &r->hdr_framebuffers_own[i]));
-	}
+		},
+		[RPASS_HDR_ATMOSPHERE] = (struct rg_pass_spec){
+			.name = "HDR Atmosphere",
+			.image_ref_count = 2,
+			.image_refs = (struct rg_image_ref_spec[]){
+				{ RPIMG_COLOR0, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT | RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+				{ RPIMG_DEPTH0, RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT },
+				{ RPIMG_GBUFFER0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+			},
+		},
+		[RPASS_HDR_LIGHTING] = (struct rg_pass_spec){
+			.name = "HDR Lighting",
+			.image_ref_count = 6,
+			.image_refs = (struct rg_image_ref_spec[]){
+				{ RPIMG_COLOR0,
+					RG_IMAGE_USE_COLOR_ATTACHMENT_BIT |
+					RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+				{ RPIMG_DEPTH0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+				{ RPIMG_GBUFFER0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+				{ RPIMG_GBUFFER1, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+				{ RPIMG_GBUFFER2, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+				{ RPIMG_SHADOW0, RG_IMAGE_USE_SAMPLED_BIT },
+			},
+		},
+		[RPASS_BLOOM] = (struct rg_pass_spec){
+			.name = "Bloom",
+			.image_ref_count = 1,
+			.image_refs = (struct rg_image_ref_spec[]){
+				(struct rg_image_ref_spec){
+					.image_id = RPIMG_COLOR0,
+					.usage = RG_IMAGE_USE_OTHER | RG_IMAGE_USE_SAMPLED_BIT,
+					.access = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+					.stage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+					.layout = VK_IMAGE_LAYOUT_GENERAL,
+					.final_layout = VK_IMAGE_LAYOUT_GENERAL,
+				},
+			},
+			.compute = true,
+		},
+		[RPASS_SDR_TONEMAP] = (struct rg_pass_spec){
+			.name = "SDR Tonemap",
+			.image_ref_count = 3,
+			.image_refs = (struct rg_image_ref_spec[]){
+				{ RG_IMAGE_SWAPCHAIN, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT | RG_IMAGE_USE_NO_READ_BIT },
+				{ RPIMG_COLOR0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+				{ RPIMG_DEPTH0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+			},
+		},
+		[RPASS_SDR_GUI] = (struct rg_pass_spec){
+			.name = "SDR GUI",
+			.image_ref_count = 1,
+			.image_refs = (struct rg_image_ref_spec[]){
+				{ RG_IMAGE_SWAPCHAIN, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT },
+			},
+		},
+	};
+	rg_build_graph(&(struct rg_graph_spec){
+		.image_count = RPIMG_COUNT_,
+		.images = (struct rg_graph_image_spec[]){
+			[RPIMG_COLOR0] = {
+				"Color 0",
+				r->transients.color_0.image,
+				r->transients.color_0.view,
+				VK_FORMAT_R16G16B16A16_SFLOAT,
+				VK_IMAGE_ASPECT_COLOR_BIT
+			},
+			[RPIMG_DEPTH0] = {
+				"Depth 0",
+				r->depth_image.image,
+				r->depth_image.view,
+				r->depth_format,
+				VK_IMAGE_ASPECT_DEPTH_BIT
+			},
+			[RPIMG_GBUFFER0] = {
+				"GBuffer 0",
+				r->transients.gbuffer[0].image.image,
+				r->transients.gbuffer[0].image.view,
+				r->transients.gbuffer[0].format,
+				VK_IMAGE_ASPECT_COLOR_BIT,
+			},
+			[RPIMG_GBUFFER1] = {
+				"GBuffer 1",
+				r->transients.gbuffer[1].image.image,
+				r->transients.gbuffer[1].image.view,
+				r->transients.gbuffer[1].format,
+				VK_IMAGE_ASPECT_COLOR_BIT,
+			},
+			[RPIMG_GBUFFER2] = {
+				"GBuffer 2",
+				r->transients.gbuffer[2].image.image,
+				r->transients.gbuffer[2].image.view,
+				r->transients.gbuffer[2].format,
+				VK_IMAGE_ASPECT_COLOR_BIT,
+			},
+			[RPIMG_SHADOW0] = {
+				"Shadow 0",
+				r->transients.shadow[0].image,
+				r->transients.shadow[0].view,
+				r->depth_format,
+				VK_IMAGE_ASPECT_DEPTH_BIT,
+			},
+		},
+		.pass_count = sizeof(rpasses) / sizeof(*rpasses),
+		.passes = rpasses,
+	}, &r->rgraph);
 }
 
-static void deinit_fbufs(struct vulkan_renderer *r) {
-	for (uint32_t i = 0; i < r->swapchain_image_count; ++i) {
-		vkDestroyFramebuffer(r->device, r->hdr_framebuffers_own[i], nullptr);
-	}
-	free(r->hdr_framebuffers_own);
-	for (uint32_t i = 0; i < r->swapchain_image_count; ++i) {
-		vkDestroyFramebuffer(r->device, r->sdr_framebuffers_own[i], nullptr);
-	}
-	free(r->sdr_framebuffers_own);
+static void deinit_rendergraph(struct vulkan_renderer *r) {
+	rg_free_graph(&r->rgraph);
 }
-
-#endif
 
 static void init_view_dep_data(struct vulkan_renderer *r, bool resize);
 
@@ -3235,7 +2887,7 @@ static void handle_swapchain_resize(struct vulkan_renderer *r) {
 			struct pshine_celestial_body *body = system->bodies_own[j];
 			if (body->type == PSHINE_CELESTIAL_BODY_PLANET) {
 				struct pshine_planet *p = (void*)body;
-				vkUpdateDescriptorSets(r->device, 2, (VkWriteDescriptorSet[]){
+				vkUpdateDescriptorSets(r->device, 3, (VkWriteDescriptorSet[3]){
 					(VkWriteDescriptorSet){
 						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 						.descriptorCount = 1,
@@ -3244,7 +2896,7 @@ static void handle_swapchain_resize(struct vulkan_renderer *r) {
 						.dstBinding = 1,
 						.dstArrayElement = 0,
 						.pImageInfo = &(VkDescriptorImageInfo){
-							.imageLayout = VK_IMAGE_LAYOUT_GENERAL, // SHADER_READ_ONLY_OPTIMAL
+							.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 							.imageView = r->transients.color_0.view,
 							.sampler = VK_NULL_HANDLE,
 						}
@@ -3257,8 +2909,21 @@ static void handle_swapchain_resize(struct vulkan_renderer *r) {
 						.dstBinding = 2,
 						.dstArrayElement = 0,
 						.pImageInfo = &(VkDescriptorImageInfo){
-							.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+							.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 							.imageView = r->depth_image.view,
+							.sampler = VK_NULL_HANDLE
+						}
+					},
+					(VkWriteDescriptorSet){
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+						.descriptorCount = 1,
+						.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+						.dstSet = p->graphics_data->atmo_descriptor_set,
+						.dstBinding = 4,
+						.dstArrayElement = 0,
+						.pImageInfo = &(VkDescriptorImageInfo){
+							.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
+							.imageView = r->transients.gbuffer[GBUFFER_IMAGE_DIFFUSE_O].image.view,
 							.sampler = VK_NULL_HANDLE
 						}
 					},
@@ -3302,7 +2967,7 @@ struct graphics_pipeline_info {
 	uint32_t set_layout_count;
 	const VkDescriptorSetLayout *set_layouts;
 	VkPolygonMode polygon_mode;
-	struct render_pass_info *render_pass;
+	uint32_t render_pass;
 	// uint32_t subpass;
 	const char *layout_name;
 	const char *pipeline_name;
@@ -3434,31 +3099,35 @@ static struct vulkan_pipeline create_graphics_pipeline(
 	default: PSHINE_PANIC("vertex kind %d not implemented.", info->vertex_kind);
 	}
 
-	VkPipelineColorBlendAttachmentState forward_attachment = {
-		.colorWriteMask
-			= VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-			| VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-		.blendEnable = info->blend ? VK_TRUE : VK_FALSE,
-		.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-		.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-		.colorBlendOp = VK_BLEND_OP_ADD,
-		.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-		.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-		.alphaBlendOp = VK_BLEND_OP_ADD,
-	};
+	struct rg_pass *pass = &r->rgraph.passes_own[info->render_pass];
+	uint32_t color_attachment_count = pass->color_attachment_count;
+	VkFormat color_attachment_formats[8] = {};
+	VkPipelineColorBlendAttachmentState color_blend_states[8] = {};
+	for (uint32_t i = 0; i < color_attachment_count; ++i) {
+		struct rg_image_ref *ref = &pass->image_refs_own[pass->color_attachments[i]];
+		color_attachment_formats[i] = ref->image_index == UINT32_MAX
+			? r->surface_format.format
+			: r->rgraph.images_own[ref->image_index].format;
+		color_blend_states[i] = (VkPipelineColorBlendAttachmentState){
+			.colorWriteMask
+				= VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+				| VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+			.blendEnable = info->blend ? VK_TRUE : VK_FALSE,
+			.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+			.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+			.colorBlendOp = VK_BLEND_OP_ADD,
+			.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+			.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+			.alphaBlendOp = VK_BLEND_OP_ADD,
+		};
+	}
 
-	VkPipelineColorBlendAttachmentState gbuffer_attachment = {
-		.colorWriteMask
-			= VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-			| VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-		.blendEnable = VK_FALSE,
-	};
-	VkPipelineColorBlendAttachmentState gbuffer_attachments[1 + GBUFFER_IMAGE_COUNT_] = {
-		[0] = gbuffer_attachment,
-		[1 + GBUFFER_IMAGE_DIFFUSE_O] = gbuffer_attachment,
-		[1 + GBUFFER_IMAGE_NORMAL_R_M] = gbuffer_attachment,
-		[1 + GBUFFER_IMAGE_EMISSIVE] = gbuffer_attachment,
-	};
+	VkFormat depth_attachment_format = {};
+	if (pass->has_depth_attachment) {
+		struct rg_image_ref *ref = &pass->image_refs_own[pass->depth_attachment];
+		PSHINE_CHECK(ref->image_index != UINT32_MAX, "swapchain used as depth attachment");
+		depth_attachment_format = r->rgraph.images_own[ref->image_index].format;
+	}
 
 	CHECKVK(vkCreateGraphicsPipelines(r->device, VK_NULL_HANDLE, 1, &(VkGraphicsPipelineCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -3505,18 +3174,8 @@ static struct vulkan_pipeline create_graphics_pipeline(
 		.pColorBlendState = &(VkPipelineColorBlendStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
 			.logicOpEnable = VK_FALSE,
-			.attachmentCount
-				= info->output_kind == GRAPHICS_PIPELINE_OUTPUT_GBUFFER
-				? 1 + GBUFFER_IMAGE_COUNT_
-				: info->output_kind == GRAPHICS_PIPELINE_OUTPUT_SHADOW
-				? 0
-				: 1,
-			.pAttachments
-				= info->output_kind == GRAPHICS_PIPELINE_OUTPUT_GBUFFER
-				? gbuffer_attachments
-				: info->output_kind == GRAPHICS_PIPELINE_OUTPUT_SHADOW
-				? nullptr
-				: &forward_attachment,
+			.attachmentCount = color_attachment_count,
+			.pAttachments = color_blend_states,
 		},
 		.stageCount = 2,
 		.pStages = (VkPipelineShaderStageCreateInfo[]){
@@ -3557,7 +3216,9 @@ static struct vulkan_pipeline create_graphics_pipeline(
 		.renderPass = nullptr,
 		.pNext = &(VkPipelineRenderingCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-			// .viewMask
+			.colorAttachmentCount = color_attachment_count,
+			.pColorAttachmentFormats = color_attachment_formats,
+			.depthAttachmentFormat = depth_attachment_format,
 		},
 	}, nullptr, &pipeline));
 
@@ -3574,7 +3235,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/mesh.2.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/mesh.frag.spv",
-		.render_pass = &r->render_passes.hdr_geometry_pass,
+		.render_pass = RPASS_HDR_GEOMETRY,
 		.push_constant_range_count = 0,
 		.set_layout_count = 3,
 		.set_layouts = (VkDescriptorSetLayout[]){
@@ -3595,7 +3256,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline color_mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/mesh.1.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/solid_color.frag.spv",
-		.render_pass = &r->render_passes.hdr_geometry_pass,
+		.render_pass = RPASS_HDR_GEOMETRY,
 		.push_constant_range_count = 1,
 		.push_constant_ranges = (VkPushConstantRange[]){
 			(VkPushConstantRange){
@@ -3623,7 +3284,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline rings_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/rings.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/rings.frag.spv",
-		.render_pass = &r->render_passes.hdr_geometry_pass,
+		.render_pass = RPASS_HDR_GEOMETRY,
 		.push_constant_range_count = 0,
 		.set_layout_count = 2,
 		.set_layouts = (VkDescriptorSetLayout[]){
@@ -3668,7 +3329,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline std_mesh_de_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/std_mesh.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/std_mesh.de.frag.spv",
-		.render_pass = &r->render_passes.hdr_geometry_pass,
+		.render_pass = RPASS_HDR_GEOMETRY,
 		.push_constant_range_count = 0,
 		.set_layout_count = 3,
 		.set_layouts = (VkDescriptorSetLayout[]){
@@ -3677,7 +3338,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			r->descriptors.std_mesh_layout,
 		},
 		.triangle_strip = false,
-		.blend = true,
+		.blend = false,
 		.depth_test = true,
 		.vertex_kind = PSHINE_VERTEX_STATIC_MESH,
 		.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
@@ -3691,7 +3352,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline std_mesh_shadow_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/std_mesh.shadow.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/std_mesh.shadow.frag.spv",
-		.render_pass = &r->render_passes.shadow_pass,
+		.render_pass = RPASS_SHADOW,
 		.push_constant_range_count = 0,
 		.set_layout_count = 1,
 		.set_layouts = (VkDescriptorSetLayout[]){
@@ -3712,7 +3373,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline light_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/light.frag.spv",
-		.render_pass = &r->render_passes.hdr_lighting_pass,
+		.render_pass = RPASS_HDR_LIGHTING,
 		.push_constant_range_count = 0,
 		.set_layout_count = 1,
 		.set_layouts = (VkDescriptorSetLayout[]){
@@ -3733,7 +3394,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline skybox_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/skybox.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/skybox.frag.spv",
-		.render_pass = &r->render_passes.hdr_geometry_pass,
+		.render_pass = RPASS_HDR_GEOMETRY,
 		.push_constant_range_count = 1,
 		.push_constant_ranges = (VkPushConstantRange[]) {
 			(VkPushConstantRange){
@@ -3761,7 +3422,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline atmo_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/atmo.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/atmo.frag.spv",
-		.render_pass = &r->render_passes.hdr_atmosphere_pass,
+		.render_pass = RPASS_HDR_ATMOSPHERE,
 		.push_constant_range_count = 0,
 		.set_layout_count = 3,
 		.set_layouts = (VkDescriptorSetLayout[]){
@@ -3783,7 +3444,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 	struct vulkan_pipeline blit_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
 		.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
 		.frag_fname = "build/pshine/data/shaders/blit.frag.spv",
-		.render_pass = &r->render_passes.sdr_tonemap_pass,
+		.render_pass = RPASS_SDR_TONEMAP,
 		.push_constant_range_count = 1,
 		.push_constant_ranges = (VkPushConstantRange[]) {
 			(VkPushConstantRange){
@@ -4113,8 +3774,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = 4,
-		.pBindings = (VkDescriptorSetLayoutBinding[]){
+		.bindingCount = 5,
+		.pBindings = (VkDescriptorSetLayoutBinding[5]){
 			(VkDescriptorSetLayoutBinding){
 				.binding = 0,
 				.descriptorCount = 1,
@@ -4137,6 +3798,12 @@ static void init_descriptors(struct vulkan_renderer *r) {
 				.binding = 3,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			(VkDescriptorSetLayoutBinding){
+				.binding = 4,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
 		}
@@ -4185,34 +3852,40 @@ static void init_descriptors(struct vulkan_renderer *r) {
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = 5,
+		.bindingCount = 6,
 		.pBindings = (VkDescriptorSetLayoutBinding[]){
-			(VkDescriptorSetLayoutBinding){ // depth0
+			(VkDescriptorSetLayoutBinding){ // color0
 				.binding = 0,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
-			(VkDescriptorSetLayoutBinding){ // diffuse_o
+			(VkDescriptorSetLayoutBinding){ // depth0
 				.binding = 1,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
-			(VkDescriptorSetLayoutBinding){ // normal_r_m
+			(VkDescriptorSetLayoutBinding){ // diffuse_o
 				.binding = 2,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
-			(VkDescriptorSetLayoutBinding){ // emissive
+			(VkDescriptorSetLayoutBinding){ // normal_r_m
 				.binding = 3,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
-			(VkDescriptorSetLayoutBinding){ // global_uniforms
+			(VkDescriptorSetLayoutBinding){ // emissive
 				.binding = 4,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			(VkDescriptorSetLayoutBinding){ // global_uniforms
+				.binding = 5,
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -4381,7 +4054,7 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 			.dstArrayElement = 0,
 			.pImageInfo = &(VkDescriptorImageInfo){
 				.imageView = r->transients.color_0.view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 				.sampler = VK_NULL_HANDLE,
 			},
 		},
@@ -4394,7 +4067,7 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 			.dstArrayElement = 0,
 			.pImageInfo = &(VkDescriptorImageInfo){
 				.imageView = r->depth_image.view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 				.sampler = VK_NULL_HANDLE,
 			},
 		},
@@ -4413,7 +4086,7 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 		},
 	}, 0, nullptr);
 
-	vkUpdateDescriptorSets(r->device, 5, (VkWriteDescriptorSet[5]){
+	vkUpdateDescriptorSets(r->device, 6, (VkWriteDescriptorSet[6]){
 		(VkWriteDescriptorSet){
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.descriptorCount = 1,
@@ -4422,8 +4095,8 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 			.dstBinding = 0,
 			.dstArrayElement = 0,
 			.pImageInfo = &(VkDescriptorImageInfo){
-				.imageView = r->depth_image.view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageView = r->transients.color_0.view,
+				.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 				.sampler = VK_NULL_HANDLE,
 			},
 		},
@@ -4435,8 +4108,8 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 			.dstBinding = 1,
 			.dstArrayElement = 0,
 			.pImageInfo = &(VkDescriptorImageInfo){
-				.imageView = r->transients.gbuffer[GBUFFER_IMAGE_DIFFUSE_O].image.view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageView = r->depth_image.view,
+				.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 				.sampler = VK_NULL_HANDLE,
 			},
 		},
@@ -4448,8 +4121,8 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 			.dstBinding = 2,
 			.dstArrayElement = 0,
 			.pImageInfo = &(VkDescriptorImageInfo){
-				.imageView = r->transients.gbuffer[GBUFFER_IMAGE_NORMAL_R_M].image.view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageView = r->transients.gbuffer[GBUFFER_IMAGE_DIFFUSE_O].image.view,
+				.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 				.sampler = VK_NULL_HANDLE,
 			},
 		},
@@ -4461,8 +4134,21 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 			.dstBinding = 3,
 			.dstArrayElement = 0,
 			.pImageInfo = &(VkDescriptorImageInfo){
+				.imageView = r->transients.gbuffer[GBUFFER_IMAGE_NORMAL_R_M].image.view,
+				.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
+				.sampler = VK_NULL_HANDLE,
+			},
+		},
+		(VkWriteDescriptorSet){
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+			.dstSet = r->data.light_descriptor_set,
+			.dstBinding = 4,
+			.dstArrayElement = 0,
+			.pImageInfo = &(VkDescriptorImageInfo){
 				.imageView = r->transients.gbuffer[GBUFFER_IMAGE_EMISSIVE].image.view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
 				.sampler = VK_NULL_HANDLE,
 			},
 		},
@@ -4471,7 +4157,7 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 			.descriptorCount = 1,
 			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 			.dstSet = r->data.light_descriptor_set,
-			.dstBinding = 4,
+			.dstBinding = 5,
 			.dstArrayElement = 0,
 			.pBufferInfo = &(VkDescriptorBufferInfo){
 				.buffer = r->data.global_uniform_buffer.buffer,
@@ -4802,6 +4488,24 @@ static void init_imgui(struct vulkan_renderer *r) {
 
 	cImGui_ImplVulkan_LoadFunctionsEx(&vulkan_loader_func_imgui, r);
 	cImGui_ImplGlfw_InitForVulkan(r->window, true);
+
+	struct rg_pass *pass = &r->rgraph.passes_own[RPASS_SDR_GUI];
+	uint32_t color_attachment_count = pass->color_attachment_count;
+	VkFormat color_attachment_formats[8] = {};
+	for (uint32_t i = 0; i < color_attachment_count; ++i) {
+		struct rg_image_ref *ref = &pass->image_refs_own[pass->color_attachments[i]];
+		color_attachment_formats[i] = ref->image_index == UINT32_MAX
+			? r->surface_format.format
+			: r->rgraph.images_own[ref->image_index].format;
+	}
+
+	VkFormat depth_attachment_format = {};
+	if (pass->has_depth_attachment) {
+		struct rg_image_ref *ref = &pass->image_refs_own[pass->depth_attachment];
+		PSHINE_CHECK(ref->image_index != UINT32_MAX, "swapchain used as depth attachment");
+		depth_attachment_format = r->rgraph.images_own[ref->image_index].format;
+	}
+
 	cImGui_ImplVulkan_Init(&(ImGui_ImplVulkan_InitInfo){
 		.Instance = r->instance,
 		.PhysicalDevice = r->physical_device,
@@ -4818,11 +4522,10 @@ static void init_imgui(struct vulkan_renderer *r) {
 		.UseDynamicRendering = true,
 		.PipelineRenderingCreateInfo = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-			.colorAttachmentCount = r->render_passes.sdr_tonemap_pass.color_attachment_count,
-			.pColorAttachmentFormats = r->render_passes.sdr_tonemap_pass.color_attachment_formats,
-			.depthAttachmentFormat = r->render_passes.sdr_tonemap_pass.depth_attachment_format,
-			.stencilAttachmentFormat = r->render_passes.sdr_tonemap_pass.stencil_attachment_format,
-		}
+			.colorAttachmentCount = color_attachment_count,
+			.pColorAttachmentFormats = color_attachment_formats,
+			.depthAttachmentFormat = depth_attachment_format,
+		},
 	});
 }
 
@@ -4911,6 +4614,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	deinit_sync(r);
 	deinit_cmdbufs(r);
 	// deinit_fbufs(r);
+	deinit_rendergraph(r);
 	deinit_transients(r);
 	deinit_pipelines(r);
 	deinit_descriptors(r);
@@ -5219,7 +4923,7 @@ static void do_frame(
 				};
 				vmaCopyMemoryToAllocation(r->allocator, &new_data_rings, rings_uniform_buffer->allocation,
 					get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * current_frame,
-					sizeof(new_data));
+					sizeof(new_data_rings));
 			}
 		}
 	}
@@ -5295,6 +4999,16 @@ static void do_frame(
 		}
 	}
 
+	/////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////
+	///                                                                                   ///
+	///                                                                                   ///
+	///         COMMAND ENCODING                                                          ///
+	///                                                                                   ///
+	///                                                                                   ///
+	/////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////
+
 	CHECKVK(vkBeginCommandBuffer(f->command_buffer, &(VkCommandBufferBeginInfo){
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	}));
@@ -5334,266 +5048,26 @@ static void do_frame(
 		});
 	}
 
-	vkCmdBeginRendering(f->command_buffer, &(VkRenderingInfo){
-		.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-		.colorAttachmentCount = 4,
-		.pColorAttachments = (VkRenderingAttachmentInfo[4]){
-			(VkRenderingAttachmentInfo){
-				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-				.clearValue = (VkClearValue){ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-				.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.imageView = r->transients.color_0.view,
-			},
-			(VkRenderingAttachmentInfo){
-				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-				.clearValue = (VkClearValue){ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-				.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.imageView = r->transients.gbuffer[GBUFFER_IMAGE_DIFFUSE_O].image.view,
-			},
-			(VkRenderingAttachmentInfo){
-				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-				.clearValue = (VkClearValue){ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-				.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.imageView = r->transients.gbuffer[GBUFFER_IMAGE_NORMAL_R_M].image.view,
-			},
-			(VkRenderingAttachmentInfo){
-				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-				.clearValue = (VkClearValue){ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-				.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.imageView = r->transients.gbuffer[GBUFFER_IMAGE_EMISSIVE].image.view,
-			},
+	rg_graph_begin_frame(
+		&r->rgraph,
+		(VkRect2D){
+			.offset = (VkOffset2D){ 0, 0 },
+			.extent = r->swapchain_extent,
 		},
-		.pDepthAttachment = &(VkRenderingAttachmentInfo){
-			.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-			.clearValue = (VkClearValue){ .depthStencil = { .depth = 0.0f, .stencil = 0 } },
-			.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-			.imageView = r->depth_image.view,
-		},
-		.layerCount = 1,
-		.renderArea = (VkRect2D){
-			.offset = { 0, 0 },
-			.extent = r->swapchain_extent
-		},
-		.flags = 0,
-	});
-	// vkCmdBeginRenderPass(f->command_buffer, &(VkRenderPassBeginInfo){
-	// 	.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-	// 	.renderPass = r->render_passes.hdr_pass,
-	// 	.framebuffer = r->hdr_framebuffers_own[image_index],
-	// 	.renderArea = (VkRect2D){
-	// 		.offset = { 0, 0 },
-	// 		.extent = r->swapchain_extent
-	// 	},
-	// 	.clearValueCount = 5,
-	// 	.pClearValues = (VkClearValue[]){
-	// 		// (VkClearValue){ .color = (VkClearColorValue){ .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-	// 		(VkClearValue){ .color = (VkClearColorValue){ .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-	// 		(VkClearValue){ .depthStencil = (VkClearDepthStencilValue){ .depth = 0.0f, .stencil = 0 } },
-	// 		(VkClearValue){ .color = (VkClearColorValue){ .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-	// 		(VkClearValue){ .color = (VkClearColorValue){ .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-	// 		(VkClearValue){ .color = (VkClearColorValue){ .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
-	// 	},
-	// }, VK_SUBPASS_CONTENTS_INLINE);
-
-	// vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.tri_pipeline);
-	// vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
-
-	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.planet_mesh_pipeline);
-	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = (float)r->swapchain_extent.width,
-		.height = (float)r->swapchain_extent.height,
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f,
-	});
-	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
-
-	for (size_t i = 0; i < current_system->body_count; ++i) {
-		struct pshine_celestial_body *b = current_system->bodies_own[i];
-		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
-			struct pshine_planet *p = (void *)b;
-			vkCmdBindDescriptorSets(
-				f->command_buffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.planet_mesh_layout,
-				0,
-				2,
-				(VkDescriptorSet[]){ r->data.global_descriptor_set, p->graphics_data->material_descriptor_set },
-				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
-				}
-			);
-
-			size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
-			if (lod >= r->sphere_mesh_count) lod = r->sphere_mesh_count - 1;
-			vkCmdBindDescriptorSets(
-				f->command_buffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.planet_mesh_layout,
-				2,
-				1,
-				&p->graphics_data->descriptor_set,
-				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame
-				}
-			);
-			vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
-			vkCmdBindIndexBuffer(f->command_buffer, r->own_sphere_meshes[lod].index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
-		}
-	}
-
-	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.planet_color_mesh_pipeline);
-	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = (float)r->swapchain_extent.width,
-		.height = (float)r->swapchain_extent.height,
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f,
-	});
-	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
-	vkCmdBindDescriptorSets(
-		f->command_buffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		r->pipelines.planet_mesh_layout,
-		0,
-		1,
-		(VkDescriptorSet[]){ r->data.global_descriptor_set },
-		1, (uint32_t[]){
-			get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
-		}
+		r->queue_families[QUEUE_GRAPHICS],
+		r->swapchain_images_own[image_index],
+		r->swapchain_image_views_own[image_index],
+		f->command_buffer
 	);
 
-	for (size_t i = 0; i < current_system->body_count; ++i) {
-		struct pshine_celestial_body *b = current_system->bodies_own[i];
-		if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
-			struct pshine_star *p = (void *)b;
-			pshine_color_rgb rgb = pshine_blackbody_temp_to_rgb(p->temperature);
-			float4 color = float4xyz3w(
-				float3add(
-					float3xyz(rgb.rgb.r, rgb.rgb.g, rgb.rgb.b),
-					float3v(0.0f)
-				),
-				p->temperature / 20.0f
-			);
-			vkCmdPushConstants(f->command_buffer, r->pipelines.planet_color_mesh_layout,
-				VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float4), &color);
-			size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
-			if (lod >= r->sphere_mesh_count) lod = r->sphere_mesh_count - 1;
-			vkCmdBindDescriptorSets(
-				f->command_buffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.planet_color_mesh_layout,
-				1,
-				1,
-				&p->graphics_data->descriptor_set,
-				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame
-				}
-			);
-			vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
-			vkCmdBindIndexBuffer(f->command_buffer, r->own_sphere_meshes[lod].index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
-		}
-	}
-
-	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.rings_pipeline);
-	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = (float)r->swapchain_extent.width,
-		.height = (float)r->swapchain_extent.height,
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f,
-	});
-	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
-	for (size_t i = 0; i < current_system->body_count; ++i) {
-		struct pshine_celestial_body *b = current_system->bodies_own[i];
-		if (!b->rings.has_rings) continue;
-		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
-			struct pshine_planet *p = (void *)b;
-			vkCmdBindDescriptorSets(
-				f->command_buffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.rings_layout,
-				1,
-				1,
-				(VkDescriptorSet[]){ p->graphics_data->rings_descriptor_set },
-				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * current_frame
-				}
-			);
-			vkCmdDraw(f->command_buffer, 6, 1, 0, 0);
-		}
-	}
-
-	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_de_pipeline);
-	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = (float)r->swapchain_extent.width,
-		.height = (float)r->swapchain_extent.height,
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f,
-	});
-	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
-	for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
-		/// Technically, accessing this might be UB if this is not a valid marker,
-		/// but no compilers care because most code relies on this being non-UB.
-		if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) {
-			continue;
-		}
-		struct pshine_ship *ship = &r->game->ships.ptr[i];
-		vkCmdBindDescriptorSets(
-			f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_de_layout,
-			2, 1, (VkDescriptorSet[]){ ship->graphics_data->descriptor_set },
-			1, (uint32_t[]){
-				get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * current_frame
-			}
-		);
-		for (size_t j = 0; j < ship->graphics_data->model.material_count; ++j) {
-			vkCmdBindDescriptorSets(
-				f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_de_layout,
-				1, 1, (VkDescriptorSet[]){ ship->graphics_data->model.materials_own[j].descriptor_set },
-				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct std_material_uniform_data)) * current_frame
-				}
-			);
-			for (size_t k = 0; k < ship->graphics_data->model.part_count; ++k) {
-				if (ship->graphics_data->model.parts_own[k].material_index != j) continue;
-				struct vulkan_mesh *mesh = &ship->graphics_data->model.parts_own[k].mesh;
-				vkCmdBindIndexBuffer(f->command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-				vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &mesh->vertex_buffer.buffer, &(VkDeviceSize){0});
-				vkCmdDrawIndexed(f->command_buffer, mesh->index_count, 1, 0, 0, 0);
-			}
-		}
-	}
-
-	// Skybox
+	rg_graph_begin_pass(&r->rgraph); // Shadow
 	{
-		float4x4 data[2] = {
-			proj_mat32,
-			float4x4_double4x4(view_mat),
-		};
+	}
+	rg_graph_end_pass(&r->rgraph);
 
-		// Remove the translation
-		data[1].v4s[3].x = 0.0f;
-		data[1].v4s[3].y = 0.0f;
-		data[1].v4s[3].z = 0.0f;
-
-		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.skybox_pipeline);
+	rg_graph_begin_pass(&r->rgraph); // HDR Geometry
+	{
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.planet_mesh_pipeline);
 		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
 			.x = 0.0f,
 			.y = 0.0f,
@@ -5603,150 +5077,307 @@ static void do_frame(
 			.maxDepth = 1.0f,
 		});
 		vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
-		vkCmdPushConstants(f->command_buffer, r->pipelines.skybox_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-			sizeof(float4x4) * 2, &data);
 
-		vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			r->pipelines.skybox_layout, 0, 1, &r->data.skybox_descriptor_set, 0, nullptr);
+		for (size_t i = 0; i < current_system->body_count; ++i) {
+			struct pshine_celestial_body *b = current_system->bodies_own[i];
+			if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
+				struct pshine_planet *p = (void *)b;
+				vkCmdBindDescriptorSets(
+					f->command_buffer,
+					VK_PIPELINE_BIND_POINT_GRAPHICS,
+					r->pipelines.planet_mesh_layout,
+					0,
+					2,
+					(VkDescriptorSet[]){ r->data.global_descriptor_set, p->graphics_data->material_descriptor_set },
+					1, (uint32_t[]){
+						get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+					}
+				);
 
-		vkCmdDraw(f->command_buffer, 14, 1, 0, 0);
-	}
-
-	vkCmdEndRendering(f->command_buffer);
-#if 0
-	//:---[ NEXT SUBPASS ]--------------://
-	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
-
-	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.atmo_pipeline);
-	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = (float)r->swapchain_extent.width,
-		.height = (float)r->swapchain_extent.height,
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f,
-	});
-	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
-
-	vkCmdBindDescriptorSets(
-		f->command_buffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		r->pipelines.atmo_layout,
-		0,
-		1,
-		(VkDescriptorSet[]){ r->data.global_descriptor_set },
-		1, (uint32_t[]){
-			get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+				size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
+				if (lod >= r->sphere_mesh_count) lod = r->sphere_mesh_count - 1;
+				vkCmdBindDescriptorSets(
+					f->command_buffer,
+					VK_PIPELINE_BIND_POINT_GRAPHICS,
+					r->pipelines.planet_mesh_layout,
+					2,
+					1,
+					&p->graphics_data->descriptor_set,
+					1, (uint32_t[]){
+						get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame
+					}
+				);
+				vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
+				vkCmdBindIndexBuffer(f->command_buffer, r->own_sphere_meshes[lod].index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+				vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
+			}
 		}
-	);
 
-	for (size_t i = 0; i < current_system->body_count; ++i) {
-		struct pshine_celestial_body *b = current_system->bodies_own[i];
-		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
-			struct pshine_planet *p = (void *)b;
-			if (!p->has_atmosphere) continue;
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.planet_color_mesh_pipeline);
+		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = (float)r->swapchain_extent.width,
+			.height = (float)r->swapchain_extent.height,
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f,
+		});
+		vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
+		vkCmdBindDescriptorSets(
+			f->command_buffer,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			r->pipelines.planet_mesh_layout,
+			0,
+			1,
+			(VkDescriptorSet[]){ r->data.global_descriptor_set },
+			1, (uint32_t[]){
+				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+			}
+		);
+
+		for (size_t i = 0; i < current_system->body_count; ++i) {
+			struct pshine_celestial_body *b = current_system->bodies_own[i];
+			if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
+				struct pshine_star *p = (void *)b;
+				pshine_color_rgb rgb = pshine_blackbody_temp_to_rgb(p->temperature);
+				float4 color = float4xyz3w(
+					float3add(
+						float3xyz(rgb.rgb.r, rgb.rgb.g, rgb.rgb.b),
+						float3v(0.0f)
+					),
+					p->temperature / 20.0f
+				);
+				vkCmdPushConstants(f->command_buffer, r->pipelines.planet_color_mesh_layout,
+					VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float4), &color);
+				size_t lod = select_celestial_body_lod(r, b, camera_pos_scs);
+				if (lod >= r->sphere_mesh_count) lod = r->sphere_mesh_count - 1;
+				vkCmdBindDescriptorSets(
+					f->command_buffer,
+					VK_PIPELINE_BIND_POINT_GRAPHICS,
+					r->pipelines.planet_color_mesh_layout,
+					1,
+					1,
+					&p->graphics_data->descriptor_set,
+					1, (uint32_t[]){
+						get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame
+					}
+				);
+				vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
+				vkCmdBindIndexBuffer(f->command_buffer, r->own_sphere_meshes[lod].index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+				vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
+			}
+		}
+
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.rings_pipeline);
+		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = (float)r->swapchain_extent.width,
+			.height = (float)r->swapchain_extent.height,
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f,
+		});
+		vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
+		for (size_t i = 0; i < current_system->body_count; ++i) {
+			struct pshine_celestial_body *b = current_system->bodies_own[i];
+			if (!b->rings.has_rings) continue;
+			if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
+				struct pshine_planet *p = (void *)b;
+				vkCmdBindDescriptorSets(
+					f->command_buffer,
+					VK_PIPELINE_BIND_POINT_GRAPHICS,
+					r->pipelines.rings_layout,
+					1,
+					1,
+					(VkDescriptorSet[]){ p->graphics_data->rings_descriptor_set },
+					1, (uint32_t[]){
+						get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * current_frame
+					}
+				);
+				vkCmdDraw(f->command_buffer, 6, 1, 0, 0);
+			}
+		}
+
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_de_pipeline);
+		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = (float)r->swapchain_extent.width,
+			.height = (float)r->swapchain_extent.height,
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f,
+		});
+		vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
+		for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
+			/// Technically, accessing this might be UB if this is not a valid marker,
+			/// but no compilers care because most code relies on this being non-UB.
+			if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) {
+				continue;
+			}
+			struct pshine_ship *ship = &r->game->ships.ptr[i];
 			vkCmdBindDescriptorSets(
-				f->command_buffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				r->pipelines.atmo_layout,
-				2,
-				1,
-				&p->graphics_data->atmo_descriptor_set,
+				f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_de_layout,
+				2, 1, (VkDescriptorSet[]){ ship->graphics_data->descriptor_set },
 				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * current_frame
+					get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * current_frame
 				}
 			);
-			vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
-			vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
-				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-				.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-				.imageMemoryBarrierCount = 1,
-				.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
-					(VkImageMemoryBarrier2){
-						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-						.image = r->transients.color_0.image,
-						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-						.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-						.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, // | VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-						.dstAccessMask = VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT, // | VK_ACCESS_2_MEMORY_READ_BIT,
-						.subresourceRange = (VkImageSubresourceRange){
-							.levelCount = 1,
-							.layerCount = 1,
-							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-							.baseMipLevel = 0,
-							.baseArrayLayer = 0,
-						},
-						.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-						.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-					},
-				},
+			for (size_t j = 0; j < ship->graphics_data->model.material_count; ++j) {
+				vkCmdBindDescriptorSets(
+					f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_de_layout,
+					1, 1, (VkDescriptorSet[]){ ship->graphics_data->model.materials_own[j].descriptor_set },
+					1, (uint32_t[]){
+						get_padded_uniform_buffer_size(r, sizeof(struct std_material_uniform_data)) * current_frame
+					}
+				);
+				for (size_t k = 0; k < ship->graphics_data->model.part_count; ++k) {
+					if (ship->graphics_data->model.parts_own[k].material_index != j) continue;
+					struct vulkan_mesh *mesh = &ship->graphics_data->model.parts_own[k].mesh;
+					vkCmdBindIndexBuffer(f->command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+					vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &mesh->vertex_buffer.buffer, &(VkDeviceSize){0});
+					vkCmdDrawIndexed(f->command_buffer, mesh->index_count, 1, 0, 0, 0);
+				}
+			}
+		}
+
+		// Skybox
+		{
+			float4x4 data[2] = {
+				proj_mat32,
+				float4x4_double4x4(view_mat),
+			};
+
+			// Remove the translation
+			data[1].v4s[3].x = 0.0f;
+			data[1].v4s[3].y = 0.0f;
+			data[1].v4s[3].z = 0.0f;
+
+			vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.skybox_pipeline);
+			vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+				.x = 0.0f,
+				.y = 0.0f,
+				.width = (float)r->swapchain_extent.width,
+				.height = (float)r->swapchain_extent.height,
+				.minDepth = 0.0f,
+				.maxDepth = 1.0f,
 			});
+			vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
+			vkCmdPushConstants(f->command_buffer, r->pipelines.skybox_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+				sizeof(float4x4) * 2, &data);
+
+			vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+				r->pipelines.skybox_layout, 0, 1, &r->data.skybox_descriptor_set, 0, nullptr);
+
+			vkCmdDraw(f->command_buffer, 14, 1, 0, 0);
+		}
+
+	}
+	rg_graph_end_pass(&r->rgraph);
+	rg_graph_begin_pass(&r->rgraph); // HDR Atmosphere
+	{
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.atmo_pipeline);
+		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = (float)r->swapchain_extent.width,
+			.height = (float)r->swapchain_extent.height,
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f,
+		});
+		vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
+
+		vkCmdBindDescriptorSets(
+			f->command_buffer,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			r->pipelines.atmo_layout,
+			0,
+			1,
+			(VkDescriptorSet[]){ r->data.global_descriptor_set },
+			1, (uint32_t[]){
+				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+			}
+		);
+
+		for (size_t i = 0; i < current_system->body_count; ++i) {
+			struct pshine_celestial_body *b = current_system->bodies_own[i];
+			if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
+				struct pshine_planet *p = (void *)b;
+				if (!p->has_atmosphere) continue;
+				vkCmdBindDescriptorSets(
+					f->command_buffer,
+					VK_PIPELINE_BIND_POINT_GRAPHICS,
+					r->pipelines.atmo_layout,
+					2,
+					1,
+					&p->graphics_data->atmo_descriptor_set,
+					1, (uint32_t[]){
+						get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * current_frame
+					}
+				);
+				vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
+				// fprintf(stderr, "atmosphere barrier\n");
+				vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
+					.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+					.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+					.imageMemoryBarrierCount = 1,
+					.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
+						(VkImageMemoryBarrier2){
+							.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+							.image = r->transients.gbuffer[GBUFFER_IMAGE_DIFFUSE_O].image.image,
+							.oldLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
+							.newLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
+							.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+							.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+							.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, // | VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+							.dstAccessMask = VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT, // | VK_ACCESS_2_MEMORY_READ_BIT,
+							.subresourceRange = (VkImageSubresourceRange){
+								.levelCount = 1,
+								.layerCount = 1,
+								.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+								.baseMipLevel = 0,
+								.baseArrayLayer = 0,
+							},
+							.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+							.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+						},
+					},
+				});
+				// fprintf(stderr, "atmosphere barrier done\n");
+			}
 		}
 	}
-
-	//:---[ NEXT SUBPASS ]--------------://
-	vkCmdNextSubpass(f->command_buffer, VK_SUBPASS_CONTENTS_INLINE);
-
-	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.light_pipeline);
-	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = (float)r->swapchain_extent.width,
-		.height = (float)r->swapchain_extent.height,
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f,
-	});
-	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
-
-	vkCmdBindDescriptorSets(
-		f->command_buffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		r->pipelines.light_layout,
-		0,
-		1,
-		(VkDescriptorSet[]){ r->data.light_descriptor_set },
-		1, (uint32_t[]){
-			get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
-		}
-	);
-
-	vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
-
-
-	//:---[ BLOOM ]--------------://
-	vkCmdEndRenderPass(f->command_buffer);
-
-	// Bloom
+	rg_graph_end_pass(&r->rgraph);
+	rg_graph_begin_pass(&r->rgraph); // HDR Lighting
 	{
-		vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
-			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-			.imageMemoryBarrierCount = 1,
-			.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
-				(VkImageMemoryBarrier2){
-					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-					.image = r->transients.color_0.image,
-					.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-					.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-					.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-					.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
-					.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-					.subresourceRange = (VkImageSubresourceRange){
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.baseArrayLayer = 0,
-						.baseMipLevel = 0,
-						.layerCount = 1,
-						.levelCount = 1,
-					},
-					.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-					.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-				},
-			},
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.light_pipeline);
+		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = (float)r->swapchain_extent.width,
+			.height = (float)r->swapchain_extent.height,
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f,
 		});
+		vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
 
-		// now we do the downsampling compute.
+		vkCmdBindDescriptorSets(
+			f->command_buffer,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			r->pipelines.light_layout,
+			0,
+			1,
+			(VkDescriptorSet[]){ r->data.light_descriptor_set },
+			1, (uint32_t[]){
+				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+			}
+		);
+
+		vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
+	}
+	rg_graph_end_pass(&r->rgraph);
+	rg_graph_begin_pass(&r->rgraph); // Bloom
+	{
+		// The downsampling compute.
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.first_downsample_bloom_pipeline);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
@@ -5760,7 +5391,7 @@ static void do_frame(
 				0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings
 			);
 
-				vkCmdDispatch(f->command_buffer, 128, 128, 1);
+			vkCmdDispatch(f->command_buffer, 128, 128, 1);
 
 			if (i == 1) vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_pipeline);
 
@@ -5819,6 +5450,7 @@ static void do_frame(
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_bloom_pipeline);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			bool is_last = i == BLOOM_STAGE_COUNT - 1;
+			[[maybe_unused]]
 			struct vulkan_image *dst_image = is_last ? &r->transients.color_0 : &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
 			VkDescriptorSet ds = r->data.upsample_bloom_descriptor_sets[BLOOM_STAGE_COUNT - 1 - i];
 			vkCmdBindDescriptorSets(
@@ -5828,79 +5460,68 @@ static void do_frame(
 			vkCmdPushConstants(f->command_buffer, r->pipelines.upsample_bloom_layout, VK_SHADER_STAGE_COMPUTE_BIT,
 				0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
 			vkCmdDispatch(f->command_buffer, 128, 128, 1);
-			// we do a similar transition to the downsampling stage stuff. the last image (transient-color0) is read by
-			// the loadOp=LOAD in the next renderpass, so we make sure the barrier is correct that way.
-			// we might also want to transition the images back to something else for the next frame.
-			if (is_last) vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
-				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-				.imageMemoryBarrierCount = 1,
-				.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
-					(VkImageMemoryBarrier2){
-						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-						.image = dst_image->image,
-						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-						.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
-						.dstStageMask = is_last ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
-							: VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-						.dstAccessMask = is_last ? VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT : VK_ACCESS_2_MEMORY_READ_BIT,
-						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-						.subresourceRange = (VkImageSubresourceRange){
-							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-							.baseArrayLayer = 0,
-							.baseMipLevel = 0,
-							.layerCount = 1,
-							.levelCount = 1,
-						},
-						.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-						.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-					},
-				},
-			});
 		}
 	}
+	rg_graph_end_pass(&r->rgraph);
+	rg_graph_begin_pass(&r->rgraph); // SDR Tonemap
+	{
+		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.blit_pipeline);
+		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = (float)r->swapchain_extent.width,
+			.height = (float)r->swapchain_extent.height,
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f,
+		});
+		vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
+		vkCmdPushConstants(f->command_buffer, r->pipelines.blit_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+			0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
+		vkCmdBindDescriptorSets(
+			f->command_buffer,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			r->pipelines.blit_layout,
+			0,
+			1,
+			(VkDescriptorSet[]){ r->data.blit_descriptor_set },
+			1, (uint32_t[]){
+				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+			}
+		);
+		vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
+	}
+	rg_graph_end_pass(&r->rgraph);
+	rg_graph_begin_pass(&r->rgraph); // SDR GUI
+	{
+		cImGui_ImplVulkan_RenderDrawData(ImGui_GetDrawData(), f->command_buffer);
+	}
+	rg_graph_end_pass(&r->rgraph);
+	rg_graph_end_frame(&r->rgraph);
 
-	vkCmdBeginRenderPass(f->command_buffer, &(VkRenderPassBeginInfo){
-		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-		.renderPass = r->render_passes.sdr_pass,
-		.renderArea = (VkRect2D){ { 0, 0, }, r->swapchain_extent },
-		.framebuffer = r->sdr_framebuffers_own[image_index],
-		.clearValueCount = 1,
-		.pClearValues = (VkClearValue[]){
-			(VkClearValue){ .color = (VkClearColorValue){ .float32 = { 1.0f, 0.0f, 1.0f, 1.0f } } },
-		}
-	}, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &(VkImageMemoryBarrier2){
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.image = r->swapchain_images_own[image_index],
+				.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+				.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+				.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+				.dstAccessMask = 0,
+				.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+				.subresourceRange = (VkImageSubresourceRange){
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.baseArrayLayer = 0,
+					.baseMipLevel = 0,
+					.layerCount = 1,
+					.levelCount = 1,
+				},
+				.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			},
+		});
 
-	vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.blit_pipeline);
-	vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = (float)r->swapchain_extent.width,
-		.height = (float)r->swapchain_extent.height,
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f,
-	});
-	vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
-	vkCmdPushConstants(f->command_buffer, r->pipelines.blit_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
-		0, sizeof(struct pshine_graphics_settings), &r->game->graphics_settings);
-	vkCmdBindDescriptorSets(
-		f->command_buffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		r->pipelines.blit_layout,
-		0,
-		1,
-		(VkDescriptorSet[]){ r->data.blit_descriptor_set },
-		1, (uint32_t[]){
-			get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
-		}
-	);
-	vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
-
-	cImGui_ImplVulkan_RenderDrawData(ImGui_GetDrawData(), f->command_buffer);
-
-	vkCmdEndRenderPass(f->command_buffer);
-
-#endif
 	CHECKVK(vkEndCommandBuffer(f->command_buffer));
 }
 
@@ -6182,6 +5803,8 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 	size_t frames_since_dt_reset = 0;
 	float delta_time_sum = 0.0f;
 
+	enable_rg_debugging(true);
+
 	int last_width = 0, last_height = 0;
 	glfwGetFramebufferSize(r->window, &last_width, &last_height);
 	while (!glfwWindowShouldClose(r->window)) {
@@ -6232,6 +5855,7 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 		delta_time_sum += delta_time;
 		last_time = current_time;
 		current_frame = (current_frame + 1) % FRAMES_IN_FLIGHT;
+		if (frame_number > 2) enable_rg_debugging(false);
 	}
 }
 

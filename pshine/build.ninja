@@ -69,6 +69,7 @@ build $builddir/data/shaders/solid_color.frag.spv      : glslc data/shaders/soli
 build $builddir/data/shaders/bloom_upsample.comp.spv   : glslc data/shaders/bloom_upsample.comp
 build $builddir/data/shaders/bloom_downsample.comp.spv : glslc data/shaders/bloom_downsample.comp
 
+build $builddir/main.dSYM: extra_debug_file $builddir/main
 build $builddir/main: ld $
   $builddir/pshine/vk.c.o $
   $builddir/pshine/main.c.o $
@@ -120,6 +121,7 @@ build $builddir/main: ld $
   $builddir/data/shaders/std_mesh.shadow.vert.spv $
   $builddir/data/shaders/std_mesh.shadow.frag.spv $
   $builddir/data/shaders/bloom_upsample.comp.spv $
+  $builddir/data/shaders/bloom_downsample.comp.spv $
   $builddir/data/shaders/bloom_downsample.comp.spv $
   vk_layer_settings.txt
 # ^ this is a dummy so that i can have a dollar sign after each line.

@@ -12,7 +12,7 @@ cflags = -std=c2x -I/opt/homebrew/include
 cxxflags = $cxxstdlib -std=c++2b -Wno-nullability-completeness -I/opt/homebrew/include
 
 glslc = glslc
-glslflags =
+glslflags = --target-env=vulkan1.4 -std=450core -O -g
 
 debug =
 debugc =

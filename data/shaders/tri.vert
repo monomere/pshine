@@ -1,5 +1,3 @@
-#version 450
-
 vec2[3] positions = vec2[](
 	vec2(0.0, -0.5),
 	vec2(0.5, 0.5),
