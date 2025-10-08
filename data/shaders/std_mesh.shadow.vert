@@ -10,5 +10,6 @@ layout (location = 3) in vec2 i_texcoord;
 layout (set = 0, binding = 0) uniform readonly BUFFER(StdMeshUniforms, mesh);
 
 void main() {
-	gl_Position = mesh.proj * mesh.model_view * vec4(i_position, 1.0);
+	vec4 clip_pos = mesh.shadow_proj * mesh.shadow_model_view * vec4(i_position, 1.0);
+	gl_Position = clip_pos;
 }

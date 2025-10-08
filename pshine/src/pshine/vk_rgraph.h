@@ -9,7 +9,7 @@
 #define RG_DEBUG 0
 
 static int noop(FILE *fout, const char *fmt, ...) { (void)fout; (void)fmt; return 0; }
-static int (*current_debug_printf)(FILE *fout, const char *fmt, ...) = noop;
+static int (*current_debug_printf)(FILE *fout, const char *fmt, ...) = fprintf;
 RG_GRAPH_FN_ void enable_rg_debugging(bool enabled) {
 	if (enabled) current_debug_printf = fprintf;
 	else current_debug_printf = noop;
@@ -207,8 +207,19 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 			struct rg_image_ref *small_ref = &small_pass->image_refs_own[j];
 			struct rg_image_ref *big_ref = &big_pass->image_refs_own[j];
 			
-			if (small_ref->image_index != big_ref->image_index)
+			if (small_ref->image_index != big_ref->image_index) {
+				RG_DEBUG_PRINTF("Did not merge pass %s and %s because they have an incompatible image reference (index %u).\n",
+					small_pass->name, big_pass->name, j);
+				RG_DEBUG_PRINTF("Pass %s has %u references, pass %s has %u.\n",
+					small_pass->name, small_pass->image_ref_count, big_pass->name, big_pass->image_ref_count);
 				goto merge_failed; // continue outer loop
+			}
+
+			[[maybe_unused]]
+			struct rg_graph_image *image = small_ref->image_index != UINT32_MAX
+				? &graph->images_own[small_ref->image_index]
+				: &graph->current.swapchain_image
+				;
 
 			if (
 				small_ref->access_flags & VK_ACCESS_2_SHADER_SAMPLED_READ_BIT &&
@@ -217,6 +228,8 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 					(big_ref->access_flags & VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
 				)
 			) {
+				RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a sampled read from %s, which %s uses as an attachment.\n",
+					small_pass->name, big_pass->name, small_pass->name, image->name, big_pass->name);
 				goto merge_failed;
 			}
 			if (
@@ -226,6 +239,8 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 					(small_ref->access_flags & VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
 				)
 			) {
+				RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a sampled read from %s, which %s uses as an attachment.\n",
+					small_pass->name, big_pass->name, big_pass->name, image->name, small_pass->name);
 				goto merge_failed;
 			}
 		}

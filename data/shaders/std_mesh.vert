@@ -15,6 +15,8 @@ layout (location = 2) out vec2 o_texcoord;
 layout (location = 3) out vec3 o_tbn_tangent;
 layout (location = 4) out vec3 o_tbn_bitangent;
 layout (location = 5) out vec3 o_tbn_normal;
+layout (location = 6) out vec4 o_shadow_fragcoord;
+layout (location = 7) out vec4 o_fragcoord;
 
 // layout (location = 3) out vec3 o_tangent_sun_dir;
 // layout (location = 4) out vec3 o_tangent_cam_pos;
@@ -83,6 +85,9 @@ void main() {
 	o_tbn_tangent = T;
 	o_tbn_bitangent = B;
 	o_tbn_normal = N;
+
+	o_shadow_fragcoord = mesh.shadow_proj * mesh.shadow_model_view * vec4(i_position, 1.0);
+
 	// mat3 TBN = mat3(T, B, N);
 	// o_tbn = TBN;
 
@@ -94,5 +99,5 @@ void main() {
 	// o_tangent_pos = TBN * local_model_pos;
 	// o_tangent_normal = TBN * o_normal;
 
-	gl_Position = mesh.proj * mesh.model_view * vec4(i_position, 1.0);
+	gl_Position = o_fragcoord = mesh.proj * mesh.model_view * vec4(i_position, 1.0);
 }

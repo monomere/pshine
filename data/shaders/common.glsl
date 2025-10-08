@@ -48,6 +48,8 @@ struct StdMeshUniforms {
 	mat4 model_view;
 	mat4 model;
 	mat4 unscaled_model;
+	mat4x4 shadow_model_view;
+	mat4x4 shadow_proj;
 	vec4 sun;
 	vec4 rel_cam_pos;
 };

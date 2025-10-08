@@ -6,7 +6,7 @@
 layout (location = 0) out vec4 o_color0; // unused
 layout (location = 1) out vec4 o_diffuse_o;
 layout (location = 2) out vec4 o_normal_r_m;
-layout (location = 3) out vec4 o_emissive;
+layout (location = 3) out vec4 o_emissive_s;
 // layout (location = 4) out uint o_object;
 
 layout (location = 0) in vec3 i_position;
@@ -17,6 +17,8 @@ layout (location = 2) in vec2 i_texcoord;
 layout (location = 3) in vec3 i_tbn_tangent;
 layout (location = 4) in vec3 i_tbn_bitangent;
 layout (location = 5) in vec3 i_tbn_normal;
+layout (location = 6) in vec4 i_shadow_fragcoord;
+layout (location = 7) in vec4 i_fragcoord;
 // layout (location = 3) in vec3 i_tangent_sun_dir;
 // layout (location = 4) in vec3 i_tangent_cam_pos;
 // layout (location = 5) in vec3 i_tangent_pos;
@@ -29,6 +31,7 @@ layout (set = 1, binding = 1) uniform SAMPLER(_2D, texture_diffuse);
 layout (set = 1, binding = 2) uniform SAMPLER(_2D, texture_ao_rough_metal);
 layout (set = 1, binding = 3) uniform SAMPLER(_2D, texture_normal);
 layout (set = 1, binding = 4) uniform SAMPLER(_2D, texture_emissive);
+layout (set = 1, binding = 5) uniform SAMPLER(_2D, shadow_map);
 
 // vec4 _vis(vec3 x) {
 // 	return vec4(clamp(abs(x), 0.0, 1.0), 1.0);
@@ -48,6 +51,17 @@ vec2 float32x3_to_oct(in vec3 v) {
 	return (v.z <= 0.0) ? ((1.0 - abs(p.yx)) * sign_not_zero(p)) : p;
 }
 
+float linearize_depth(float depth) {
+	return global.camera.w / depth;
+}
+
+float compute_shadow() {
+	vec3 shadow_coord = i_shadow_fragcoord.xyz / i_shadow_fragcoord.w;
+	float shadow_depth = texture(shadow_map, shadow_coord.xy * 0.5 + 0.5).r;
+	float current_depth = i_fragcoord.z / i_fragcoord.w;
+	return float(current_depth > shadow_depth);
+}
+
 void main() {
 	vec3 diffuse = texture(texture_diffuse, i_texcoord).rgb;
 	vec3 ao_rough_metal = texture(texture_ao_rough_metal, i_texcoord).rgb;
@@ -58,9 +72,11 @@ void main() {
 	float roughness = ao_rough_metal.g;
 	float metallic = ao_rough_metal.b;
 
+	float shadow = compute_shadow();
+
 	mat3 tbn = mat3(i_tbn_tangent, i_tbn_bitangent, i_tbn_normal);
 	// mat3 tbn = i_tbn;
 	o_diffuse_o = vec4(diffuse, occlusion);
 	o_normal_r_m = vec4(float32x3_to_oct(normalize(tbn * normal_map)), roughness, metallic); //  * normal_map
-	o_emissive = vec4(emissive, 0.0);
+	o_emissive_s = vec4(emissive.rgb, shadow);
 }

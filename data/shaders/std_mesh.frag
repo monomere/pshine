@@ -22,6 +22,7 @@ layout (set = 1, binding = 1) uniform SAMPLER(_2D, texture_diffuse);
 layout (set = 1, binding = 2) uniform SAMPLER(_2D, texture_ao_rough_metal);
 layout (set = 1, binding = 3) uniform SAMPLER(_2D, texture_normal);
 layout (set = 1, binding = 4) uniform SAMPLER(_2D, texture_emissive);
+layout (set = 1, binding = 5) uniform SAMPLER(_2D, shadow_map);
 
 vec3 fresnel_schlick(float cos_theta, vec3 F0) {
 	return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
