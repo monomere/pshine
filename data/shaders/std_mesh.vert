@@ -87,6 +87,7 @@ void main() {
 	o_tbn_normal = N;
 
 	o_shadow_fragcoord = mesh.shadow_proj * mesh.shadow_model_view * vec4(i_position, 1.0);
+	// o_shadow_fragcoord.z = 1.0 - 1.0 / (o_shadow_fragcoord.z + 1.0);
 
 	// mat3 TBN = mat3(T, B, N);
 	// o_tbn = TBN;

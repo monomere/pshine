@@ -180,8 +180,8 @@ void pshine_init_game(struct pshine_game *game) {
 		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(0, 0, 0);
 		game->ships.ptr[idx].scale = 4.0;
 		game->ships.ptr[idx].max_atmo_velocity = 550.0;
-		game->ships.ptr[idx].max_space_velocity = 18600.0;
-		game->ships.ptr[idx].max_warp_velocity = PSHINE_SPEED_OF_LIGHT * 10.0;
+		game->ships.ptr[idx].max_space_velocity = 186000.0;
+		game->ships.ptr[idx].max_warp_velocity = PSHINE_SPEED_OF_LIGHT * 100.0;
 	}
 
 	if (game->star_system_count <= 0) {
@@ -268,7 +268,9 @@ static void update_camera_walk(struct pshine_game *game, float delta_time) {
 	// Unlike the Fly mode, we need to select a proper basis for our pitch/yaw rotation.
 	// One of the axes is easy, the normal of the planet sphere, the other one a bit more complicated.
 	// (we can get the third axis by doing a cross product of the other axes)
+	// TODO
 }
+
 
 [[maybe_unused]]
 static void update_camera_fly(struct pshine_game *game, float delta_time) {
@@ -302,6 +304,7 @@ static void update_camera_fly(struct pshine_game *game, float delta_time) {
 
 	*(double3*)game->camera_position.values = cam_pos;
 	*(floatR*)game->camera_orientation.values = cam_rot;
+	*(double3*)game->render_origin.values = cam_pos;
 }
 
 [[maybe_unused]]
@@ -337,6 +340,8 @@ static void update_camera_arc(struct pshine_game *game, float delta_time) {
 
 	*(double3*)game->camera_position.values = cam_pos;
 	*(floatR*)game->camera_orientation.values = floatRfromto(float3xyz(0, 0, 1), float3_double3(cam_forward));
+
+	*(double3*)game->render_origin.values = cam_pos;
 }
 
 static void update_celestial_body(struct pshine_game *game, float delta_time, struct pshine_celestial_body *body) {
@@ -421,6 +426,7 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	*(double3*)game->camera_position.values = double3add(cam_offset, pos);
 	*(floatR*)game->camera_orientation.values = cam_global_orient;
 		// floatRfromto(float3xyz(0, 0, 1), float3_double3(forward));
+	*(double3*)game->render_origin.values = double3mul(pos, PSHINE_SCS_FACTOR);
 }
 
 void pshine_update_game(struct pshine_game *game, float actual_delta_time) {

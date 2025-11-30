@@ -8,6 +8,7 @@ build $mod/src/pshine/math.h: python generate_math.py
 # giraffe/ffi/include/giraffe/giraffe.h
 
 build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/src/pshine/math.h
+build $builddir/pshine/vk_rgraph.c.o : cc $mod/src/pshine/vk_rgraph.c || $mod/src/pshine/math.h
 build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h
 build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c    || $mod/src/pshine/math.h
 build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h
@@ -72,6 +73,7 @@ build $builddir/data/shaders/bloom_downsample.comp.spv : glslc data/shaders/bloo
 build $builddir/main.dSYM: extra_debug_file $builddir/main
 build $builddir/main: ld $
   $builddir/pshine/vk.c.o $
+  $builddir/pshine/vk_rgraph.c.o $
   $builddir/pshine/main.c.o $
   $builddir/pshine/$osapi.c.o $
   $builddir/pshine/util.c.o $

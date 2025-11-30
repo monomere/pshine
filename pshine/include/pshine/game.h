@@ -347,6 +347,7 @@ struct pshine_game {
 
 	struct pshine_renderer *renderer;
 
+	pshine_point3d_scaled render_origin;
 	pshine_point3d_world camera_position;
 	pshine_rotor camera_orientation;
 	float actual_camera_fov;

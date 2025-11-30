@@ -77,6 +77,10 @@ vec3 world_pos_from_depth(float depth) {
 	return vec3(u_global.inv_view * view_pos);
 }
 
+// vec3 exhaust() {
+	
+// }
+
 vec3 gbuffer_light() {
 	vec4 i_color0 = subpassLoad(u_color0).rgba;
 	vec4 i_diffuse_o = subpassLoad(u_diffuse_o).rgba;
@@ -84,8 +88,9 @@ vec3 gbuffer_light() {
 	vec4 i_normal_r_m = subpassLoad(u_normal_r_m).rgba;
 	vec4 i_emissive_s = subpassLoad(u_emissive_s).rgba;
 	float i_depth = subpassLoad(u_depth).r;
-	float shadow_factor = clamp(i_emissive_s.a, 0.1, 1.0);
-	return vec3(shadow_factor);
+	float shadow_factor = clamp(i_emissive_s.a, 0.0, 1.0);
+	shadow_factor = 0.0;
+	// return vec3(i_emissive_s.a);
 	// return vec3(shadow_factor);
 	// float i_shadow = texture(u_shadow, i_uv).r;
 	// vec3 i_shadowc = texture(u_shadow, i_uv).rgb;
@@ -132,7 +137,7 @@ vec3 gbuffer_light() {
 		vec3 H = normalize(V + L);
 		// float distance = length(k_sun_dir);
 		// float attenuation = 1.0; // 1.0 / (distance * distance);
-		vec3 radiance = vec3(8.0) * shadow_factor; // lightColors[i] * attenuation;
+		vec3 radiance = mix(vec3(4.0), vec3(8.0), shadow_factor); // lightColors[i] * attenuation;
 
 		// Cook-Torrance BRDF
 		float NDF = distribution_ggx(N, H, roughness);
@@ -165,6 +170,46 @@ vec3 gbuffer_light() {
 	return Lo * metallic + emissive * 16.0 + bg_color;
 }
 
+
+const int quantize_groups = 8;
+//
+//const int DITHER_SIZE = 2;
+//const float DITHER_PATTERN[DITHER_SIZE * DITHER_SIZE] = {
+	//0.5 / 4.0, 2.5 / 4.0,
+	//3.5 / 4.0, 1.5 / 4.0 };
+
+//const int DITHER_SIZE = 4;
+//const float DITHER_PATTERN[DITHER_SIZE * DITHER_SIZE] = {
+//     0.5 / 16.0,  8.5 / 16.0,  2.5 / 16.0, 10.5 / 16.0,
+//    12.5 / 16.0,  4.5 / 16.0, 14.5 / 16.0,  6.5 / 16.0,
+//     3.5 / 16.0, 11.5 / 16.0,  1.5 / 16.0,  9.5 / 16.0,
+//    15.5 / 16.0,  7.5 / 16.0, 13.5 / 16.0,  5.5 / 16.0 };
+
+const int DITHER_SIZE = 8;
+const float DITHER_PATTERN[DITHER_SIZE * DITHER_SIZE] = {
+	 0.5 / 64.0, 48.5 / 64.0, 12.5 / 64.0, 60.5 / 64.0,  3.5 / 64.0, 51.5 / 64.0, 15.5 / 64.0, 63.5 / 64.0,
+	32.5 / 64.0, 16.5 / 64.0, 44.5 / 64.0, 28.5 / 64.0, 35.5 / 64.0, 19.5 / 64.0, 47.5 / 64.0, 31.5 / 64.0,
+	 8.5 / 64.0, 56.5 / 64.0,  4.5 / 64.0, 52.5 / 64.0, 11.5 / 64.0, 59.5 / 64.0,  7.5 / 64.0, 55.5 / 64.0,
+	40.5 / 64.0, 24.5 / 64.0, 36.5 / 64.0, 20.5 / 64.0, 43.5 / 64.0, 27.5 / 64.0, 39.5 / 64.0, 23.5 / 64.0,
+	 2.5 / 64.0, 50.5 / 64.0, 14.5 / 64.0, 62.5 / 64.0,  1.5 / 64.0, 49.5 / 64.0, 13.5 / 64.0, 61.5 / 64.0,
+	34.5 / 64.0, 18.5 / 64.0, 46.5 / 64.0, 30.5 / 64.0, 33.5 / 64.0, 17.5 / 64.0, 45.5 / 64.0, 29.5 / 64.0,
+	10.5 / 64.0, 58.5 / 64.0,  6.5 / 64.0, 54.5 / 64.0,  9.5 / 64.0, 57.5 / 64.0,  5.5 / 64.0, 53.5 / 64.0,
+	42.5 / 64.0, 26.5 / 64.0, 38.5 / 64.0, 22.5 / 64.0, 41.5 / 64.0, 25.5 / 64.0, 37.5 / 64.0, 21.5 / 64.0 };
+
+// void vertex() {}
+
+// void fragment() {
+// 	// https://godotshaders.com/shader/quantized-bayer-dither/
+	// ivec2 p = ivec2(UV * gameres) % ivec2(DITHER_SIZE);
+// 	vec4 col = texture(screen_texture, vec2(ivec2(UV * gameres)) / gameres);
+// 	COLOR = (step(t, fract(col * g)) + floor(col * g)) / g;
+// }
+
 void main() {
-	o_col = vec4(gbuffer_light(), 1.0);
+	vec3 lit = gbuffer_light();
+	// float g = float(quantize_groups);
+	// ivec2 p = ivec2(i_uv) * ivec2(1280 / 8, 720 / 8) % ivec2(DITHER_SIZE);
+	// float t = DITHER_PATTERN[p.y * DITHER_SIZE + p.x];
+	// o_col = vec4((step(t, fract(lit * g)) + floor(lit * g)) / g, 1.0);
+	o_col = vec4(lit, 1.0);
 }

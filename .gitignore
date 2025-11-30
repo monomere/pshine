@@ -37,3 +37,6 @@ ninja/set-platform.ninja
 
 # CLion
 .idea
+
+# Visual Studio Code
+.vscode

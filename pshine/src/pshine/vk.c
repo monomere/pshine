@@ -305,6 +305,7 @@ struct vulkan_renderer {
 	bool supports_no_a_format;
 
 	VkFormat depth_format;
+	VkFormat shadow_depth_format;
 	struct vulkan_image depth_image;
 	struct render_pass_transients transients;
 
@@ -1316,7 +1317,8 @@ static void load_mesh_model_from_gltf(
 			.descriptorSetCount = 1,
 			.pSetLayouts = &r->descriptors.std_material_layout,
 		}, &out->materials_own[i].descriptor_set));
-		NAME_VK_OBJECT(r, out->materials_own[i].descriptor_set, VK_OBJECT_TYPE_DESCRIPTOR_SET, "Material %zu of %s", i, fpath);
+		NAME_VK_OBJECT(r, out->materials_own[i].descriptor_set, VK_OBJECT_TYPE_DESCRIPTOR_SET,
+			"Material %zu of %s", i, fpath);
 
 		vkUpdateDescriptorSets(r->device, 6, (VkWriteDescriptorSet[6]){
 			(VkWriteDescriptorSet){
@@ -1501,7 +1503,8 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 				.memory_usage = VMA_MEMORY_USAGE_AUTO,
 			};
 
-			common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * FRAMES_IN_FLIGHT;
+			common_alloc_info.size = get_padded_uniform_buffer_size(r,
+				sizeof(struct planet_mesh_uniform_data)) * FRAMES_IN_FLIGHT;
 			p->graphics_data->uniform_buffer = allocate_buffer(r, &common_alloc_info);
 			NAME_VK_OBJECT(r, p->graphics_data->uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "planet mesh ub");
 
@@ -1509,12 +1512,14 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 			p->graphics_data->atmo_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 			NAME_VK_OBJECT(r, p->graphics_data->atmo_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "atmo ub");
 
-			common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct planet_material_uniform_data)) * FRAMES_IN_FLIGHT;
+			common_alloc_info.size = get_padded_uniform_buffer_size(r,
+				sizeof(struct planet_material_uniform_data)) * FRAMES_IN_FLIGHT;
 			p->graphics_data->material_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 			NAME_VK_OBJECT(r, p->graphics_data->material_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "material ub");
 
 			if (b->rings.has_rings) {
-				common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * FRAMES_IN_FLIGHT;
+				common_alloc_info.size = get_padded_uniform_buffer_size(r,
+					sizeof(struct rings_uniform_data)) * FRAMES_IN_FLIGHT;
 				p->graphics_data->rings_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 				NAME_VK_OBJECT(r, p->graphics_data->rings_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "rings ub");
 			}
@@ -1833,7 +1838,9 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 
 	// We could do better sync here, but there's not much point in doing that since we only compute the LUTs once.
 	CHECKVK(vkQueueWaitIdle(r->queues[QUEUE_GRAPHICS]));
-	CHECKVK(vkQueueWaitIdle(r->queues[QUEUE_COMPUTE])); // handle multiple calls to this function, although we shouldn't get them.
+
+	// handle multiple calls to this function, although we shouldn't get them.
+	CHECKVK(vkQueueWaitIdle(r->queues[QUEUE_COMPUTE]));
 
 	CHECKVK(vkResetCommandBuffer(cmdbuf, 0));
 	CHECKVK(vkBeginCommandBuffer(cmdbuf, &(VkCommandBufferBeginInfo){
@@ -1892,7 +1899,8 @@ static void compute_atmo_lut(struct vulkan_renderer *r, struct pshine_planet *pl
 		.samples = 4096,
 	};
 
-	vkCmdPushConstants(cmdbuf, r->pipelines.atmo_lut_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(struct atmo_lut_push_const_data), &data);
+	vkCmdPushConstants(cmdbuf, r->pipelines.atmo_lut_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+		sizeof(struct atmo_lut_push_const_data), &data);
 
 	vkCmdDispatch(cmdbuf, atmo_lut_extent.width / 16, atmo_lut_extent.height / 16, 1);
 
@@ -2040,6 +2048,7 @@ static void init_glfw(struct vulkan_renderer *r) {
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	// glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
 
 	int window_width = 1920 / 1.5, window_height = 1080 / 1.5;
 	GLFWmonitor *monitor = nullptr;
@@ -2437,12 +2446,16 @@ static void init_swapchain(struct vulkan_renderer *r) {
 	r->depth_format = find_optimal_format(r, 1, (VkFormat[]){
 		VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT
 	}, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_TILING_OPTIMAL);
+	r->shadow_depth_format = find_optimal_format(r, 1, (VkFormat[]){
+		VK_FORMAT_D16_UNORM, VK_FORMAT_D24_UNORM_S8_UINT
+	}, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_TILING_OPTIMAL);
 	reinit_swapchain(r);
 	// {
 	// 	uint32_t surface_format_count = 0;
 	// 	CHECKVK(vkGetPhysicalDeviceSurfaceFormatsKHR(r->physical_device, r->surface, &surface_format_count, nullptr));
 	// 	VkSurfaceFormatKHR surface_formats[surface_format_count];
-	// 	CHECKVK(vkGetPhysicalDeviceSurfaceFormatsKHR(r->physical_device, r->surface, &surface_format_count, surface_formats));
+	// 	CHECKVK(vkGetPhysicalDeviceSurfaceFormatsKHR(r->physical_device, r->surface,
+	// 		&surface_format_count, surface_formats));
 	// 	for (uint32_t i = 0; i < surface_format_count; ++i) {
 	// 		PSHINE_INFO("surface format: %d, color space: %d", surface_formats[i].format, surface_formats[i].colorSpace);
 	// 	}
@@ -2545,11 +2558,11 @@ static void init_transients(struct vulkan_renderer *r) {
 			.imageType = VK_IMAGE_TYPE_2D,
 			.arrayLayers = 1,
 			.extent = {
-				.width = 1024,
-				.height = 1024,
+				.width = 2048,
+				.height = 2048,
 				.depth = 1,
 			},
-			.format = r->depth_format,
+			.format = r->shadow_depth_format,
 			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 			.samples = VK_SAMPLE_COUNT_1_BIT,
 			.mipLevels = 1,
@@ -2560,7 +2573,7 @@ static void init_transients(struct vulkan_renderer *r) {
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
-			.format = r->depth_format,
+			.format = r->shadow_depth_format,
 			.subresourceRange = (VkImageSubresourceRange){
 				.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
 				.baseArrayLayer = 0,
@@ -2579,8 +2592,8 @@ static void init_transients(struct vulkan_renderer *r) {
 			.imageType = VK_IMAGE_TYPE_2D,
 			.arrayLayers = 1,
 			.extent = {
-				.width = 1024,
-				.height = 1024,
+				.width = r->transients.shadow[0].width,
+				.height = r->transients.shadow[0].height,
 				.depth = 1,
 			},
 			.format = VK_FORMAT_R8G8B8A8_SRGB,
@@ -2911,7 +2924,7 @@ static void init_rendergraph(struct vulkan_renderer *r) {
 				"Shadow 0",
 				r->transients.shadow[0].image,
 				r->transients.shadow[0].view,
-				r->depth_format,
+				r->shadow_depth_format,
 				VK_IMAGE_ASPECT_DEPTH_BIT,
 			},
 			[RPIMG_SHADOWC] = {
@@ -3021,6 +3034,15 @@ enum graphics_pipline_output {
 	GRAPHICS_PIPELINE_OUTPUT_SHADOW,
 };
 
+enum graphics_pipeline_depth : uint32_t {
+	GRAPHICS_PIPELINE_DEPTH_NONE = 0b00,
+	GRAPHICS_PIPELINE_DEPTH_TEST_BIT = 0b01,
+	GRAPHICS_PIPELINE_DEPTH_WRITE_BIT = 0b10,
+	GRAPHICS_PIPELINE_DEPTH_FULL
+		= GRAPHICS_PIPELINE_DEPTH_TEST_BIT
+		| GRAPHICS_PIPELINE_DEPTH_WRITE_BIT,
+};
+
 struct graphics_pipeline_info {
 	const char *vert_fname, *frag_fname;
 	uint32_t push_constant_range_count;
@@ -3032,11 +3054,12 @@ struct graphics_pipeline_info {
 	// uint32_t subpass;
 	const char *layout_name;
 	const char *pipeline_name;
-	bool depth_test;
+	enum graphics_pipeline_depth depth;
 	bool blend;
 	enum pshine_vertex_type vertex_kind;
 	bool lines;
 	bool triangle_strip;
+	VkCullModeFlags cull_mode;
 	enum graphics_pipline_output output_kind;
 	// int planet_specialization;
 };
@@ -3211,7 +3234,7 @@ static struct vulkan_pipeline create_graphics_pipeline(
 			.rasterizerDiscardEnable = VK_FALSE,
 			.polygonMode = info->polygon_mode,
 			.lineWidth = 1.0f,
-			.cullMode = VK_CULL_MODE_NONE,
+			.cullMode = info->cull_mode,
 			.frontFace = VK_FRONT_FACE_CLOCKWISE,
 			.depthBiasEnable = VK_FALSE,
 		},
@@ -3223,8 +3246,8 @@ static struct vulkan_pipeline create_graphics_pipeline(
 		.pDepthStencilState = &(VkPipelineDepthStencilStateCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
 			.depthBoundsTestEnable = VK_FALSE,
-			.depthTestEnable = info->depth_test ? VK_TRUE : VK_FALSE,
-			.depthWriteEnable = info->depth_test ? VK_TRUE : VK_FALSE,
+			.depthTestEnable = info->depth & GRAPHICS_PIPELINE_DEPTH_TEST_BIT ? VK_TRUE : VK_FALSE,
+			.depthWriteEnable = info->depth & GRAPHICS_PIPELINE_DEPTH_WRITE_BIT ? VK_TRUE : VK_FALSE,
 			.stencilTestEnable = VK_FALSE,
 			.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
 			.maxDepthBounds = 1.0f,
@@ -3305,7 +3328,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			r->descriptors.planet_mesh_layout,
 		},
 		.blend = false,
-		.depth_test = true,
+		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
 		.vertex_kind = PSHINE_VERTEX_PLANET,
 		.layout_name = "planet mesh pipeline layout",
 		.pipeline_name = "planet mesh pipeline",
@@ -3332,7 +3355,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			r->descriptors.planet_mesh_layout,
 		},
 		.blend = false,
-		.depth_test = true,
+		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
 		.vertex_kind = PSHINE_VERTEX_PLANET,
 		.layout_name = "solid color planet mesh pipeline layout",
 		.pipeline_name = "solid color planet mesh pipeline",
@@ -3353,7 +3376,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			r->descriptors.rings_layout,
 		},
 		.blend = true,
-		.depth_test = true,
+		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
 		.vertex_kind = PSHINE_VERTEX_NONE,
 		.layout_name = "rings pipeline layout",
 		.pipeline_name = "rings pipeline",
@@ -3376,7 +3399,8 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		},
 		.triangle_strip = false,
 		.blend = false,
-		.depth_test = true,
+		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
+		.cull_mode = VK_CULL_MODE_BACK_BIT,
 		.vertex_kind = PSHINE_VERTEX_STATIC_MESH,
 		.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
 		.layout_name = "std mesh deferred pipeline layout",
@@ -3397,7 +3421,8 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		},
 		.triangle_strip = false,
 		.blend = false,
-		.depth_test = true,
+		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
+		.cull_mode = VK_CULL_MODE_FRONT_BIT,
 		.vertex_kind = PSHINE_VERTEX_STATIC_MESH,
 		.output_kind = GRAPHICS_PIPELINE_OUTPUT_SHADOW,
 		.layout_name = "std mesh shadow pipeline layout",
@@ -3418,7 +3443,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		},
 		.triangle_strip = false,
 		.blend = false,
-		.depth_test = false,
+		.depth = GRAPHICS_PIPELINE_DEPTH_NONE,
 		.vertex_kind = PSHINE_VERTEX_NONE,
 		.output_kind = GRAPHICS_PIPELINE_OUTPUT_COLOR,
 		.layout_name = "deferred light pipeline layout",
@@ -3445,7 +3470,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			r->descriptors.skybox_layout,
 		},
 		.blend = false,
-		.depth_test = true,
+		.depth = GRAPHICS_PIPELINE_DEPTH_TEST_BIT,
 		.vertex_kind = false,
 		.lines = false,
 		.triangle_strip = true,
@@ -3468,7 +3493,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			r->descriptors.atmo_layout,
 		},
 		.blend = false,
-		.depth_test = false,
+		.depth = GRAPHICS_PIPELINE_DEPTH_NONE,
 		.vertex_kind = false,
 		.output_kind = GRAPHICS_PIPELINE_OUTPUT_COLOR,
 		.layout_name = "atmosphere pipeline layout",
@@ -3495,7 +3520,7 @@ static void init_pipelines(struct vulkan_renderer *r) {
 			r->descriptors.blit_layout,
 		},
 		.blend = false,
-		.depth_test = false,
+		.depth = GRAPHICS_PIPELINE_DEPTH_NONE,
 		.vertex_kind = false,
 		.output_kind = GRAPHICS_PIPELINE_OUTPUT_COLOR,
 		.layout_name = "blit pipeline layout",
@@ -3567,9 +3592,11 @@ static void init_pipelines(struct vulkan_renderer *r) {
 				},
 			},
 		}, nullptr, &r->pipelines.upsample_bloom_layout);
-		NAME_VK_OBJECT(r, r->pipelines.upsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "upsample&bloom pipeline layout");
+		NAME_VK_OBJECT(r, r->pipelines.upsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT,
+			"upsample&bloom pipeline layout");
 
-		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/bloom_upsample.comp.spv");
+		VkShaderModule comp_shader_module = create_shader_module_file(r,
+			"build/pshine/data/shaders/bloom_upsample.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
 			.layout = r->pipelines.upsample_bloom_layout,
@@ -3598,9 +3625,11 @@ static void init_pipelines(struct vulkan_renderer *r) {
 				},
 			},
 		}, nullptr, &r->pipelines.downsample_bloom_layout);
-		NAME_VK_OBJECT(r, r->pipelines.downsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT, "downsample&bloom pipeline layout");
+		NAME_VK_OBJECT(r, r->pipelines.downsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT,
+			"downsample&bloom pipeline layout");
 
-		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/bloom_downsample.comp.spv");
+		VkShaderModule comp_shader_module = create_shader_module_file(r,
+			"build/pshine/data/shaders/bloom_downsample.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
 			.layout = r->pipelines.downsample_bloom_layout,
@@ -3619,7 +3648,8 @@ static void init_pipelines(struct vulkan_renderer *r) {
 				.pName = "main",
 			},
 		}, nullptr, &r->pipelines.first_downsample_bloom_pipeline);
-		NAME_VK_OBJECT(r, r->pipelines.first_downsample_bloom_pipeline, VK_OBJECT_TYPE_PIPELINE, "first-downsample&bloom pipeline");
+		NAME_VK_OBJECT(r, r->pipelines.first_downsample_bloom_pipeline, VK_OBJECT_TYPE_PIPELINE,
+			"first-downsample&bloom pipeline");
 
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
@@ -3795,7 +3825,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			},
 		}
 	}, nullptr, &r->descriptors.planet_material_layout);
-	NAME_VK_OBJECT(r, r->descriptors.planet_material_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "planet material descriptor set layout");
+	NAME_VK_OBJECT(r, r->descriptors.planet_material_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+		"planet material descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -3807,7 +3838,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 		}
 	}, nullptr, &r->descriptors.planet_mesh_layout);
-	NAME_VK_OBJECT(r, r->descriptors.planet_mesh_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "planet static mesh descriptor set layout");
+	NAME_VK_OBJECT(r, r->descriptors.planet_mesh_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+		"planet static mesh descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -3845,7 +3877,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			},
 		}
 	}, nullptr, &r->descriptors.atmo_layout);
-	NAME_VK_OBJECT(r, r->descriptors.atmo_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "atmosphere descriptor set layout");
+	NAME_VK_OBJECT(r, r->descriptors.atmo_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+		"atmosphere descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -3859,7 +3892,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			},
 		}
 	}, nullptr, &r->descriptors.atmo_lut_layout);
-	NAME_VK_OBJECT(r, r->descriptors.atmo_lut_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "atmosphere lut descriptor set layout");
+	NAME_VK_OBJECT(r, r->descriptors.atmo_lut_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+		"atmosphere lut descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -3989,7 +4023,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			},
 		}
 	}, nullptr, &r->descriptors.upsample_bloom_layout);
-	NAME_VK_OBJECT(r, r->descriptors.upsample_bloom_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "upsample&bloom descriptor set layout");
+	NAME_VK_OBJECT(r, r->descriptors.upsample_bloom_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+		"upsample&bloom descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -4009,7 +4044,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			},
 		}
 	}, nullptr, &r->descriptors.downsample_bloom_layout);
-	NAME_VK_OBJECT(r, r->descriptors.downsample_bloom_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "downsample&bloom descriptor set layout");
+	NAME_VK_OBJECT(r, r->descriptors.downsample_bloom_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+		"downsample&bloom descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -4058,7 +4094,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			},
 		}
 	}, nullptr, &r->descriptors.std_material_layout);
-	NAME_VK_OBJECT(r, r->descriptors.std_material_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "std material descriptor set layout");
+	NAME_VK_OBJECT(r, r->descriptors.std_material_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+		"std material descriptor set layout");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -4070,7 +4107,8 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 		}
 	}, nullptr, &r->descriptors.std_mesh_layout);
-	NAME_VK_OBJECT(r, r->descriptors.std_mesh_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, "std static mesh descriptor set layout");
+	NAME_VK_OBJECT(r, r->descriptors.std_mesh_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+		"std static mesh descriptor set layout");
 }
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
@@ -4249,7 +4287,8 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 		}, r->data.upsample_bloom_descriptor_sets));
 
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
-			NAME_VK_OBJECT(r, r->data.upsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "upsample&bloom #%zu ds", i);
+			NAME_VK_OBJECT(r, r->data.upsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET,
+				"upsample&bloom #%zu ds", i);
 
 		CHECKVK(vkAllocateDescriptorSets(r->device, &(VkDescriptorSetAllocateInfo){
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -4259,7 +4298,8 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 		}, r->data.downsample_bloom_descriptor_sets));
 
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i)
-			NAME_VK_OBJECT(r, r->data.downsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET, "downsample&bloom #%zu ds", i);
+			NAME_VK_OBJECT(r, r->data.downsample_bloom_descriptor_sets[i], VK_OBJECT_TYPE_DESCRIPTOR_SET,
+				"downsample&bloom #%zu ds", i);
 	}
 
 	{
@@ -4330,7 +4370,8 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 					.sampler = VK_NULL_HANDLE,
 				}, &bloom_ds_images[2 * i + 1]),
 			};
-			// PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
+			// PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view,
+			// 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
 		}
 
 		vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
@@ -4481,12 +4522,14 @@ static void init_frame(
 	CHECKVK(vkCreateSemaphore(r->device, &(VkSemaphoreCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 	}, nullptr, &f->sync.image_avail_semaphore));
-	NAME_VK_OBJECT(r, f->sync.image_avail_semaphore, VK_OBJECT_TYPE_SEMAPHORE, "image avail semaphore for frame %u", frame_index);
+	NAME_VK_OBJECT(r, f->sync.image_avail_semaphore, VK_OBJECT_TYPE_SEMAPHORE, "image avail semaphore for frame %u",
+		frame_index);
 
 	CHECKVK(vkCreateSemaphore(r->device, &(VkSemaphoreCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 	}, nullptr, &f->sync.render_finish_semaphore));
-	NAME_VK_OBJECT(r, f->sync.render_finish_semaphore, VK_OBJECT_TYPE_SEMAPHORE, "render finish semaphore for frame %u", frame_index);
+	NAME_VK_OBJECT(r, f->sync.render_finish_semaphore, VK_OBJECT_TYPE_SEMAPHORE, "render finish semaphore for frame %u",
+		frame_index);
 
 	CHECKVK(vkCreateFence(r->device, &(VkFenceCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -4737,15 +4780,23 @@ static inline size_t select_celestial_body_lod(
 
 static float shadow_proj_height = 10.0f;
 
-static void do_frame(
+struct do_frame_stuff {
+	float4x4 proj_mat32;
+	float4x4 view_mat32;
+	double3 camera_pos_scs;
+	struct pshine_star_system *current_system;
+};
+
+static void write_frame_data(
 	struct vulkan_renderer *r,
 	uint32_t current_frame,
 	uint32_t image_index,
-	size_t frame_number
+	size_t frame_number,
+	struct do_frame_stuff *stuff
 ) {
-	struct per_frame_data *f = &r->frames[current_frame];
-
 	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);
+	stuff->camera_pos_scs = camera_pos_scs;
+	double3 offset = double3vs(r->game->render_origin.values);
 
 	double aspect_ratio = r->swapchain_extent.width /(double) r->swapchain_extent.height;
 
@@ -4762,7 +4813,7 @@ static void do_frame(
 		rot_mat.v4s[3] = double4xyz3w(double3v0(), 1.0);
 
 		double4x4 trans_mat;
-		setdouble4x4trans(&trans_mat, double3neg(camera_pos_scs));
+		setdouble4x4trans(&trans_mat, double3neg(double3sub(camera_pos_scs, offset)));
 
 		view_mat = trans_mat;
 		double4x4mul(&view_mat, &rot_mat);
@@ -4778,6 +4829,7 @@ static void do_frame(
 		rot_mat32.v4s[3] = float4xyz3w(float3v0(), 1.0);
 		local_view_mat32 = rot_mat32;
 	}
+	stuff->view_mat32 = local_view_mat32;
 
 	// setdouble4x4lookat(
 	// 	&view_mat,
@@ -4787,32 +4839,26 @@ static void do_frame(
 	// );
 
 	// float4x4trans(&view_mat, float3neg(float3vs(r->game->camera_position.values)));
+	double near_proj_znear = 0.0001;
 	double4x4 near_proj_mat = {};
-	setdouble4x4persp(&near_proj_mat, r->game->actual_camera_fov, aspect_ratio, 0.0001);
+	setdouble4x4persp(&near_proj_mat, r->game->actual_camera_fov, aspect_ratio, near_proj_znear);
 	float4x4 near_proj_mat32 = float4x4_double4x4(near_proj_mat);
 
 	double4x4 proj_mat = {};
 	struct double4x4persp_info persp_info = setdouble4x4persp(
 		&proj_mat, r->game->actual_camera_fov, aspect_ratio, 0.0001);
 	float4x4 proj_mat32 = float4x4_double4x4(proj_mat);
+	stuff->proj_mat32 = proj_mat32;
 
 	float4x4 shadow_proj_mat32 = {};
 	{
-		float znear  = 100.f;
-		float zfar   = 0.1f;
-		float height = shadow_proj_height;
-		float width = height * aspect_ratio;
-		float left   = -width;
-		float right  = +width;
-		float top    = +height;
-		float bottom = -height;
-
-		shadow_proj_mat32.vs[0][0] = 1.0f / (right - left);
-		shadow_proj_mat32.vs[1][1] = 2.0f / (top - bottom);
-		shadow_proj_mat32.vs[2][2] = 1.0f / (zfar - znear);
-		shadow_proj_mat32.vs[3][0] = -0.5f; // (right + left) / (left - right);
-		shadow_proj_mat32.vs[3][1] = -0.5f; // (top + bottom) / (bottom - top);
-		shadow_proj_mat32.vs[3][2] = znear / (znear - zfar);
+		// setfloat4x4persp(&shadow_proj_mat32, r->game->actual_camera_fov, 1., 0.0001);
+		// float znear = near_proj_znear;
+		float height = shadow_proj_height * 10.f * PSHINE_SCS_FACTOR;
+		float width = height * 1;
+		shadow_proj_mat32.vs[0][0] = -2.0f / width;
+		shadow_proj_mat32.vs[1][1] = -2.0f / height;
+		shadow_proj_mat32.vs[2][2] = 1.0f;
 		shadow_proj_mat32.vs[3][3] = 1.0f;
 	}
 	// shadow_proj_mat32 = proj_mat32;
@@ -4861,9 +4907,10 @@ static void do_frame(
 		
 		double4x4 model_rot_mat = double4x4_float4x4(model_rot_mat32);
 		double4x4 model_trans_mat;
-		setdouble4x4trans(&model_trans_mat, SCSd3_WCSp3(ship->position));
+		setdouble4x4trans(&model_trans_mat, double3sub(SCSd3_WCSp3(ship->position), offset));
 		double4x4 model_scale_mat;
 		setdouble4x4scale(&model_scale_mat, double3v(ship->scale * PSHINE_SCS_FACTOR));
+		float4x4 model_scale_mat32 = float4x4_double4x4(model_scale_mat);
 
 		double4x4 model_mat = {};
 		setdouble4x4iden(&model_mat);
@@ -4875,18 +4922,19 @@ static void do_frame(
 		double4x4 model_view_mat = model_mat;
 		double4x4mul(&model_view_mat, &view_mat);
 
-		float4x4 unscaled_model_mat32 =
-			float4x4_double4x4(ship->graphics_data->model.transform);
+		float4x4 unscaled_model_mat32 = float4x4_double4x4(ship->graphics_data->model.transform);
 		float4x4mul(&unscaled_model_mat32, &model_rot_mat32);
 
 		double3 sun_pos_scs = double3v0();
 		float3 sun_dir = float3_double3(double3norm(double3sub(sun_pos_scs, ship_pos_scs)));
 
 		float4x4 shadow_view_mat32 = {};
-		float3 tmp = float3xyz(20.0f, 1.0f, 35.0f);
+		// float3 tmp = float3xyz(0.01f, 0.0f, 0.01f);
 		// float3add(tmp, sun_dir)
-		setfloat4x4lookat(&shadow_view_mat32, tmp, float3v0(), float3xyz(0.0f, 1.0f, 0.0f));
+		setfloat4x4lookat(&shadow_view_mat32, float3neg(sun_dir), float3v0(), float3xyz(0.0f, -1.0f, 0.0f));
+
 		float4x4 shadow_model_view_mat32 = unscaled_model_mat32;
+		float4x4mul(&shadow_model_view_mat32, &model_scale_mat32);
 		float4x4mul(&shadow_model_view_mat32, &shadow_view_mat32);
 
 		// shadow_view_mat32 = local_view_mat32;
@@ -4910,6 +4958,7 @@ static void do_frame(
 	}
 	
 	struct pshine_star_system *current_system = &r->game->star_systems_own[r->game->current_star_system];
+	stuff->current_system = current_system;
 
 	for (size_t i = 0; i < current_system->body_count; ++i) {
 		struct pshine_celestial_body *b = current_system->bodies_own[i];
@@ -4957,7 +5006,7 @@ static void do_frame(
 			setdouble4x4scale(&model_scale_mat, double3v(scs_planet_radius));
 
 			double4x4 model_trans_mat;
-			setdouble4x4trans(&model_trans_mat, SCSd3_WCSp3(b->position));
+			setdouble4x4trans(&model_trans_mat, double3sub(SCSd3_WCSp3(b->position), offset));
 
 			double4x4mul(&model_mat, &model_rot_mat);
 			double4x4mul(&model_mat, &model_scale_mat);
@@ -4965,13 +5014,12 @@ static void do_frame(
 
 			// double4x4trans(&model_mat, (SCSd3_WCSp3(p->as_body.position)));
 
-			// PSHINE_DEBUG("⎡ %f %f %f %f ⎤", model_mat.vs[0][0], model_mat.vs[1][0], model_mat.vs[2][0], model_mat.vs[3][0]);
-			// PSHINE_DEBUG("⎢ %f %f %f %f ⎥", model_mat.vs[0][1], model_mat.vs[1][1], model_mat.vs[2][1], model_mat.vs[3][1]);
-			// PSHINE_DEBUG("⎢ %f %f %f %f ⎥", model_mat.vs[0][2], model_mat.vs[1][2], model_mat.vs[2][2], model_mat.vs[3][2]);
-			// PSHINE_DEBUG("⎣ %f %f %f %f ⎦", model_mat.vs[0][3], model_mat.vs[1][3], model_mat.vs[2][3], model_mat.vs[3][3]);
+			// PSHINE_DEBUG("⎡ %f %f %f %f ⎤", m.vs[0][0], m.vs[1][0], m.vs[2][0], m.vs[3][0]);
+			// PSHINE_DEBUG("⎢ %f %f %f %f ⎥", m.vs[0][1], m.vs[1][1], m.vs[2][1], m.vs[3][1]);
+			// PSHINE_DEBUG("⎢ %f %f %f %f ⎥", m.vs[0][2], m.vs[1][2], m.vs[2][2], m.vs[3][2]);
+			// PSHINE_DEBUG("⎣ %f %f %f %f ⎦", m.vs[0][3], m.vs[1][3], m.vs[2][3], m.vs[3][3]);
 
 			new_data.proj = proj_mat32;
-
 
 			double4x4 model_view_mat = model_mat;
 			double4x4mul(&model_view_mat, &view_mat);
@@ -5044,7 +5092,7 @@ static void do_frame(
 
 				double scale_fact = scs_body_r + scs_atmo_h;
 
-				double3 scs_body_pos = SCSd3_WCSp3(p->as_body.position);
+				double3 scs_body_pos = double3sub(SCSd3_WCSp3(p->as_body.position), offset);
 				double3 scs_body_pos_scaled = double3div(scs_body_pos, scale_fact);
 
 				double scs_body_r_scaled = scs_body_r / scale_fact;
@@ -5097,6 +5145,19 @@ static void do_frame(
 			}
 		}
 	}
+}
+
+static void do_frame(
+	struct vulkan_renderer *r,
+	uint32_t current_frame,
+	uint32_t image_index,
+	size_t frame_number
+) {
+	struct per_frame_data *f = &r->frames[current_frame];
+	struct do_frame_stuff stuff = {};
+	write_frame_data(r, current_frame, image_index, frame_number, &stuff);
+	struct pshine_star_system *current_system = stuff.current_system;
+	double3 camera_pos_scs = stuff.camera_pos_scs;
 
 	/////////////////////////////////////////////////////////////////////////////////////////
 	/////////////////////////////////////////////////////////////////////////////////////////
@@ -5165,12 +5226,19 @@ static void do_frame(
 		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
 			.x = 0.0f,
 			.y = 0.0f,
-			.width = (float)r->swapchain_extent.width,
-			.height = (float)r->swapchain_extent.height,
+			.width = (float)r->transients.shadow[0].width,
+			.height = (float)r->transients.shadow[0].height,
 			.minDepth = 0.0f,
 			.maxDepth = 1.0f,
 		});
-		vkCmdSetScissor(f->command_buffer, 0, 1, &(VkRect2D){ .offset = { 0, 0 }, .extent = r->swapchain_extent });
+		vkCmdSetScissor(
+			f->command_buffer, 0, 1,
+			&(VkRect2D){
+				.offset = { 0, 0 },
+				.extent.width = r->transients.shadow[0].width,
+				.extent.height = r->transients.shadow[0].height,
+			}
+		);
 		for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
 			/// Technically, accessing this might be UB if this is not a valid marker,
 			/// but no compilers care because most code relies on this being non-UB.
@@ -5236,7 +5304,8 @@ static void do_frame(
 						get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame
 					}
 				);
-				vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
+				vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer,
+					&(VkDeviceSize){0});
 				vkCmdBindIndexBuffer(f->command_buffer, r->own_sphere_meshes[lod].index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 				vkCmdDrawIndexed(f->command_buffer, r->own_sphere_meshes[lod].index_count, 1, 0, 0, 0);
 			}
@@ -5383,8 +5452,8 @@ static void do_frame(
 		// Skybox
 		{
 			float4x4 data[2] = {
-				proj_mat32,
-				float4x4_double4x4(view_mat),
+				stuff.proj_mat32,
+				stuff.view_mat32,
 			};
 
 			// Remove the translation
@@ -5533,11 +5602,12 @@ static void do_frame(
 
 			vkCmdDispatch(f->command_buffer, 128, 128, 1);
 
-			if (i == 1) vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_pipeline);
+			if (i == 1)
+				vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_pipeline);
 
-			// now we need to transition the image from general to read-only-optimal so that the next compute shader invocation
-			// can read from it. this isn't *necessary*, and might even have worse performance (TODO benchmark!) but it's better
-			// to do it anyway, so that stuff is correct.
+			// now we need to transition the image from general to read-only-optimal so that the next compute shader
+			// invocation can read from it. this isn't *necessary*, and might even have worse performance
+			// (TODO benchmark!) but it's better to do it anyway, so that stuff is correct.
 			vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.imageMemoryBarrierCount = 2,
@@ -5591,7 +5661,8 @@ static void do_frame(
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			bool is_last = i == BLOOM_STAGE_COUNT - 1;
 			[[maybe_unused]]
-			struct vulkan_image *dst_image = is_last ? &r->transients.color_0 : &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
+			struct vulkan_image *dst_image = is_last ? &r->transients.color_0
+				: &r->transients.bloom[BLOOM_STAGE_COUNT - 2 - i];
 			VkDescriptorSet ds = r->data.upsample_bloom_descriptor_sets[BLOOM_STAGE_COUNT - 1 - i];
 			vkCmdBindDescriptorSets(
 				f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_bloom_layout, 0,
@@ -5729,7 +5800,12 @@ struct renderer_stats {
 static void show_stats_window(struct vulkan_renderer *r, const struct renderer_stats *stats) {
 	if (ImGui_Begin("Shadow Debug", nullptr, 0)) {
 		ImGui_SliderFloat("Height", &shadow_proj_height, 0.1f, 30.0f);
-		ImGui_Image((ImTextureID)imgui_shadowcolor_ds, (ImVec2){.x=200.0f, .y = 200.0f});
+		ImGui_PushStyleColor(ImGuiCol_Border, 0xFF'FF'FF'FF);
+		ImGui_PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+		ImGui_ImageEx((ImTextureID)imgui_shadowcolor_ds, (ImVec2){ .x = 256.0f, .y = 256.0f },
+			(ImVec2){0,0}, (ImVec2){1,1}, (ImVec4){1,1,1,1}, (ImVec4){0.5,0.9,0.8,1.0});
+		ImGui_PopStyleVar();
+		ImGui_PopStyleColor();
 	}
 	ImGui_End();
 	if (r->game->ui_dont_render_windows) return;
@@ -5948,7 +6024,7 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 	size_t frames_since_dt_reset = 0;
 	float delta_time_sum = 0.0f;
 
-	enable_rg_debugging(true);
+	rg_enable_debugging(true);
 
 	int last_width = 0, last_height = 0;
 	glfwGetFramebufferSize(r->window, &last_width, &last_height);
@@ -6000,7 +6076,7 @@ void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer
 		delta_time_sum += delta_time;
 		last_time = current_time;
 		current_frame = (current_frame + 1) % FRAMES_IN_FLIGHT;
-		if (frame_number > 2) enable_rg_debugging(false);
+		if (frame_number > 2) rg_enable_debugging(false);
 	}
 }
 

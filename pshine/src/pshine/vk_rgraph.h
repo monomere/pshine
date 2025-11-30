@@ -1,33 +1,71 @@
-#ifndef PSHINE_VK_RGRAPH_
-#define PSHINE_VK_RGRAPH_
-#include <pshine/util.h>
+/// Copyright © 2025 monomere
+///
+/// This Source Code Form is subject to the terms of the Mozilla Public
+/// License, v. 2.0. If a copy of the MPL was not distributed with this
+/// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+/// 
+/// Vulkan 1.4 dynamic rendering render graph implementation with support
+/// for dynamic_rendering_local_read.
+///
+/// Follows the "stb header" format: the first part of the file is the
+/// header, the second part of the files is the implementation.
+/// So there should be a single C file with the following contents:
+///   #define RG_IMPLEMENTATION
+///   #define RG_DEBUG 1                                     (optional)
+///   #define RG_DEBUG_PIPELINE_BARRIER_CALLS 1              (optional)
+///   #define RG_DEBUG_PRINTF my_printf                      (optional)
+///   #define RG_CHECK my_assert                             (optional)
+///   #include "vkrgraph.h"
+///
+/// To enable debugging, define RG_DEBUG to be non-zero in the C file,
+/// and use `rg_enable_debugging(true/false)`. When debugging is enabled,
+/// you can also enable logging of the actual inserted pipeline barriers
+/// with RG_DEBUG_PIPELINE_BARRIER_CALLS set to 1. To customize the print
+/// function, set RG_DEBUG_PRINTF (rg_enable_debugging is ignored).
+///
+/// There are also a couple of assertions/checks using the RG_CHECK macro.
+/// Used with (bool expression, const char *message), should fail on false.
+/// 
+/// Originally made for PShine (https://github.com/monomere/pshine), but
+/// I realized that this could work as a standalone library too.
+///
+/// The general sequence of function calls to use this library is:
+///   rg_build_graph(&(struct rg_graph_spec){...}, &graph)
+///   {every frame}
+///     rg_graph_begin_frame(&graph, ...)
+///     {each specified render pass}
+///       rg_graph_begin_pass(&graph)
+///         {rendering commands}
+///       rg_graph_end_pass(&graph)
+///     rg_graph_end_frame(&graph)
+///   rg_free_graph(&graph)
+///
+/// For an example graph specification setup, see the example function at
+/// the end of this file. (If it doesn't work, make an issue in the codeberg
+/// repository, and check out pshine's source code (pshine/src/pshine/vk.c))
+///
+/// The documentation is not very good right now, so you might need to
+/// take a look at the implementation and/or examples. Enabling the debugging
+/// can also help a lot.
+///
+/// Hopefully someone finds this useful.
+///
+/// '-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'-,-'
+
+#ifndef VKRGRAPH_H_
+#define VKRGRAPH_H_
 #include <limits.h>
 #include <vulkan/vulkan.h>
 
-#define RG_GRAPH_FN_ [[maybe_unused]] static
-
-#define RG_DEBUG 0
-
-static int noop(FILE *fout, const char *fmt, ...) { (void)fout; (void)fmt; return 0; }
-static int (*current_debug_printf)(FILE *fout, const char *fmt, ...) = fprintf;
-RG_GRAPH_FN_ void enable_rg_debugging(bool enabled) {
-	if (enabled) current_debug_printf = fprintf;
-	else current_debug_printf = noop;
-}
-
-#if defined(RG_DEBUG) && RG_DEBUG
-#include "vk_util.h"
-#define RG_DEBUG_PRINTF(msg, ...) current_debug_printf(stderr, (msg) __VA_OPT__(,) __VA_ARGS__);
-#else
-#define RG_DEBUG_PRINTF(...)
-#endif
-
-
 struct rg_graph;
 
+/// Currently unused, TODO.
 struct rg_graph_commands {
+	/// vkCmdBeginRendering wrapper.
 	void (*begin_rendering)(struct rg_graph *graph, const VkRenderingInfo *info);
+	/// vkCmdEndRendering wrapper.
 	void (*end_rendering)(struct rg_graph *graph);
+	/// vkCmdPipelineBarrier2 wrapper.
 	void (*barrier)(struct rg_graph *graph, const VkDependencyInfo *info);
 };
 
@@ -44,12 +82,12 @@ struct rg_graph_spec {
 	const struct rg_graph_image_spec *images;
 	uint32_t pass_count;
 	uint32_t image_count;
-	// struct rg_graph_commands commands;
 };
 
-/// "Newtype" for a render graph image id.
-/// `~(rg_image_id)0` is a special value.
+/// "Newtype" for a render graph image id. `~(rg_image_id)0` is a special value.
+/// Ideally this would be a struct, but it is hard to use in that case.
 typedef uint32_t rg_image_id;
+
 enum : rg_image_id {
 	/// Current swapchain image.
 	RG_IMAGE_SWAPCHAIN = ~(rg_image_id)0,
@@ -171,12 +209,16 @@ struct rg_graph {
 	struct rg_pass *passes_own;
 	uint32_t image_count;
 	uint32_t pass_count;
-	// struct rg_graph_commands commands;
 };
 
-RG_GRAPH_FN_ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_graph *graph);
-RG_GRAPH_FN_ void rg_free_graph(struct rg_graph *graph);
-RG_GRAPH_FN_ void rg_graph_begin_frame(
+/// Can be called at any point.
+void rg_enable_debugging(bool enabled);
+/// Initialize a render graph based on the specification.
+void rg_build_graph(const struct rg_graph_spec *spec, struct rg_graph *graph);
+/// Free the dynamically allocated memory used by the graph.
+void rg_free_graph(struct rg_graph *graph);
+/// Begin frame and set per-frame data.
+void rg_graph_begin_frame(
 	struct rg_graph *graph,
 	VkRect2D render_area,
 	uint32_t queue_family_index,
@@ -184,13 +226,212 @@ RG_GRAPH_FN_ void rg_graph_begin_frame(
 	VkImageView swapchain_image_view,
 	VkCommandBuffer command_buffer
 );
-RG_GRAPH_FN_ void rg_graph_end_frame(struct rg_graph *graph);
-RG_GRAPH_FN_ void rg_graph_begin_pass(struct rg_graph *graph);
-RG_GRAPH_FN_ void rg_graph_end_pass(struct rg_graph *graph);
-RG_GRAPH_FN_ void rg_graph_pass_last_use(
+/// Does not submit commands or do anything at all really.
+void rg_graph_end_frame(struct rg_graph *graph);
+/// Begin current pass. Inserts the necessary pipeline barriers.
+void rg_graph_begin_pass(struct rg_graph *graph);
+/// End current pass. Inserts the necessary pipeline barriers.
+void rg_graph_end_pass(struct rg_graph *graph);
+
+/// Not currently implemented.
+void rg_graph_pass_last_use(
 	struct rg_graph *graph,
 	rg_image_id image
 );
+
+
+#ifdef RG_IMPLEMENTATION
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+#ifndef RG_DEBUG
+# define RG_DEBUG 0
+#else
+# if (0-RG_DEBUG-1)==1 && (RG_DEBUG-0)!=-2 // check for empty
+#  undef RG_DEBUG
+#  define RG_DEBUG 1
+# endif
+#endif
+
+#ifndef RG_DEBUG_PIPELINE_BARRIER_CALLS
+# define RG_DEBUG_PIPELINE_BARRIER_CALLS 0
+#else
+# if (0-RG_DEBUG_PIPELINE_BARRIER_CALLS-1)==1 && \
+	(RG_DEBUG_PIPELINE_BARRIER_CALLS-0)!=-2
+#  undef RG_DEBUG_PIPELINE_BARRIER_CALLS
+#  define RG_DEBUG_PIPELINE_BARRIER_CALLS 1
+# endif
+#endif
+
+#ifndef RG_DEBUG_PRINTF
+# if RG_DEBUG
+#  define RG_DEBUG_PRINTF(msg, ...) \
+	rg_i_current_debug_printf(stderr, (msg) __VA_OPT__(,) __VA_ARGS__);
+# else
+#  define RG_DEBUG_PRINTF(...)
+# endif
+#endif
+
+
+#if RG_DEBUG
+
+static int rg_i_debug_noop(FILE *fout, const char *fmt, ...) {
+	(void)fout; (void)fmt;
+	return 0;
+}
+
+static int (*rg_i_current_debug_printf)(FILE *fout, const char *fmt, ...)
+= fprintf;
+
+void rg_enable_debugging(bool enabled) {
+	if (enabled) rg_i_current_debug_printf = fprintf;
+	else rg_i_current_debug_printf = rg_i_debug_noop;
+}
+
+#else
+// TODO: move to header part if empty
+void rg_enable_debugging(bool enabled) { (void)enabled; }
+#endif
+
+#ifndef RG_CHECK
+# ifdef RG_BUILTIN_CHECK_
+#  undef RG_BUILTIN_CHECK_
+# endif
+# define RG_BUILTIN_CHECK_ 1
+# define RG_CHECK(EXPR, MSG) \
+	rg_i_default_check_impl_((EXPR), #EXPR, (MSG), __LINE__, __FILE__, __func__)
+#else
+# ifndef RG_BUILTIN_CHECK_
+#  define RG_BUILTIN_CHECK_ 0
+# endif
+#endif
+
+#if RG_BUILTIN_CHECK_
+void rg_i_default_check_impl_(
+	bool expr,
+	const char *str_expr,
+	const char *msg,
+	int line,
+	const char *file,
+	const char *func
+) {
+	if (!expr) {
+		fprintf(stderr, "RG_CHECK failed at %s:%d (%s): %s\n  '%s'\n",
+			file, line, func, msg, str_expr);
+		abort();
+	}
+}
+#endif
+
+[[maybe_unused]]
+static const char *rg_i_vk_stage_bit_string(VkPipelineStageFlagBits2 bit) {
+	switch (bit) {
+		case VK_PIPELINE_STAGE_2_NONE: return "NONE";
+		case VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT: return "TOP_OF_PIPE";
+		case VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT: return "DRAW_INDIRECT";
+		case VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT: return "VERTEX_INPUT";
+		case VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT: return "VERTEX_SHADER";
+		case VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT: return "TESSELLATION_CONTROL_SHADER";
+		case VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT:
+			return "TESSELLATION_EVALUATION_SHADER";
+		case VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT: return "GEOMETRY_SHADER";
+		case VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT: return "FRAGMENT_SHADER";
+		case VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT: return "EARLY_FRAGMENT_TESTS";
+		case VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT: return "LATE_FRAGMENT_TESTS";
+		case VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT: return "COLOR_ATTACHMENT_OUTPUT";
+		case VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT: return "COMPUTE_SHADER";
+		case VK_PIPELINE_STAGE_2_TRANSFER_BIT: return "TRANSFER";
+		case VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT: return "BOTTOM_OF_PIPE";
+		case VK_PIPELINE_STAGE_2_HOST_BIT: return "HOST";
+		case VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT: return "ALL_GRAPHICS";
+		case VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT: return "ALL_COMMANDS";
+		case VK_PIPELINE_STAGE_2_COPY_BIT: return "COPY";
+		case VK_PIPELINE_STAGE_2_RESOLVE_BIT: return "RESOLVE";
+		case VK_PIPELINE_STAGE_2_BLIT_BIT: return "BLIT";
+		case VK_PIPELINE_STAGE_2_CLEAR_BIT: return "CLEAR";
+		case VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT: return "INDEX_INPUT";
+		case VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT: return "VERTEX_ATTRIBUTE_INPUT";
+		case VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT: return "PRE_RASTERIZATION_SHADERS";
+		default: return "?";
+	}
+}
+
+[[maybe_unused]]
+static const char *rg_i_vk_access_bit_string(VkAccessFlagBits2 bit) {
+	switch (bit) {
+		case VK_ACCESS_2_NONE: return "NONE";
+		case VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT: return "INDIRECT_COMMAND_READ";
+		case VK_ACCESS_2_INDEX_READ_BIT: return "INDEX_READ";
+		case VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT: return "VERTEX_ATTRIBUTE_READ";
+		case VK_ACCESS_2_UNIFORM_READ_BIT: return "UNIFORM_READ";
+		case VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT: return "INPUT_ATTACHMENT_READ";
+		case VK_ACCESS_2_SHADER_READ_BIT: return "SHADER_READ";
+		case VK_ACCESS_2_SHADER_WRITE_BIT: return "SHADER_WRITE";
+		case VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT: return "COLOR_ATTACHMENT_READ";
+		case VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT: return "COLOR_ATTACHMENT_WRITE";
+		case VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT: return "DEPTH_STENCIL_ATTACHMENT_READ";
+		case VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT: return "DEPTH_STENCIL_ATTACHMENT_WRITE";
+		case VK_ACCESS_2_TRANSFER_READ_BIT: return "TRANSFER_READ";
+		case VK_ACCESS_2_TRANSFER_WRITE_BIT: return "TRANSFER_WRITE";
+		case VK_ACCESS_2_HOST_READ_BIT: return "HOST_READ";
+		case VK_ACCESS_2_HOST_WRITE_BIT: return "HOST_WRITE";
+		case VK_ACCESS_2_MEMORY_READ_BIT: return "MEMORY_READ";
+		case VK_ACCESS_2_MEMORY_WRITE_BIT: return "MEMORY_WRITE";
+		case VK_ACCESS_2_SHADER_SAMPLED_READ_BIT: return "SHADER_SAMPLED_READ";
+		case VK_ACCESS_2_SHADER_STORAGE_READ_BIT: return "SHADER_STORAGE_READ";
+		case VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT: return "SHADER_STORAGE_WRITE";
+		default: return "?";
+	}
+}
+
+
+[[maybe_unused]]
+static const char *rg_i_vk_layout_string(VkImageLayout layout) {
+	switch (layout) {
+		case VK_IMAGE_LAYOUT_UNDEFINED: return "UNDEFINED";
+    case VK_IMAGE_LAYOUT_GENERAL: return "GENERAL";
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: return "COLOR_ATTACHMENT_OPTIMAL";
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+			return "DEPTH_STENCIL_ATTACHMENT_OPTIMAL";
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL: return "DEPTH_STENCIL_READ_ONLY_OPTIMAL";
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: return "SHADER_READ_ONLY_OPTIMAL";
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL: return "TRANSFER_SRC_OPTIMAL";
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: return "TRANSFER_DST_OPTIMAL";
+    case VK_IMAGE_LAYOUT_PREINITIALIZED: return "PREINITIALIZED";
+    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+			return "DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL";
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
+			return "DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL";
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL: return "DEPTH_ATTACHMENT_OPTIMAL";
+    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL: return "DEPTH_READ_ONLY_OPTIMAL";
+    case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL: return "STENCIL_ATTACHMENT_OPTIMAL";
+    case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL: return "STENCIL_READ_ONLY_OPTIMAL";
+    case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL: return "READ_ONLY_OPTIMAL";
+    case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL: return "ATTACHMENT_OPTIMAL";
+    case VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ: return "RENDERING_LOCAL_READ";
+    case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: return "PRESENT_SRC_KHR";
+    case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR: return "VIDEO_DECODE_DST_KHR";
+    case VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR: return "VIDEO_DECODE_SRC_KHR";
+    case VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR: return "VIDEO_DECODE_DPB_KHR";
+    case VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR: return "SHARED_PRESENT_KHR";
+    case VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT:
+			return "FRAGMENT_DENSITY_MAP_OPTIMAL_EXT";
+    case VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR:
+			return "FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR";
+    case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DST_KHR: return "VIDEO_ENCODE_DST_KHR";
+    case VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR: return "VIDEO_ENCODE_SRC_KHR";
+    case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR: return "VIDEO_ENCODE_DPB_KHR";
+    case VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT:
+			return "ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT";
+    case VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM: return "TENSOR_ALIASING_ARM";
+    case VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR:
+			return "VIDEO_ENCODE_QUANTIZATION_MAP_KHR";
+    case VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT: return "ZERO_INITIALIZED_EXT";
+		default: return "?";
+	}
+}
+
 
 static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 	for (uint32_t i = 1; i < graph->pass_count; ++i) {
@@ -208,8 +449,8 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 			struct rg_image_ref *big_ref = &big_pass->image_refs_own[j];
 			
 			if (small_ref->image_index != big_ref->image_index) {
-				RG_DEBUG_PRINTF("Did not merge pass %s and %s because they have an incompatible image reference (index %u).\n",
-					small_pass->name, big_pass->name, j);
+				RG_DEBUG_PRINTF("Did not merge pass %s and %s because they have an incompatible "
+					"image reference (index %u).\n", small_pass->name, big_pass->name, j);
 				RG_DEBUG_PRINTF("Pass %s has %u references, pass %s has %u.\n",
 					small_pass->name, small_pass->image_ref_count, big_pass->name, big_pass->image_ref_count);
 				goto merge_failed; // continue outer loop
@@ -228,7 +469,8 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 					(big_ref->access_flags & VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
 				)
 			) {
-				RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a sampled read from %s, which %s uses as an attachment.\n",
+				RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a sampled read from %s, "
+					"which %s uses as an attachment.\n",
 					small_pass->name, big_pass->name, small_pass->name, image->name, big_pass->name);
 				goto merge_failed;
 			}
@@ -239,7 +481,8 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 					(small_ref->access_flags & VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
 				)
 			) {
-				RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a sampled read from %s, which %s uses as an attachment.\n",
+				RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a sampled read from %s, "
+					"which %s uses as an attachment.\n",
 					small_pass->name, big_pass->name, big_pass->name, image->name, small_pass->name);
 				goto merge_failed;
 			}
@@ -255,7 +498,7 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 				src_j < src_pass->color_attachment_count &&
 				dst_j < dst_pass->color_attachment_count
 			) {
-				PSHINE_CHECK(color_attachment_count < 8, "what");
+				RG_CHECK(color_attachment_count < 8, "what");
 				uint32_t src_v = src_pass->color_attachments[src_j];
 				uint32_t dst_v = dst_pass->color_attachments[dst_j];
 				if (src_v < dst_v) {
@@ -345,8 +588,10 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 			struct rg_pass *a_pass = &graph->passes_own[k];
 			struct rg_pass *b_pass = &graph->passes_own[k - 1];
 			for (uint32_t j = 0; j < small_pass->image_ref_count; ++j) {
-				bool a_is_input = small_pass->image_refs_own[j].access_flags & VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
-				bool b_is_input = big_pass->image_refs_own[j].access_flags & VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
+				bool a_is_input = small_pass->image_refs_own[j].access_flags
+					& VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
+				bool b_is_input = big_pass->image_refs_own[j].access_flags
+					& VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
 				if (a_is_input || b_is_input) {
 					a_pass->image_refs_own[j].initial_layout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ;
 					a_pass->image_refs_own[j].final_layout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ;
@@ -360,7 +605,7 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 	}
 }
 
-RG_GRAPH_FN_ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_graph *graph) {
+void rg_build_graph(const struct rg_graph_spec *spec, struct rg_graph *graph) {
 	// graph->commands = spec->commands;
 	graph->image_count = spec->image_count;
 	graph->images_own = calloc(graph->image_count, sizeof(*graph->images_own));
@@ -390,15 +635,15 @@ RG_GRAPH_FN_ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_gra
 		uint32_t depth_attachment_index = 0;
 		for (uint32_t j = 0; j < pass_spec->image_ref_count; ++j) {
 			const struct rg_image_ref_spec *ref_spec = &pass_spec->image_refs[j];
-			// PSHINE_CHECK(ref_spec->image_id != RG_IMAGE_NONE,
+			// RG_CHECK(ref_spec->image_id != RG_IMAGE_NONE,
 			// 	"rg_pass_spec::image_refs[].image_id must not be RG_IMAGE_NONE");
 
-			PSHINE_CHECK(!(
+			RG_CHECK(!(
 				(ref_spec->usage & RG_IMAGE_USE_COLOR_ATTACHMENT_BIT) &&
 				(ref_spec->usage & RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT)
 			), "an image cannot be used as both a color and a depth attachment");
 
-			PSHINE_CHECK(!(
+			RG_CHECK(!(
 				(ref_spec->usage & RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT) &&
 				has_depth_attachment
 			), "a pass cannot have more than one depth attachment");
@@ -426,7 +671,8 @@ RG_GRAPH_FN_ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_gra
 				: (ref_spec->usage & RG_IMAGE_USE_COLOR_ATTACHMENT_BIT
 						? VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT : 0)
 				| (ref_spec->usage & RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT
-						? VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT : 0)
+						? VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT
+							| VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT : 0)
 				| (ref_spec->usage & RG_IMAGE_USE_INPUT_ATTACHMENT_BIT
 						? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT : 0)
 				| (ref_spec->usage & RG_IMAGE_USE_SAMPLED_BIT
@@ -469,7 +715,7 @@ RG_GRAPH_FN_ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_gra
 			};
 		}
 		pass->color_attachment_count = color_attachment_count;
-		PSHINE_CHECK(color_attachment_count < 8, "too many color attachments");
+		RG_CHECK(color_attachment_count < 8, "too many color attachments");
 		for (uint32_t j = 0, k = 0; j < pass_spec->image_ref_count; ++j) {
 			if (pass_spec->image_refs[j].usage & RG_IMAGE_USE_COLOR_ATTACHMENT_BIT)
 				pass->color_attachments[k++] = j;
@@ -479,7 +725,7 @@ RG_GRAPH_FN_ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_gra
 		pass->depth_attachment = depth_attachment_index;
 
 		pass->input_attachment_count = input_attachment_count;
-		PSHINE_CHECK(input_attachment_count < 8, "too many input attachments");
+		RG_CHECK(input_attachment_count < 8, "too many input attachments");
 		// pass->input_attachments_own
 		// 	= calloc(pass->input_attachment_count, sizeof(*pass->input_attachments_own));
 		for (uint32_t j = 0, k = 0; j < pass_spec->image_ref_count; ++j) {
@@ -502,7 +748,8 @@ RG_GRAPH_FN_ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_gra
 			: &graph->images_own[i];
 
 		image->pass_use_map_own = calloc(graph->pass_count + 1, sizeof(*image->pass_use_map_own));
-		memset(image->pass_use_map_own, 0xFF, (graph->pass_count + 1) * sizeof(*image->pass_use_map_own));
+		memset(image->pass_use_map_own, 0xFF,
+			(graph->pass_count + 1) * sizeof(*image->pass_use_map_own));
 		uint32_t last_pass = 0;
 		for (size_t j = 0; j < graph->pass_count; ++j) {
 			struct rg_pass *pass = &graph->passes_own[j];
@@ -530,7 +777,7 @@ RG_GRAPH_FN_ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_gra
 	graph->current.command_buffer = VK_NULL_HANDLE;
 }
 
-RG_GRAPH_FN_ void rg_free_graph(struct rg_graph *graph) {
+void rg_free_graph(struct rg_graph *graph) {
 	for (size_t i = 0; i < graph->image_count; ++i) {
 		free(graph->images_own[i].pass_use_map_own);
 	}
@@ -540,10 +787,7 @@ RG_GRAPH_FN_ void rg_free_graph(struct rg_graph *graph) {
 	free(graph->passes_own);
 }
 
-#define RG_DEBUG_PIPELINE_BARRIER_CALLS 0
-#define RG_DEBUG_PRINTF2(...) fprintf(stderr, __VA_ARGS__)
-
-static inline void debug_vkCmdPipelineBarrier2(
+static inline void rg_i_debug_vkCmdPipelineBarrier2(
 	VkCommandBuffer commandBuffer,
 	const VkDependencyInfo *pDependencyInfo
 ) {
@@ -587,14 +831,17 @@ static inline void debug_vkCmdPipelineBarrier2(
 			RG_DEBUG_PRINTF2("%s", pshine_vk_stage_bit_string(bit)); cnt += 1;
 		}
 		RG_DEBUG_PRINTF2(",\n");
-		RG_DEBUG_PRINTF2("\t\t\t.oldLayout = VK_IMAGE_LAYOUT_%s,\n", pshine_vk_layout_string(barrier->oldLayout));
-		RG_DEBUG_PRINTF2("\t\t\t.newLayout = VK_IMAGE_LAYOUT_%s,\n", pshine_vk_layout_string(barrier->newLayout));
+		RG_DEBUG_PRINTF2("\t\t\t.oldLayout = VK_IMAGE_LAYOUT_%s,\n",
+			pshine_vk_layout_string(barrier->oldLayout));
+		RG_DEBUG_PRINTF2("\t\t\t.newLayout = VK_IMAGE_LAYOUT_%s,\n",
+			pshine_vk_layout_string(barrier->newLayout));
 		RG_DEBUG_PRINTF2("\t\t\t...\n");
 		RG_DEBUG_PRINTF2("\t\t},\n");
 	}
 	RG_DEBUG_PRINTF("\t},\n");
 	RG_DEBUG_PRINTF("\t.dependencyFlags = %s,\n",
-		pDependencyInfo->dependencyFlags == VK_DEPENDENCY_BY_REGION_BIT ? "VK_DEPENDENCY_BY_REGION_BIT" : "...");
+		pDependencyInfo->dependencyFlags == VK_DEPENDENCY_BY_REGION_BIT
+			? "VK_DEPENDENCY_BY_REGION_BIT" : "...");
 	RG_DEBUG_PRINTF("\t...\n");
 	RG_DEBUG_PRINTF("}\n");
 #endif
@@ -604,7 +851,7 @@ static inline void debug_vkCmdPipelineBarrier2(
 /// Increase count and write an appropriate image barrier
 /// Region image barriers are written if the count isnt a nullptr
 /// and if `dst_ref->access_flags & VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT`.
-static inline void rg_graph_impl_barriers(
+static void rg_i_graph_impl_barriers(
 	struct rg_graph *graph,
 	uint32_t pass,
 	struct rg_image_ref *ref,
@@ -625,14 +872,14 @@ static inline void rg_graph_impl_barriers(
 	struct rg_pass *dst_pass = &graph->passes_own[next_use.pass_index];
 	struct rg_image_ref *dst_ref = &dst_pass->image_refs_own[next_use.ref_index];
 
-	PSHINE_CHECK(dst_ref->image_index == ref->image_index, "invalid image pass use data");
+	RG_CHECK(dst_ref->image_index == ref->image_index, "invalid image pass use data");
 	
 	[[maybe_unused]]
 	struct rg_graph_image *dst_image = dst_ref->image_index == UINT32_MAX
 		? &graph->current.swapchain_image
 		: &graph->images_own[ref->image_index];
 
-	PSHINE_CHECK(dst_image->image == image->image, "invalid image pass use data");
+	RG_CHECK(dst_image->image == image->image, "invalid image pass use data");
 
 	VkImageMemoryBarrier2 barrier = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -657,10 +904,10 @@ static inline void rg_graph_impl_barriers(
 	bool by_region = dst_ref->access_flags & VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
 
 	if (!by_region || region_image_barrier_count == nullptr) {
-		PSHINE_CHECK(*image_barrier_count < 8, "too many image barriers");
+		RG_CHECK(*image_barrier_count < 8, "too many image barriers");
 		image_barriers[(*image_barrier_count)++] = barrier;
 	} else if (region_image_barrier_count != nullptr) {
-		PSHINE_CHECK(*region_image_barrier_count < 8, "too many image barriers");
+		RG_CHECK(*region_image_barrier_count < 8, "too many image barriers");
 		region_image_barriers[(*region_image_barrier_count)++] = barrier;
 	}
 
@@ -670,7 +917,7 @@ static inline void rg_graph_impl_barriers(
 		VkFlags64 bit = ref->stage_flags & (1ull << j);
 		if (!bit) continue;
 		if (cnt != 0) RG_DEBUG_PRINTF("|");
-		RG_DEBUG_PRINTF("%s", pshine_vk_stage_bit_string(bit));
+		RG_DEBUG_PRINTF("%s", rg_i_vk_stage_bit_string(bit));
 		cnt += 1;
 	}
 	RG_DEBUG_PRINTF("(");
@@ -678,7 +925,7 @@ static inline void rg_graph_impl_barriers(
 		VkFlags64 bit = ref->access_flags & (1ull << j);
 		if (!bit) continue;
 		if (cnt != 0) RG_DEBUG_PRINTF("|");
-		RG_DEBUG_PRINTF("%s", pshine_vk_access_bit_string(bit));
+		RG_DEBUG_PRINTF("%s", rg_i_vk_access_bit_string(bit));
 		cnt += 1;
 	}
 	RG_DEBUG_PRINTF(") -> ");
@@ -686,7 +933,7 @@ static inline void rg_graph_impl_barriers(
 		VkFlags64 bit = dst_ref->stage_flags & (1ull << j);
 		if (!bit) continue;
 		if (cnt != 0) RG_DEBUG_PRINTF("|");
-		RG_DEBUG_PRINTF("%s", pshine_vk_stage_bit_string(bit));
+		RG_DEBUG_PRINTF("%s", rg_i_vk_stage_bit_string(bit));
 		cnt += 1;
 	}
 	RG_DEBUG_PRINTF("(");
@@ -694,15 +941,15 @@ static inline void rg_graph_impl_barriers(
 		VkFlags64 bit = dst_ref->access_flags & (1ull << j);
 		if (!bit) continue;
 		if (cnt != 0) RG_DEBUG_PRINTF("|");
-		RG_DEBUG_PRINTF("%s", pshine_vk_access_bit_string(bit));
+		RG_DEBUG_PRINTF("%s", rg_i_vk_access_bit_string(bit));
 		cnt += 1;
 	}
 	RG_DEBUG_PRINTF(")\n");
-	RG_DEBUG_PRINTF("\t    barrier.newLayout = %s\n", pshine_vk_layout_string(barrier.newLayout));
-	RG_DEBUG_PRINTF("\t    barrier.oldLayout = %s\n", pshine_vk_layout_string(barrier.oldLayout));
+	RG_DEBUG_PRINTF("\t    barrier.newLayout = %s\n", rg_i_vk_layout_string(barrier.newLayout));
+	RG_DEBUG_PRINTF("\t    barrier.oldLayout = %s\n", rg_i_vk_layout_string(barrier.oldLayout));
 }
 
-RG_GRAPH_FN_ void rg_graph_begin_frame(
+void rg_graph_begin_frame(
 	struct rg_graph *graph,
 	VkRect2D render_area,
 	uint32_t queue_family_index,
@@ -728,15 +975,17 @@ RG_GRAPH_FN_ void rg_graph_begin_frame(
 			: &graph->current.swapchain_image;
 		// struct rg_pass *last_use_pass = &graph->passes_own[image->last_use.pass_index];
 		// struct rg_image_ref last_use_ref = last_use_pass->image_refs_own[image->last_use.ref_index];
-		// PSHINE_CHECK(last_use_ref.image_index == image_index, "invalid image last_use");
+		// RG_CHECK(last_use_ref.image_index == image_index, "invalid image last_use");
 		// last_use_ref.final_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 		// last_use_ref.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-		rg_graph_impl_barriers(graph, 0, &image->last_use_ref, &image_barrier_count, image_barriers, nullptr, nullptr);
+		rg_i_graph_impl_barriers(graph, 0, &image->last_use_ref,
+			&image_barrier_count, image_barriers, nullptr, nullptr);
 	}
 
-	RG_DEBUG_PRINTF("begin_frame: pipeline barrier with %u image memory barriers.\n", image_barrier_count);
+	RG_DEBUG_PRINTF("begin_frame: pipeline barrier with %u image memory barriers.\n",
+		image_barrier_count);
 	if (graph->current.command_buffer && image_barrier_count > 0)
-		debug_vkCmdPipelineBarrier2(graph->current.command_buffer, &(VkDependencyInfo){
+		rg_i_debug_vkCmdPipelineBarrier2(graph->current.command_buffer, &(VkDependencyInfo){
 			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 			.imageMemoryBarrierCount = image_barrier_count,
 			.pImageMemoryBarriers = image_barriers,
@@ -744,12 +993,11 @@ RG_GRAPH_FN_ void rg_graph_begin_frame(
 		});
 }
 
-RG_GRAPH_FN_ void rg_graph_end_frame(struct rg_graph *graph) {
+void rg_graph_end_frame(struct rg_graph *graph) {
 	graph->current.command_buffer = nullptr;
 }
 
-[[gnu::always_inline]]
-static inline VkRenderingAttachmentInfo rg_impl_vulkan_from_image_ref(
+static VkRenderingAttachmentInfo rg_i_vulkan_from_image_ref(
 	struct rg_image_ref *ref,
 	struct rg_graph *graph
 ) {
@@ -765,9 +1013,8 @@ static inline VkRenderingAttachmentInfo rg_impl_vulkan_from_image_ref(
 	};
 }
 
-RG_GRAPH_FN_ void rg_graph_begin_pass(struct rg_graph *graph) {
+void rg_graph_begin_pass(struct rg_graph *graph) {
 	struct rg_pass *pass = &graph->passes_own[graph->current.pass_index];
-	// fprintf(stderr, "begin rendering pass %s%s\n", pass->name, pass->compute ? " (compute)" : "");
 	RG_DEBUG_PRINTF("begin_pass %s%s\n", pass->name, pass->merged_with_prev ? " (<-merged)" : "");
 	if (pass->merged_with_prev) return;
 
@@ -782,7 +1029,7 @@ RG_GRAPH_FN_ void rg_graph_begin_pass(struct rg_graph *graph) {
 			VkFlags64 bit = ref->stage_flags & (1ull << j);
 			if (!bit) continue;
 			if (cnt != 0) RG_DEBUG_PRINTF("|");
-			RG_DEBUG_PRINTF("%s", pshine_vk_stage_bit_string(bit));
+			RG_DEBUG_PRINTF("%s", rg_i_vk_stage_bit_string(bit));
 			cnt += 1;
 		}
 		RG_DEBUG_PRINTF("(");
@@ -790,7 +1037,7 @@ RG_GRAPH_FN_ void rg_graph_begin_pass(struct rg_graph *graph) {
 			VkFlags64 bit = ref->access_flags & (1ull << j);
 			if (!bit) continue;
 			if (cnt != 0) RG_DEBUG_PRINTF("|");
-			RG_DEBUG_PRINTF("%s", pshine_vk_access_bit_string(bit));
+			RG_DEBUG_PRINTF("%s", rg_i_vk_access_bit_string(bit));
 			cnt += 1;
 		}
 		RG_DEBUG_PRINTF(")\n");
@@ -798,16 +1045,16 @@ RG_GRAPH_FN_ void rg_graph_begin_pass(struct rg_graph *graph) {
 
 	if (pass->compute) return;
 	VkRenderingAttachmentInfo color_attachments[12]; // pass->color_attachment_count
-	PSHINE_CHECK(pass->color_attachment_count <= 12, "max color attachment count is 12");
+	RG_CHECK(pass->color_attachment_count <= 12, "max color attachment count is 12");
 	for (size_t i = 0; i < pass->color_attachment_count; ++i) {
 		size_t ref_idx = pass->color_attachments[i];
 		struct rg_image_ref *ref = &pass->image_refs_own[ref_idx];
-		color_attachments[i] = rg_impl_vulkan_from_image_ref(ref, graph);
+		color_attachments[i] = rg_i_vulkan_from_image_ref(ref, graph);
 	}
 
 	VkRenderingAttachmentInfo depth_attachment;
 	if (pass->has_depth_attachment)
-		depth_attachment = rg_impl_vulkan_from_image_ref(
+		depth_attachment = rg_i_vulkan_from_image_ref(
 			&pass->image_refs_own[pass->depth_attachment],
 			graph
 		);
@@ -828,7 +1075,7 @@ RG_GRAPH_FN_ void rg_graph_begin_pass(struct rg_graph *graph) {
 	}
 }
 
-RG_GRAPH_FN_ void rg_graph_end_pass(struct rg_graph *graph) {
+void rg_graph_end_pass(struct rg_graph *graph) {
 	// RG_DEBUG_PRINTF("current pass index: %u\n", graph->current.pass_index);
 	struct rg_pass *pass = &graph->passes_own[graph->current.pass_index];
 	if (!pass->compute && !pass->merged_with_next && graph->current.command_buffer) {
@@ -836,7 +1083,8 @@ RG_GRAPH_FN_ void rg_graph_end_pass(struct rg_graph *graph) {
 		vkCmdEndRendering(graph->current.command_buffer);
 	}
 
-	RG_DEBUG_PRINTF("end_pass %s%s; barriers:\n", pass->name, pass->merged_with_next ? " (merged->)" : "");
+	RG_DEBUG_PRINTF("end_pass %s%s; barriers:\n",
+		pass->name, pass->merged_with_next ? " (merged->)" : "");
 
 	uint32_t image_barrier_count = 0;
 	VkImageMemoryBarrier2 image_barriers[8] = {};
@@ -844,7 +1092,7 @@ RG_GRAPH_FN_ void rg_graph_end_pass(struct rg_graph *graph) {
 	VkImageMemoryBarrier2 region_image_barriers[8] = {};
 	for (uint32_t i = 0; i < pass->image_ref_count; ++i) {
 		struct rg_image_ref *ref = &pass->image_refs_own[i];
-		rg_graph_impl_barriers(
+		rg_i_graph_impl_barriers(
 			graph,
 			graph->current.pass_index + 1,
 			ref,
@@ -859,7 +1107,7 @@ RG_GRAPH_FN_ void rg_graph_end_pass(struct rg_graph *graph) {
 	if (graph->current.command_buffer) {
 		if (!pass->merged_with_next && image_barrier_count > 0) {
 			// TODO: postpone this barrier to last merged
-			debug_vkCmdPipelineBarrier2(graph->current.command_buffer, &(VkDependencyInfo){
+			rg_i_debug_vkCmdPipelineBarrier2(graph->current.command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.imageMemoryBarrierCount = image_barrier_count,
 				.pImageMemoryBarriers = image_barriers,
@@ -868,7 +1116,7 @@ RG_GRAPH_FN_ void rg_graph_end_pass(struct rg_graph *graph) {
 			
 		}
 		if (region_image_barrier_count > 0) {
-			debug_vkCmdPipelineBarrier2(graph->current.command_buffer, &(VkDependencyInfo){
+			rg_i_debug_vkCmdPipelineBarrier2(graph->current.command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.imageMemoryBarrierCount = region_image_barrier_count,
 				.pImageMemoryBarriers = region_image_barriers,
@@ -880,14 +1128,14 @@ RG_GRAPH_FN_ void rg_graph_end_pass(struct rg_graph *graph) {
 	graph->current.pass_index += 1;
 }
 
-RG_GRAPH_FN_ void rg_graph_pass_last_use(
+void rg_graph_pass_last_use(
 	struct rg_graph *graph,
 	rg_image_id id
 ) {
 	if (id == RG_IMAGE_SWAPCHAIN) return;
 }
 
-RG_GRAPH_FN_ void rg_graph_create_dot_file(struct rg_graph *graph, const char *fpath) {
+void rg_graph_create_dot_file(struct rg_graph *graph, const char *fpath) {
 	FILE *fout = fopen(fpath, "w");
 	fprintf(fout, "digraph render_graph {\n");
 	for (size_t i = 0; i < graph->image_count; ++i) {
@@ -913,7 +1161,7 @@ RG_GRAPH_FN_ void rg_graph_create_dot_file(struct rg_graph *graph, const char *f
 	fclose(fout);
 }
 
-RG_GRAPH_FN_ void example_render_graph(struct rg_graph *graph) {
+[[maybe_unused]] static void example_render_graph(struct rg_graph *graph) {
 	struct { VkImageView view; VkImage image; VkFormat format; VkImageAspectFlags aspect; }
 		color0 = { 0, 0, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT },
 		depth0 = { 0, 0, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT },
@@ -1015,4 +1263,6 @@ RG_GRAPH_FN_ void example_render_graph(struct rg_graph *graph) {
 	}, graph);
 }
 
-#endif // PSHINE_VK_RGRAPH_
+#endif // RG_IMPLEMENTATION
+
+#endif // VKRGRAPH_H_

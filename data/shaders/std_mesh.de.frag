@@ -55,11 +55,37 @@ float linearize_depth(float depth) {
 	return global.camera.w / depth;
 }
 
-float compute_shadow() {
+float sample_3x3_tent(sampler2D i_tex, vec2 uv) {
+	vec2 o = vec2(1.0, 1.0) / vec2(textureSize(i_tex, 0));
+	float a = texture(i_tex, uv + vec2(-o.x,  o.y)).r;
+	float b = texture(i_tex, uv + vec2(   0,  o.y)).r;
+	float c = texture(i_tex, uv + vec2( o.x,  o.y)).r;
+	float d = texture(i_tex, uv + vec2(-o.x,    0)).r;
+	float e = texture(i_tex, uv + vec2(   0,    0)).r;
+	float f = texture(i_tex, uv + vec2( o.x,    0)).r;
+	float g = texture(i_tex, uv + vec2(-o.x, -o.y)).r;
+	float h = texture(i_tex, uv + vec2(   0, -o.y)).r;
+	float i = texture(i_tex, uv + vec2( o.x, -o.y)).r;
+
+	return ((a + c + g + i) + (b + d + f + h) * 2.0 + e * 4.0) / 16.0;
+	return e;
+}
+
+// float fetch_shadow_map(vec2 pos) {
+// 	vec2 pix = 1.0 / vec2(textureSize(shadow_map, 0));
+// 	float res = 0.0;
+	
+// 	return res;
+// }
+
+float compute_shadow(out vec3 extra, in vec3 normal) {
 	vec3 shadow_coord = i_shadow_fragcoord.xyz / i_shadow_fragcoord.w;
-	float shadow_depth = texture(shadow_map, shadow_coord.xy * 0.5 + 0.5).r;
-	float current_depth = i_fragcoord.z / i_fragcoord.w;
-	return float(current_depth > shadow_depth);
+	float shadow_depth = sample_3x3_tent(shadow_map, shadow_coord.xy * 0.5 + 0.5);
+	shadow_depth = 1.0 / (1 - shadow_depth) - 1.0;
+	float current_depth = i_shadow_fragcoord.z / i_shadow_fragcoord.w;
+	extra = shadow_coord;
+	float bias = clamp(0.01 * (-dot(global.sun.xyz, normal)), 0.0, 0.01);
+	return float(current_depth - bias > shadow_depth);
 }
 
 void main() {
@@ -72,11 +98,15 @@ void main() {
 	float roughness = ao_rough_metal.g;
 	float metallic = ao_rough_metal.b;
 
-	float shadow = compute_shadow();
-
 	mat3 tbn = mat3(i_tbn_tangent, i_tbn_bitangent, i_tbn_normal);
+	vec3 normal = normalize(tbn * normal_map);
+
+	vec3 extra = vec3(0.0);
+	float shadow = compute_shadow(extra, normal);
+
 	// mat3 tbn = i_tbn;
 	o_diffuse_o = vec4(diffuse, occlusion);
-	o_normal_r_m = vec4(float32x3_to_oct(normalize(tbn * normal_map)), roughness, metallic); //  * normal_map
+	o_normal_r_m = vec4(float32x3_to_oct(normal), roughness, metallic); //  * normal_map
 	o_emissive_s = vec4(emissive.rgb, shadow);
+	// o_emissive_s = vec4(extra, shadow);
 }
