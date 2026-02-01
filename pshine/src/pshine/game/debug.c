@@ -408,6 +408,9 @@ void draw_debug_windows(struct pshine_game *game, float actual_delta_time) {
 		ImGui_Text("Max Velocity: %.1fm/s", ship->current_max_velocity);
 		ImGui_Text("Velocity: %.1fm/s", ship->velocity);
 		ImGui_Text("Warp: %s", ship->is_in_warp ? "Active" : ship->is_warp_safe ? "Safe" : "Unsafe");
+		float warp_factor = ship->warp_factor;
+		ImGui_SliderFloat("Warp Factor", &warp_factor, 0.1, 100.0);
+		ship->warp_factor = warp_factor;
 	}
 	ImGui_End();
 

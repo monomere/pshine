@@ -102,6 +102,7 @@ struct pshine_surface_info {
 	char *bump_texture_path_own;
 	char *lights_texture_path_own;
 	char *spec_texture_path_own;
+	char *heightmap_texture_path_own;
 };
 
 enum pshine_environment_projection_type {
@@ -250,7 +251,7 @@ struct pshine_ship {
 	double velocity, max_atmo_velocity, max_space_velocity;
 
 	/// In m/s.
-	double max_warp_velocity;
+	double warp_factor;
 
 	bool is_in_warp;
 
@@ -301,16 +302,17 @@ struct pshine_mesh_data {
 	enum pshine_vertex_type vertex_type;
 };
 
+struct pshine_renderer;
+struct pshine_game;
+
 /// Generate the mesh for a planet, with the
 /// specified level of detail (0 - highest).
 void pshine_generate_planet_mesh(
+	struct pshine_renderer *renderer,
 	const struct pshine_planet *planet,
 	struct pshine_mesh_data *out_mesh,
 	size_t lod
 );
-
-struct pshine_renderer;
-struct pshine_game;
 
 struct pshine_renderer {
 	const char *name;
@@ -320,6 +322,25 @@ struct pshine_renderer *pshine_create_renderer();
 void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *game);
 void pshine_deinit_renderer(struct pshine_renderer *renderer);
 void pshine_destroy_renderer(struct pshine_renderer *renderer);
+
+uintptr_t pshine_renderer_get_planet_heightmap_image(
+	struct pshine_renderer *renderer,
+	const struct pshine_planet *planet
+);
+
+struct pshine_renderer_compute {
+	const char *compute_shader_path;
+	size_t input_buffer_size;
+	const void *input_buffer;
+	size_t output_buffer_size;
+	void *output_buffer;
+	size_t sampled_image_count;
+	uintptr_t *sampled_images;
+};
+void pshine_renderer_run_compute(
+	struct pshine_renderer *renderer,
+	struct pshine_renderer_compute *compute
+);
 
 const uint8_t *pshine_get_key_states(struct pshine_renderer *renderer);
 const uint8_t *pshine_get_mouse_states(struct pshine_renderer *renderer);

@@ -17,6 +17,7 @@ layout (location = 0) out vec3 o_normal;
 
 layout (set = 0, binding = 0) uniform readonly BUFFER(GlobalUniforms, global);
 layout (set = SET_INDEX, binding = 0) uniform readonly BUFFER(StaticMeshUniforms, mesh);
+layout (set = SET_INDEX, binding = 1) uniform SAMPLER(_2D, texture_heightmap);
 
 vec2 sign_not_zero(vec2 v) {
 	return vec2((v.x >= 0.0) ? +1.0 : -1.0, (v.y >= 0.0) ? +1.0 : -1.0);
@@ -48,9 +49,9 @@ void calculate_lat_lon(out float lat, out float lon, out vec3 normal) {
 }
 
 float calculate_height_at(float lat, float lon) {
-	const float h = 0.1;
-	const float f = 10.0 * PI;
-	return h * sin(f * lat) * cos(f * lon);
+	vec2 texcoord = vec2(lon, lat);
+	float col = texture(texture_heightmap, texcoord).r;
+	return col * 0.1;
 }
 
 void main() {
@@ -63,6 +64,6 @@ void main() {
 
 	// TODO: recalculate normals
 
-	// position += dir * calculate_height_at(lat, lon);
+	position += dir * calculate_height_at(lat, lon);
 	gl_Position = mesh.proj * mesh.model_view * vec4(position, 1.0);
 }

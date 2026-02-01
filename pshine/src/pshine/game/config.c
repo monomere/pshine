@@ -128,6 +128,7 @@ static struct pshine_celestial_body *load_celestial_body(
 		READ_STR_FIELD(stab, "spec_texture_path", body->surface.spec_texture_path_own);
 		READ_STR_FIELD(stab, "lights_texture_path", body->surface.lights_texture_path_own);
 		READ_STR_FIELD(stab, "bump_texture_path", body->surface.bump_texture_path_own);
+		READ_STR_FIELD(stab, "heightmap_texture_path", body->surface.heightmap_texture_path_own);
 	}
 
 	body->rings.has_rings = false;
@@ -227,6 +228,8 @@ void load_game_config(struct pshine_game *game, const char *fpath) {
 		free(errbuf);
 		return;
 	}
+	struct toml_datum_t default_system = toml_int_in(tab, "default_system");
+	if (default_system.ok) game->current_star_system = default_system.u.i;
 	toml_array_t *arr = toml_array_in(tab, "systems");
 	game->star_system_count = 0;
 	if (arr != nullptr) {

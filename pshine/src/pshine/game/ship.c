@@ -120,7 +120,7 @@ void update_ship(struct pshine_game *game, struct pshine_ship *ship, float delta
 			ship->closest_body->radius * safe_warp_radius * scaling_factor
 		);
 
-		double scaled_travel = ship->max_warp_velocity * delta_time * scaling_factor;
+		double scaled_travel = ship->warp_factor * PSHINE_SPEED_OF_LIGHT * delta_time * scaling_factor;
 		if (!isinf(t) && 0.0 <= t && t <= scaled_travel) {
 			ship->velocity = 0.0;
 			PSHINE_DEBUG("Emergency warp stop, t = %f, scaled_travel = %f", t, scaled_travel);
@@ -128,7 +128,7 @@ void update_ship(struct pshine_game *game, struct pshine_ship *ship, float delta
 			ship_pos = double3div(double3add(scaled_ship_pos, double3mul(dir, t)), scaling_factor);
 			ship->is_warp_safe = false;
 		} else {
-			ship->velocity = ship->max_warp_velocity;
+			ship->velocity = ship->warp_factor * PSHINE_SPEED_OF_LIGHT;
 			ship->is_warp_safe = true;
 		}
 	}

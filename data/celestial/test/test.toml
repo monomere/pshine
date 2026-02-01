@@ -22,7 +22,8 @@ semimajor = 57_910.0
 true_anomaly = 0.0
 
 [surface]
-albedo_texture_path = "data/textures/mercury_2k.jpg"
+albedo_texture_path = "data/textures/kj621_8x4k.png"
+heightmap_texture_path = "data/textures/kj621_8x4k.png"
 lights_texture_path = "data/textures/1x1_black.png"
 bump_texture_path = "data/textures/1x1_black.png"
 spec_texture_path = "data/textures/1x1_black.png"

@@ -15,14 +15,6 @@ static inline float3 spheregen_float3lerp(float3 a, float3 b, float t) {
 	return float3add(float3mul(a, ca), float3mul(b, cb));
 }
 
-// static inline pshine_snorm32 snorm32_float(float v) { return (pshine_snorm32){ (int32_t)roundf(v * INT32_MAX) }; }
-// static inline pshine_snorm32x2 snorm32x2_float2(float2 v) { return (pshine_snorm32x2){ snorm32_float(v.x), snorm32_float(v.y) }; }
-// static inline float float_snorm32(pshine_snorm32 v) { return (float)v.x / INT32_MAX; }
-// static inline float2 float2_snorm32x2(pshine_snorm32x2 v) { return float2xy(float_snorm32(v.x), float_snorm32(v.y)); }
-// static inline pshine_unorm32 unorm32_float(float v) { return (pshine_unorm32){ (uint32_t)roundf(v * UINT32_MAX) }; }
-// static inline pshine_unorm32x2 unorm32x2_float2(float2 v) { return (pshine_unorm32x2){ unorm32_float(v.x), unorm32_float(v.y) }; }
-// static inline float float_unorm32(pshine_unorm32 v) { return (float)v.x / UINT32_MAX; }
-// static inline float2 float2_unorm32x2(pshine_unorm32x2 v) { return float2xy(float_unorm32(v.x), float_unorm32(v.y)); }
 
 static inline planet_vertex spheregen_vtxlerp(
 	const planet_vertex *a,
@@ -177,10 +169,23 @@ void generate_sphere_mesh(size_t n, struct pshine_mesh_data *m) {
 }
 
 void pshine_generate_planet_mesh(
+	struct pshine_renderer *renderer,
 	const struct pshine_planet *planet,
 	struct pshine_mesh_data *out_mesh,
 	size_t lod
 ) {
-	const size_t lods[5] = { 96, 32, 24, 16, 8 };
+	// const size_t lods[5] = { 96, 32, 24, 16, 8 };
+	const size_t lods[5] = { 256, 128, 96, 64, 16 };
 	generate_sphere_mesh(lod >= 5 ? 8 : lods[lod], out_mesh);
+	// pshine_renderer_run_compute(renderer, &(struct pshine_renderer_compute){
+	// 	.compute_shader_path = "build/pshine/data/shaders/planet_mesh_disp.comp.spv",
+	// 	.input_buffer_size = out_mesh->vertex_count * sizeof(planet_vertex),
+	// 	.input_buffer = out_mesh->vertices,
+	// 	.output_buffer_size = out_mesh->vertex_count * sizeof(planet_vertex),
+	// 	.output_buffer = out_mesh->vertices,
+	// 	.sampled_image_count = 1,
+	// 	.sampled_images = (uintptr_t[]){
+	// 		pshine_renderer_get_planet_heightmap_image(renderer, planet),
+	// 	},
+	// });
 }

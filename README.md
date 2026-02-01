@@ -257,3 +257,8 @@ This isn't the full set of resources used unfortunately.
 
 - Amazing resource for orbital mechanics: [https://orbital-mechanics.space/](https://orbital-mechanics.space/)
 - Vulkan discord
+
+
+## Terrain Rendering
+
+- https://www.youtube.com/watch?v=0TzgFwDmbGg

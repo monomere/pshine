@@ -154,6 +154,7 @@ struct pshine_planet_graphics_data {
 	struct vulkan_image surface_lights;
 	struct vulkan_image surface_specular;
 	struct vulkan_image surface_bump;
+	struct vulkan_image surface_heightmap;
 	VkDescriptorSet descriptor_set;
 	VkCommandBuffer compute_cmdbuf;
 	bool should_submit_compute;
@@ -442,6 +443,13 @@ struct pshine_renderer *pshine_create_renderer() {
 void pshine_destroy_renderer(struct pshine_renderer *renderer) {
 	struct vulkan_renderer *r = (void*)renderer;
 	free(r);
+}
+
+uintptr_t pshine_renderer_get_planet_heightmap_image(
+	struct pshine_renderer *renderer,
+	const struct pshine_planet *planet
+) {
+	return (uintptr_t)(void*)&planet->graphics_data->surface_heightmap;
 }
 
 static void init_glfw(struct vulkan_renderer *r); static void deinit_glfw(struct vulkan_renderer *r);
@@ -974,6 +982,20 @@ static struct vulkan_image load_texture_from_file(
 	r->image_store.ptr[idx].fpath_own = pshine_strdup(fpath);
 	r->image_store.ptr[idx].image = img;
 	return img;
+}
+
+static struct vulkan_image create_black_1x1_texture(
+	struct vulkan_renderer *r
+) {
+	return load_texture_from_file(
+		r,
+		"data/textures/1x1_black.png",
+		VK_FORMAT_R8_UNORM,
+		1,
+		1,
+		0
+	);
+
 }
 
 struct vulkan_image_create_info {
@@ -1529,7 +1551,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 
 			// TODO: Storage buffer with all mesh data and another with all atmosphere data.
 
-			vkUpdateDescriptorSets(r->device, 10, (VkWriteDescriptorSet[10]){
+			vkUpdateDescriptorSets(r->device, 11, (VkWriteDescriptorSet[11]){
 				(VkWriteDescriptorSet){
 					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 					.descriptorCount = 1,
@@ -1542,6 +1564,19 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 						.offset = 0,
 						.range = sizeof(struct planet_mesh_uniform_data),
 					}
+				},
+				(VkWriteDescriptorSet){
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.dstSet = p->graphics_data->descriptor_set,
+					.dstBinding = 1,
+					.dstArrayElement = 0,
+					.pImageInfo = &(VkDescriptorImageInfo){
+						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						.imageView = p->graphics_data->surface_heightmap.view,
+						.sampler = r->material_texture_sampler,
+					},
 				},
 				(VkWriteDescriptorSet){
 					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -1713,7 +1748,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 				.descriptorSetCount = 1,
 				.pSetLayouts = &r->descriptors.planet_mesh_layout,
 			}, &p->graphics_data->descriptor_set));
-			vkUpdateDescriptorSets(r->device, 1, (VkWriteDescriptorSet[]){
+			vkUpdateDescriptorSets(r->device, 2, (VkWriteDescriptorSet[2]){
 				(VkWriteDescriptorSet){
 					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 					.descriptorCount = 1,
@@ -1726,6 +1761,19 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 						.offset = 0,
 						.range = sizeof(struct planet_mesh_uniform_data)
 					}
+				},
+				(VkWriteDescriptorSet){
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.dstSet = p->graphics_data->descriptor_set,
+					.dstBinding = 1,
+					.dstArrayElement = 0,
+					.pImageInfo = &(VkDescriptorImageInfo){
+						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						.imageView = load_texture_from_file(r, "data/textures/1x1_black.png", VK_FORMAT_R8_UNORM, 1, 1, 0).view,
+						.sampler = r->material_texture_sampler,
+					},
 				},
 			}, 0, nullptr);
 		}
@@ -1779,7 +1827,7 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 				.vertices = nullptr,
 				.vertex_type = PSHINE_VERTEX_PLANET
 			};
-			pshine_generate_planet_mesh(nullptr, &mesh_data, lod);
+			pshine_generate_planet_mesh(renderer, nullptr, &mesh_data, lod);
 			create_mesh(r, &mesh_data, &r->own_sphere_meshes[lod]);
 			free(mesh_data.indices);
 			free(mesh_data.vertices);
@@ -1950,6 +1998,13 @@ static void load_planet_texture(struct vulkan_renderer *r, struct pshine_planet 
 	planet->graphics_data->surface_specular = load_texture_from_file(
 		r, planet->as_body.surface.spec_texture_path_own, VK_FORMAT_R8_UNORM, 1, 1, 0
 	);
+	if (planet->as_body.surface.heightmap_texture_path_own) {
+		planet->graphics_data->surface_heightmap = load_texture_from_file(
+			r, planet->as_body.surface.heightmap_texture_path_own, VK_FORMAT_R8_UNORM, 1, 1, 0
+		);
+	} else {
+		planet->graphics_data->surface_heightmap = create_black_1x1_texture(r);
+	}
 	if (planet->as_body.rings.has_rings) {
 		planet->graphics_data->ring_slice_texture = load_texture_from_file(
 			r, planet->as_body.rings.slice_texture_path_own, VK_FORMAT_R8G8B8A8_SRGB, 4, 1, 0
@@ -3830,13 +3885,21 @@ static void init_descriptors(struct vulkan_renderer *r) {
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		.bindingCount = 1,
-		.pBindings = &(VkDescriptorSetLayoutBinding){
-			.binding = 0,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-		}
+		.bindingCount = 2,
+		.pBindings = (VkDescriptorSetLayoutBinding[]){
+			(VkDescriptorSetLayoutBinding){
+				.binding = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+				.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+			},
+			(VkDescriptorSetLayoutBinding){
+				.binding = 1,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+			}
+		},
 	}, nullptr, &r->descriptors.planet_mesh_layout);
 	NAME_VK_OBJECT(r, r->descriptors.planet_mesh_layout, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
 		"planet static mesh descriptor set layout");

@@ -1,5 +1,5 @@
 #![allow(mixed_script_confusables)]
-#![feature(slice_as_chunks)]
+#![feature(sync_unsafe_cell)]
 #![allow(unused)]
 
 use core::f64;
@@ -282,18 +282,9 @@ impl Surfgen for KJ621 {
 							radius_range: 0.01..=0.9,
 							..Default::default()
 						}, &mut rng)))),
-			make_noise_scale(0.0, 1.0, 1.0,
+			make_noise_scale(0.0, 0.1, 1.0,
 				make_displacement(382, 0.003, 50.0,
-					Craters {
-						craters: vec![Crater {
-							floor_height: -0.2,
-							radius: 1.8,
-							pos: lat_lon_to_xyz(0.0, -0.2) * 1.0,
-							steepness: 1.0,
-							k1: 0.8,
-							k2: -0.9,
-						}]
-					}))
+					noise::Fbm::<noise::Value>::new(542).set_frequency(256.0)))
 		)
 	}
 
@@ -427,22 +418,72 @@ impl Surfgen for Alpha2 {
 	}
 }
 
+pub fn render(
+	gradient: &noise::utils::ColorGradient,
+	noise_map: &(impl noise::NoiseFn<f64, 3> + Send + Sync),
+	width: usize,
+	height: usize,
+) -> noise::utils::NoiseImage {
+	let mut destination_image = noise::utils::NoiseImage::new(width, height);
+	let mut destination_image = unsafe { std::cell::SyncUnsafeCell::new(destination_image) };
+
+	let chunk_width = width / 4;
+	let chunk_height = height / 4;
+
+	fn lat_lon_to_xyz(lat: f64, lon: f64) -> [f64; 3] {
+		let x = 1.0 * lat.sin() * lon.cos();
+		let z = 1.0 * lat.sin() * lon.sin();
+		let y = 1.0 * lat.cos();
+
+		[x, y, z]
+	}
+
+	std::thread::scope(|scope| {
+		for cx in 0..4 {
+			for cy in 0..4 {
+				let cx = cx;
+				let cy = cy;
+				let destination_image = &destination_image;
+				scope.spawn(move || {
+					println!("Chunk {cx},{cy}");
+					let xo = cx * chunk_width;
+					let yo = cy * chunk_height;
+					let destination_image = unsafe { &mut *destination_image.get() };
+					for y in yo..yo+chunk_height {
+						for x in xo..xo+chunk_width {
+							let lat = (y as f64 / height as f64) * f64::consts::PI;
+							let lon = (x as f64 / width as f64) * 2.0 * f64::consts::PI;
+							let xyz = lat_lon_to_xyz(lat, lon);
+							let point = noise_map.get(xyz);
+							let source_color = gradient.get_color(point);
+							destination_image[(x, y)] = source_color;
+						}
+					}
+				});
+			}
+		}
+	});
+
+	destination_image.into_inner()
+}
+
 fn main() {
-	type S = Alpha2;
+	type S = KJ621;
 	let final_noise = S::noise();
 
 	let out = std::fs::File::create(std::env::args().nth(1)
 		.expect("expected an output path")).unwrap();
 
-	const SIZE: usize = 256;
-	let noise_map = noise::utils::SphereMapBuilder::new(final_noise)
-		.set_bounds(-90.0, 90.0, -180.0, 180.0)
-		.set_size(SIZE * 2, SIZE)
-		.build();
+	let size = std::env::args().nth(2)
+		.expect("expected size").parse::<usize>().unwrap();
 
-	let noise_image = noise::utils::ImageRenderer::new()
-		.set_gradient(S::gradient())
-		.render(&noise_map);
+	// const SIZE: usize = 4096;
+	let noise_image = render(&S::gradient(), &final_noise, size * 2, size);
+	// let noise_map = noise::utils::SphereMapBuilder::new(final_noise)
+	// 	.set_bounds(-90.0, 90.0, -180.0, 180.0)
+	// 	.set_size(SIZE * 2, SIZE)
+	// 	.build();
+
 	
 	let mut buf = image::RgbImage::new(
 		noise_image.size().0 as _,

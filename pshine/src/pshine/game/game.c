@@ -174,20 +174,22 @@ void pshine_init_game(struct pshine_game *game) {
 		game->ships.ptr[idx].name_own = pshine_strdup("The Sunslicer");
 		game->ships.ptr[idx].callcode_own = pshine_strdup("NG-XK-AP-421620");
 		game->ships.ptr[idx].model_file_own = pshine_strdup("data/models/kerem_kavalci.glb");
-		game->ships.ptr[idx].position.xyz.x = 23058277.647 * PSHINE_SCS_SCALE;
-		game->ships.ptr[idx].position.xyz.y = -366.291 * PSHINE_SCS_SCALE;
-		game->ships.ptr[idx].position.xyz.z = 10228938.562 * PSHINE_SCS_SCALE;
+		// game->ships.ptr[idx].position.xyz.x = 23058277.647 * PSHINE_SCS_SCALE;
+		// game->ships.ptr[idx].position.xyz.y = -366.291 * PSHINE_SCS_SCALE;
+		// game->ships.ptr[idx].position.xyz.z = 10228938.562 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.x = 1219006.005 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.y = 171.203 * PSHINE_SCS_SCALE;
+		game->ships.ptr[idx].position.xyz.z = -5480454.167 * PSHINE_SCS_SCALE;
 		*(floatR*)game->ships.ptr[idx].orientation.values = floatReuler(0, 0, 0);
 		game->ships.ptr[idx].scale = 4.0;
 		game->ships.ptr[idx].max_atmo_velocity = 550.0;
 		game->ships.ptr[idx].max_space_velocity = 186000.0;
-		game->ships.ptr[idx].max_warp_velocity = PSHINE_SPEED_OF_LIGHT * 100.0;
+		game->ships.ptr[idx].warp_factor = 100.0;
 	}
 
 	if (game->star_system_count <= 0) {
 		PSHINE_PANIC("No star systems present, there's nothing to show; exiting.");
 	}
-	game->current_star_system = 2;
 	game->data_own->selected_body = 0;
 	game->data_own->camera_dist = game->star_systems_own[game->current_star_system].bodies_own[0]->radius + 165'000'000.0;
 	game->camera_position.xyz.z = -game->data_own->camera_dist;
@@ -239,6 +241,7 @@ static void deinit_star_system(struct pshine_game *game, struct pshine_star_syst
 		FREE_IF_NOTNULL(b->surface.spec_texture_path_own);
 		FREE_IF_NOTNULL(b->surface.lights_texture_path_own);
 		FREE_IF_NOTNULL(b->surface.bump_texture_path_own);
+		FREE_IF_NOTNULL(b->surface.heightmap_texture_path_own);
 		FREE_IF_NOTNULL(b->name_own);
 		FREE_IF_NOTNULL(b->desc_own);
 		FREE_IF_NOTNULL(b->tmp_parent_ref_name_own);
