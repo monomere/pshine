@@ -1,5 +1,5 @@
 
-cxxwarns = -Wall -Wno-unused-variable -Wno-unused-function -Wno-nullability-completeness -Wno-mathematical-notation-identifier-extension
+cxxwarns = -Wall -Wno-unused-variable -Wno-unused-function -Wno-nullability-completeness -Wno-mathematical-notation-identifier-extension  -Wno-nontrivial-memcall
 cwarns = -Wall -Wno-mathematical-notation-identifier-extension
 
 opt = 1

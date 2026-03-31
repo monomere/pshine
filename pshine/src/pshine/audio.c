@@ -73,7 +73,7 @@ void pshine_destroy_audio(struct pshine_audio **au_ptr) {
 
 void sound_destroy_on_end_cb(void *user, ma_sound *sound) {
 	[[maybe_unused]] size_t idx = (size_t)(uintptr_t)user;
-	deinit_ma_sound(sound, user);
+	// deinit_ma_sound(sound, user); // this just segfaults?
 }
 
 pshine_sound pshine_create_sound_from_file(struct pshine_audio *au, const struct pshine_sound_info *info) {

@@ -57,6 +57,10 @@
 #include <limits.h>
 #include <vulkan/vulkan.h>
 
+#if __STDC_VERSION__ < 202300L
+#include <stdbool.h>
+#endif
+
 struct rg_graph;
 
 /// Currently unused, TODO.

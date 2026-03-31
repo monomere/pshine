@@ -1,26 +1,20 @@
 
 build $mod/src/pshine/math.h: python generate_math.py
 
-# giraffe/ffi/include/giraffe/giraffe.h
-# giraffe/ffi/include/giraffe/giraffe.h
-# giraffe/ffi/include/giraffe/giraffe.h
-# giraffe/ffi/include/giraffe/giraffe.h
-# giraffe/ffi/include/giraffe/giraffe.h
+build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c
+build $builddir/pshine/vk_rgraph.c.o : cc $mod/src/pshine/vk_rgraph.c
+build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c
+build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c
+build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c
+build $builddir/pshine/audio.c.o     : cc $mod/src/pshine/audio.c
 
-build $builddir/pshine/vk.c.o        : cc $mod/src/pshine/vk.c        || $mod/src/pshine/math.h
-build $builddir/pshine/vk_rgraph.c.o : cc $mod/src/pshine/vk_rgraph.c || $mod/src/pshine/math.h
-build $builddir/pshine/main.c.o      : cc $mod/src/pshine/main.c      || $mod/src/pshine/math.h
-build $builddir/pshine/$osapi.c.o    : cc $mod/src/pshine/$osapi.c    || $mod/src/pshine/math.h
-build $builddir/pshine/util.c.o      : cc $mod/src/pshine/util.c      || $mod/src/pshine/math.h
-build $builddir/pshine/audio.c.o     : cc $mod/src/pshine/audio.c     || $mod/src/pshine/math.h
-
-build $builddir/pshine/game/game.c.o      : cc $mod/src/pshine/game/game.c     || $mod/src/pshine/math.h
-build $builddir/pshine/game/ship.c.o      : cc $mod/src/pshine/game/ship.c     || $mod/src/pshine/math.h
-build $builddir/pshine/game/orbit.c.o     : cc $mod/src/pshine/game/orbit.c    || $mod/src/pshine/math.h
-build $builddir/pshine/game/imgui.c.o     : cc $mod/src/pshine/game/imgui.c    || $mod/src/pshine/math.h
-build $builddir/pshine/game/debug.c.o     : cc $mod/src/pshine/game/debug.c    || $mod/src/pshine/math.h
-build $builddir/pshine/game/config.c.o    : cc $mod/src/pshine/game/config.c   || $mod/src/pshine/math.h
-build $builddir/pshine/game/terrain.c.o   : cc $mod/src/pshine/game/terrain.c  || $mod/src/pshine/math.h
+build $builddir/pshine/game/game.c.o      : cc $mod/src/pshine/game/game.c
+build $builddir/pshine/game/ship.c.o      : cc $mod/src/pshine/game/ship.c
+build $builddir/pshine/game/orbit.c.o     : cc $mod/src/pshine/game/orbit.c
+build $builddir/pshine/game/imgui.c.o     : cc $mod/src/pshine/game/imgui.c
+build $builddir/pshine/game/debug.c.o     : cc $mod/src/pshine/game/debug.c
+build $builddir/pshine/game/config.c.o    : cc $mod/src/pshine/game/config.c
+build $builddir/pshine/game/terrain.c.o   : cc $mod/src/pshine/game/terrain.c
 
 build $builddir/pshine/cgltf.c.o         : cc  $mod/src/pshine/single_header/cgltf.c
 build $builddir/pshine/stb.c.o           : cc  $mod/src/pshine/single_header/stb.c
