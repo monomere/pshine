@@ -2,9 +2,7 @@
 
 <img align="right" src="data/screenshots/atmo-2025-04-06.png" width="50%" />
 
-> Note: take a look at the other branches! :o)
-
-Atmosphere and meshing playground. WIP.
+Graphics playground. Eternally WIP.
 
 **TODO:**
 
@@ -21,107 +19,13 @@ Atmosphere and meshing playground. WIP.
 
 ## Setting Up
 
-> requirements: git, wget, python, internet connection
+> requirements: git, internet connection
 
 ```bash
 git clone https://github.com/monomere/pshine --recurse-submodules --shallow-submodules
 cd pshine
+./setup.sh # Sets the ninja platform file, you can do it manually instead.
 ```
-
-<!--
-Do we need this??
-Change `pshine/build.ninja` to work based on your platform (will automate later..)
-```bash
-cflags2 = -DVK_USE_PLATFORM_MACOS_MVK=1    # macos
-cflags2 = -DVK_USE_PLATFORM_WAYLAND_KHR=1  # linux (change to X11)
-cflags2 = -DVK_USE_PLATFORM_WIN32_KHR=1    # 
-```
--->
-
-### Script
-
-> requirements: wget, python, ply
-
-To install ply (needed for `dear_bindings`), do `python3 -m pip install --user ply` (or similar)
-
-You can do the steps below manually, but there's a bash script that does them for you.
-Make sure to check the contents of the script before running it.
-
-```bash
-./setup.sh
-```
-
-<hr>
-
-### Dependencies
-
-The graphics backend uses:
-- [`stb_image`](https://github.com/nothings/stb) for loading images
-- [`volk`](https://github.com/zeux/volk) for loading Vulkan
-- [`VMA`](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) (v3.3.0) for Vulkan memory allocation
-- [`cgltf`](https://github.com/jkuhlmann/cgltf) for model loading
-
-The game uses:
-- [`miniaudio`](https://github.com/mackron/miniaudio) for audio playback
-- [`clay`](https://github.com/nicbarker/clay) for UI layouting
-- [`tomlc99`](https://github.com/cktan/tomlc99) for loading the configuration
-
-So after cloning (only once):
-
-```bash
-wget -P pshine/include/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.h
-wget -P pshine/src/vendor https://raw.githubusercontent.com/zeux/volk/master/volk.c
-
-wget -P pshine/include/vendor https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/master/include/vk_mem_alloc.h
-
-wget -P pshine/include/vendor https://raw.githubusercontent.com/nothings/stb/refs/heads/master/stb_image.h
-
-wget -P pshine/include/vendor https://raw.githubusercontent.com/jkuhlmann/cgltf/refs/tags/v1.15/cgltf.h
-
-wget -P pshine/include/vendor https://raw.githubusercontent.com/nicbarker/clay/refs/heads/main/clay.h
-
-wget -P pshine/include/vendor https://raw.githubusercontent.com/mackron/miniaudio/refs/heads/master/miniaudio.h
-
-wget -P pshine/src/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.c
-wget -P pshine/include/vendor https://raw.githubusercontent.com/cktan/tomlc99/refs/heads/master/toml.h
-```
-
-### Generating the ImGui bindings
-
-The project uses [dear_bindings](https://github.com/dearimgui/dear_bindings) to generate c version of the c++ imgui headers.
-
-```bash
-mkdir -p pshine/src/vendor/cimgui/
-mkdir    pshine/src/vendor/cimgui/backends/
-
-python vendor/dear_bindings/dear_bindings.py \
-  vendor/imgui/imgui.h \
-  --imgui-include-dir imgui/ \
-	--backend-include-dir imgui/backends/ \
-	-t vendor/dear_bindings/src/templates \
-	-o pshine/src/vendor/cimgui/cimgui
-
-python vendor/dear_bindings/dear_bindings.py \
-  --backend \
-  --imgui-include-dir imgui/ \
-	--backend-include-dir imgui/backends/ \
-	--imconfig-path vendor/imgui/imgui.h \
-	-t vendor/dear_bindings/src/templates \
-	-o pshine/src/vendor/cimgui/backends/cimgui_impl_vulkan \
-  vendor/imgui/backends/imgui_impl_vulkan.h
-
-python vendor/dear_bindings/dear_bindings.py \
-  --backend \
-  --imgui-include-dir imgui/ \
-	--backend-include-dir imgui/backends/ \
-	--imconfig-path vendor/imgui/imgui.h \
-	-t vendor/dear_bindings/src/templates \
-	-o pshine/src/vendor/cimgui/backends/cimgui_impl_glfw \
-  vendor/imgui/backends/imgui_impl_glfw.h
-```
-
-### Setting the Ninja platform variables
-
 
 ## Building
 
@@ -142,11 +46,11 @@ ninja
 
 ## Running
 
-> requirements: vulkan ≥1.2 (i don't really know which version tho uhh)
+> requirements: vulkan ≥1.4 with validation layers
 
 **MacOS and MoltenVK:** If you installed MoltenVK and Vulkan through Homebrew,
 add `VK_LAYER_PATH=/opt/homebrew/opt/vulkan-validationlayers/share/vulkan/explicit_layer.d`
-to your environment (or maybe not idk).
+to your environment (or maybe not I'm not sure).
 
 
 ```bash
@@ -174,7 +78,7 @@ Key|Action
 <kbd>W</kbd>/<kbd>S</kbd> | Pitch
 <kbd>W</kbd>/<kbd>S</kbd> | Roll
 <kbd>Shift</kbd>/<kbd>Ctrl</kbd> | Increase/decrease velocity
-<kbd>Y</kbd> | Enter/exit Warp (10c).
+<kbd>Y</kbd> | Enter/exit Warp (100c by default).
 
 Hold left mouse button and drag to rotate the camera around the ship.
 
@@ -200,7 +104,7 @@ Key|Action
 - Spaceship model by FilipZelinka, from [SketchFab](https://sketchfab.com/3d-models/spaceship-clipper-v2-red-menace-632da93e0e4c4ebab699ecb641803898). Under CC BY 4.0.
 - Spaceship model by Kerem Kavalci, from [SketchFab](https://sketchfab.com/3d-models/light-fighter-spaceship-free-51616ef53af84fe595c5603cd3e0f3e1). Under Free Standard License.
 
-## TODO
+<!--## TODO
 
 - [x] Use double precision for position data and etc.
 - [x] Fake perspective for celestial bodies.
@@ -220,7 +124,7 @@ Key|Action
       becoming unbearable. Shouldn't be that much of a problem because you already need
       a C++ compiler for ImGui and VMA.
 - [ ] Don't ignore `pshine_planet::has_atmosphere`.
-- [x] Fix gizmo rendering on mac!
+- [x] Fix gizmo rendering on mac!-->
 
 ### Useful stuff
 

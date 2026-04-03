@@ -5,6 +5,3 @@
 	path = vendor/imgui
 	url = https://github.com/ocornut/imgui
 	branch = v1.91.9-docking
-[submodule "giraffe"]
-	path = giraffe
-	url = https://codeberg.org/monomere/giraffe
