@@ -78,7 +78,6 @@ build $builddir/main: ld $
   $builddir/pshine/game/terrain.c.o $
   $builddir/vendor/volk.c.o $
   $builddir/vendor/toml.c.o $
-  $builddir/pshine/clay.c.o $
   $builddir/pshine/stb.c.o $
   $builddir/pshine/cgltf.c.o $
   $builddir/pshine/miniaudio.c.o $
