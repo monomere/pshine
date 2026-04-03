@@ -110,7 +110,6 @@ vec3 gbuffer_light() {
 	float metallic = i_normal_r_m.a;
 
 	vec3 k_pos = world_pos_from_depth(i_depth);
-
 	// return vec3(sign(k_pos) * 0.5 + 0.5);
 	vec3 k_normal = normal_map;
 	vec3 k_cam_pos = vec3(0.0); // u_global.camera.xyz

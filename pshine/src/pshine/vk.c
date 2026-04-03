@@ -1134,7 +1134,7 @@ static void load_mesh_model_from_gltf(
 		cgltf_mesh *mesh = &data->meshes[i];
 		for (size_t j = 0; j < mesh->primitives_count; ++j, ++current_part) {
 			cgltf_primitive *prim = &mesh->primitives[j];
-			
+
 			enum : size_t { bad_attrib = (size_t)-1 };
 			size_t position_attrib = bad_attrib;
 			size_t normal_attrib = bad_attrib;
@@ -1224,7 +1224,7 @@ static void load_mesh_model_from_gltf(
 
 			size_t index_count = prim->indices->count;
 			uint32_t *indices = calloc(index_count, sizeof(*indices));
-			
+
 			uint8_t *index_data = prim->indices->buffer_view->buffer->data;
 			index_data += prim->indices->buffer_view->offset;
 			index_data += prim->indices->offset;
@@ -1285,7 +1285,7 @@ static void load_mesh_model_from_gltf(
 			cgltf_texture_view *metallic_roughness = &data->materials[i].pbr_metallic_roughness.metallic_roughness_texture;
 			cgltf_buffer_view *buf_gb = metallic_roughness->texture->image->buffer_view;
 			int width, height, channels;
-			
+
 			// (Initially only has the green and blue channels.)
 			// The alpha channel exists because most GPUs don't support R8G8B8 images.
 			// We just ignore the channel.
@@ -2249,7 +2249,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 
 		r->physical_device_features_own = calloc(1, sizeof(*r->physical_device_features_own));
 		vkGetPhysicalDeviceFeatures(r->physical_device, r->physical_device_features_own);
-		
+
 		PSHINE_CHECK(p14->dynamicRenderingLocalReadDepthStencilAttachments, "local read depth");
 	}
 
@@ -2336,7 +2336,7 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_GRAPHICS], 0, &r->queues[QUEUE_GRAPHICS]);
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_PRESENT], 0, &r->queues[QUEUE_PRESENT]);
 	vkGetDeviceQueue(r->device, r->queue_families[QUEUE_COMPUTE], 0, &r->queues[QUEUE_COMPUTE]);
-	
+
 	VmaAllocatorCreateInfo allocator_create_info = {
 		.instance = r->instance,
 		.device = r->device,
@@ -4396,7 +4396,8 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 					.sampler = VK_NULL_HANDLE,
 				}, &bloom_ds_images[2 * i + 1]),
 			};
-			// PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view, 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
+			// PSHINE_DEBUG("ds write: #%zu<-%p %zu<-%p", 2*i+0, r->transients.bloom[i].view,
+			// 2*i+1,i==0?r->transients.color_0.view: r->transients.bloom[i-1].view);
 		}
 		vkUpdateDescriptorSets(r->device, BLOOM_STAGE_COUNT * 2, bloom_ds_writes, 0, nullptr);
 	}
@@ -4737,7 +4738,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	for (size_t i = 0; i < r->game->star_system_count; ++i) {
 		deinit_star_system(r, &r->game->star_systems_own[i]);
 	}
-	
+
 	for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
 		if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) continue;
 		deallocate_buffer(r, r->game->ships.ptr[i].graphics_data->uniform_buffer);
@@ -4880,7 +4881,7 @@ static void write_frame_data(
 		view_mat = trans_mat;
 		double4x4mul(&view_mat, &rot_mat);
 	}
-	
+
 	// view matrix at ⟨0,0,0⟩
 	float4x4 local_view_mat32 = {};
 	{
@@ -4966,7 +4967,7 @@ static void write_frame_data(
 		model_rot_mat32.v4s[1] = float4xyz3w(model_rot_3mat.v3s[1], 0.0f);
 		model_rot_mat32.v4s[2] = float4xyz3w(model_rot_3mat.v3s[2], 0.0f);
 		model_rot_mat32.v4s[3] = float4xyz3w(float3v0(), 1.0f);
-		
+
 		double4x4 model_rot_mat = double4x4_float4x4(model_rot_mat32);
 		double4x4 model_trans_mat;
 		setdouble4x4trans(&model_trans_mat, double3sub(SCSd3_WCSp3(ship->position), offset));
@@ -5018,7 +5019,7 @@ static void write_frame_data(
 			sizeof(new_data)
 		);
 	}
-	
+
 	struct pshine_star_system *current_system = &r->game->star_systems_own[r->game->current_star_system];
 	stuff->current_system = current_system;
 
@@ -5147,12 +5148,13 @@ static void write_frame_data(
 
 				double scale_fact = scs_body_r + scs_atmo_h;
 
-				double3 scs_body_pos = double3sub(SCSd3_WCSp3(p->as_body.position), offset);
+				double3 scs_body_rel_pos = double3sub(SCSd3_WCSp3(p->as_body.position), offset);
+				double3 scs_body_pos = SCSd3_WCSp3(p->as_body.position);
 
 				double scs_body_r_scaled = scs_body_r / scale_fact;
-				double3 scs_cam = double3sub(camera_pos_scs, offset);
+				double3 scs_rel_cam = double3sub(camera_pos_scs, offset);
 
-				double3 rel_cam_pos_scaled = double3div(double3sub(scs_cam, scs_body_pos), scale_fact);
+				double3 cam_rel_pos_scaled = double3div(double3sub(scs_rel_cam, scs_body_rel_pos), scale_fact);
 
 				double3 sun_pos = double3v0();
 				struct atmo_uniform_data new_data = {
@@ -5161,7 +5163,7 @@ static void write_frame_data(
 						scs_body_r_scaled
 					),
 					.radius = 1.0f,
-					.camera = float4xyz3w(float3_double3(rel_cam_pos_scaled), 0.0f),
+					.camera = float4xyz3w(float3_double3(cam_rel_pos_scaled), 0.0f),
 					.coefs_ray = float4xyz3w(
 						float3vs(p->atmosphere.rayleigh_coefs),
 						p->atmosphere.rayleigh_falloff
@@ -5178,7 +5180,6 @@ static void write_frame_data(
 					.sun = float3_double3(double3norm(double3sub(sun_pos, scs_body_pos))),
 					.scale_factor = scale_fact,
 				};
-				// char *data_raw;
 				vmaCopyMemoryToAllocation(
 					r->allocator,
 					&new_data,
@@ -5665,7 +5666,7 @@ static void do_frame(
 			// the first downsample bloom pipeline is a bit different from the rest.
 			if (i == 1)
 				vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_pipeline);
-			
+
 			vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 				.memoryBarrierCount = 1,
