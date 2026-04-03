@@ -7,4 +7,6 @@ case "$OSTYPE" in
 	cygwin*)  PLATFORM="cygwin" ;;
 	*)        PLATFORM="unknown.$OSTYPE" ;;
 esac
+
+echo "Setting platform to '$PLATFORM'"
 echo "platform=$PLATFORM" > ninja/set-platform.ninja
