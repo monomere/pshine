@@ -1,3 +1,4 @@
+#version 450 core
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
 #include "common.glsl"
@@ -88,6 +89,8 @@ vec3 gbuffer_light() {
 	vec4 i_normal_r_m = subpassLoad(u_normal_r_m).rgba;
 	vec4 i_emissive_s = subpassLoad(u_emissive_s).rgba;
 	float i_depth = subpassLoad(u_depth).r;
+	if (i_depth < 0.0001) return i_color0.rgb;
+
 	float shadow_factor = clamp(i_emissive_s.a, 0.0, 1.0);
 	shadow_factor = 0.0;
 	// return vec3(i_emissive_s.a);
@@ -107,6 +110,7 @@ vec3 gbuffer_light() {
 	float metallic = i_normal_r_m.a;
 
 	vec3 k_pos = world_pos_from_depth(i_depth);
+
 	// return vec3(sign(k_pos) * 0.5 + 0.5);
 	vec3 k_normal = normal_map;
 	vec3 k_cam_pos = vec3(0.0); // u_global.camera.xyz

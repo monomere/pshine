@@ -1534,8 +1534,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 			p->graphics_data->atmo_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 			NAME_VK_OBJECT(r, p->graphics_data->atmo_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "atmo ub");
 
-			common_alloc_info.size = get_padded_uniform_buffer_size(r,
-				sizeof(struct planet_material_uniform_data)) * FRAMES_IN_FLIGHT;
+			common_alloc_info.size = get_padded_uniform_buffer_size(r, sizeof(struct planet_material_uniform_data)) * FRAMES_IN_FLIGHT;
 			p->graphics_data->material_uniform_buffer = allocate_buffer(r, &common_alloc_info);
 			NAME_VK_OBJECT(r, p->graphics_data->material_uniform_buffer.buffer, VK_OBJECT_TYPE_BUFFER, "material ub");
 
@@ -1594,7 +1593,7 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 				(VkWriteDescriptorSet){
 					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 					.descriptorCount = 1,
-					.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+					.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 					.dstSet = p->graphics_data->material_descriptor_set,
 					.dstBinding = 0,
 					.dstArrayElement = 0,
@@ -3857,7 +3856,7 @@ static void init_descriptors(struct vulkan_renderer *r) {
 			(VkDescriptorSetLayoutBinding){
 				.binding = 0,
 				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
 			(VkDescriptorSetLayoutBinding){
@@ -5142,15 +5141,7 @@ static void write_frame_data(
 		struct pshine_celestial_body *b = current_system->bodies_own[i];
 		if (b->type == PSHINE_CELESTIAL_BODY_PLANET) {
 			struct pshine_planet *p = (void*)b;
-			if (!p->has_atmosphere) continue;
-
-			// float3 wavelengths = float3rgb(
-			// 	powf(400.0f / p->atmosphere.wavelengths[0], 4) * p->atmosphere.scattering_strength,
-			// 	powf(400.0f / p->atmosphere.wavelengths[1], 4) * p->atmosphere.scattering_strength,
-			// 	powf(400.0f / p->atmosphere.wavelengths[2], 4) * p->atmosphere.scattering_strength
-			// );
-
-			{
+			if (p->has_atmosphere) {
 				double scs_atmo_h = SCSd_WCSd(p->atmosphere.height);
 				double scs_body_r = SCSd_WCSd(p->as_body.radius);
 
@@ -5197,18 +5188,19 @@ static void write_frame_data(
 				);
 			}
 
-			// Upload material data.
-			// TODO: check if this access is valid (why no current_frame)
 			{
 				struct planet_material_uniform_data new_data = {
 					.color = float4rgba(0.8f, 0.3f, 0.1f, 1.0f),
 					.view_dir = floatRapply(floatRvs(r->game->camera_orientation.values), float3xyz(0, 0, 1)),
 					.smoothness = r->game->material_smoothness_,
 				};
-				struct planet_material_uniform_data *data;
-				vmaMapMemory(r->allocator, p->graphics_data->material_uniform_buffer.allocation, (void**)&data);
-				memcpy(data, &new_data, sizeof(new_data));
-				vmaUnmapMemory(r->allocator, p->graphics_data->material_uniform_buffer.allocation);
+				vmaCopyMemoryToAllocation(
+					r->allocator,
+					&new_data,
+					p->graphics_data->material_uniform_buffer.allocation,
+					get_padded_uniform_buffer_size(r, sizeof(struct planet_material_uniform_data)) * current_frame,
+					sizeof(new_data)
+				);
 			}
 		}
 	}
@@ -5353,8 +5345,9 @@ static void do_frame(
 					0,
 					2,
 					(VkDescriptorSet[]){ r->data.global_descriptor_set, p->graphics_data->material_descriptor_set },
-					1, (uint32_t[]){
-						get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+					2, (uint32_t[]){
+						get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame,
+						get_padded_uniform_buffer_size(r, sizeof(struct planet_material_uniform_data)) * current_frame,
 					}
 				);
 
@@ -5652,12 +5645,12 @@ static void do_frame(
 	}
 	rg_graph_end_pass(&r->rgraph);
 	rg_graph_begin_pass(&r->rgraph); // Bloom
-	if (1) {
+	{
 		// The downsampling compute.
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.first_downsample_bloom_pipeline);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
-			struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
-			struct vulkan_image *dst_image = &r->transients.bloom[i];
+			// struct vulkan_image *src_image = i == 0 ? &r->transients.color_0 : &r->transients.bloom[i - 1];
+			// struct vulkan_image *dst_image = &r->transients.bloom[i];
 
 			vkCmdBindDescriptorSets(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.downsample_bloom_layout,
 				0, 1, &r->data.downsample_bloom_descriptor_sets[i], 0, nullptr
@@ -5675,54 +5668,18 @@ static void do_frame(
 			
 			vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-				.imageMemoryBarrierCount = 2,
-				.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
-					// barrier: current bloom stage write to next bloom stage read
-					(VkImageMemoryBarrier2){
-						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-						.image = dst_image->image,
+				.memoryBarrierCount = 1,
+				.pMemoryBarriers = (VkMemoryBarrier2[]){
+					(VkMemoryBarrier2){
+						.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
 						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 						.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
 						.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 						.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
-						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.subresourceRange = (VkImageSubresourceRange){
-							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-							.baseArrayLayer = 0,
-							.baseMipLevel = 0,
-							.layerCount = 1,
-							.levelCount = 1,
-						},
-						.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-						.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-					},
-					// barrier: current bloom stage read to corresponding upsample stage write.
-					(VkImageMemoryBarrier2){
-						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-						.image = src_image->image,
-						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-						.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
-						.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-						.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.subresourceRange = (VkImageSubresourceRange){
-							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-							.baseArrayLayer = 0,
-							.baseMipLevel = 0,
-							.layerCount = 1,
-							.levelCount = 1,
-						},
-						.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-						.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
 					},
 				},
 			});
 		}
-
-		// by this point, all images except the last one had barriers for writing,
-		// and the last one had a barrier for reading.
 
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.upsample_bloom_pipeline);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
@@ -5741,27 +5698,14 @@ static void do_frame(
 			vkCmdDispatch(f->command_buffer, 128, 128, 1);
 			vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-				.imageMemoryBarrierCount = 1,
-				.pImageMemoryBarriers = (VkImageMemoryBarrier2[]){
-					// barrier: current bloom stage write to next bloom stage read
-					(VkImageMemoryBarrier2){
-						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-						.image = src_image->image,
+				.memoryBarrierCount = 1,
+				.pMemoryBarriers = (VkMemoryBarrier2[]){
+					(VkMemoryBarrier2){
+						.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
 						.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 						.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
 						.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
 						.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
-						.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-						.subresourceRange = (VkImageSubresourceRange){
-							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-							.baseArrayLayer = 0,
-							.baseMipLevel = 0,
-							.layerCount = 1,
-							.levelCount = 1,
-						},
-						.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-						.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
 					},
 				},
 			});

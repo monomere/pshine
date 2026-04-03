@@ -1,3 +1,4 @@
+#version 450 core
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(vertex)
 #include "common.glsl"
@@ -64,6 +65,6 @@ void main() {
 
 	// TODO: recalculate normals
 
-	position += dir * calculate_height_at(lat, lon);
+	// position += dir * calculate_height_at(lat, lon);
 	gl_Position = mesh.proj * mesh.model_view * vec4(position, 1.0);
 }
