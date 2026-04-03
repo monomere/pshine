@@ -4,7 +4,6 @@
 
 DO_DOWNLOAD=1
 DO_BINDINGS=1
-DO_PLATFORM=1
 
 while test $# -gt 0
 do
@@ -15,11 +14,9 @@ do
 			;;
 		--platform-only) DO_DOWNLOAD=0; DO_BINDINGS=0
 			;;
-		--only-bindings) DO_DOWNLOAD=0; DO_PLATFORM=0
+		--only-bindings) DO_DOWNLOAD=0;
 			;;
-		--bindings-only) DO_DOWNLOAD=0; DO_PLATFORM=0
-			;;
-		--no-platform) DO_PLATFORM=0
+		--bindings-only) DO_DOWNLOAD=0;
 			;;
 		--no-bindings) DO_DOWNLOAD=0
 			;;
