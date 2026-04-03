@@ -6,7 +6,6 @@
 
 #define VK_NO_PROTOTYPES
 #include <volk.h>
-#include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <vk_mem_alloc.h>
 
@@ -211,6 +210,11 @@ struct swapchain_image_sync_data {
 struct per_frame_data {
 	struct swapchain_image_sync_data sync;
 	VkCommandBuffer command_buffer;
+	// Usually set each frame to the current swapchain image.
+	VkImage swapchain_image;
+	// Usually set each frame to the current swapchain image view.
+	VkImageView swapchain_image_view;
+	uint32_t index;
 };
 
 enum gbuffer_images {
@@ -295,8 +299,8 @@ struct vulkan_renderer {
 	VkSurfaceCapabilitiesKHR surface_capabilities;
 	VkExtent2D swapchain_extent;
 	uint32_t swapchain_image_count;
-	VkImage *swapchain_images_own; // `*[.swapchain_image_count]`
-	VkImageView *swapchain_image_views_own; // `*[.swapchain_image_count]`
+	VkImage *swapchain_images_own;
+	VkImageView *swapchain_image_views_own;
 
 	bool opt_bloom;
 
@@ -309,9 +313,6 @@ struct vulkan_renderer {
 	VkFormat shadow_depth_format;
 	struct vulkan_image depth_image;
 	struct render_pass_transients transients;
-
-	VkFramebuffer *sdr_framebuffers_own; // `*[.swapchain_image_count]`
-	VkFramebuffer *hdr_framebuffers_own; // `*[.swapchain_image_count]`
 
 	VkPhysicalDeviceProperties2 *physical_device_properties_own;
 	VkPhysicalDeviceFeatures *physical_device_features_own;
@@ -398,7 +399,6 @@ struct vulkan_renderer {
 	} data;
 
 	struct per_frame_data frames[FRAMES_IN_FLIGHT];
-	// struct swapchain_image_sync_data image_sync_data[FRAMES_IN_FLIGHT];
 
 	VmaAllocator allocator;
 
@@ -2463,13 +2463,7 @@ static void reinit_swapchain(struct vulkan_renderer *r) {
 		.oldSwapchain = VK_NULL_HANDLE,
 	}, nullptr, &r->swapchain));
 
-	// for (size_t i = 0; i < r->swapchain_image_count; ++i) {
-	// 	vkDestroyImageView(r->device, r->swapchain_image_views_own[i], nullptr);
-	// }
-	// free(r->swapchain_image_views_own);
-
 	r->swapchain_image_count = 0;
-	// free(r->swapchain_images_own);
 	CHECKVK(vkGetSwapchainImagesKHR(r->device, r->swapchain, &r->swapchain_image_count, nullptr));
 	r->swapchain_images_own = calloc(r->swapchain_image_count, sizeof(VkImage));
 	CHECKVK(vkGetSwapchainImagesKHR(r->device, r->swapchain, &r->swapchain_image_count, r->swapchain_images_own));
@@ -2487,7 +2481,7 @@ static void reinit_swapchain(struct vulkan_renderer *r) {
 				.levelCount = 1,
 				.baseArrayLayer = 0,
 				.layerCount = 1,
-			}
+			},
 		}, nullptr, &r->swapchain_image_views_own[i]));
 		NAME_VK_OBJECT(r, r->swapchain_image_views_own[i], VK_OBJECT_TYPE_IMAGE_VIEW, "swapchain image view #%u", i);
 	}
@@ -4599,6 +4593,10 @@ static void init_frame(
 		.flags = VK_FENCE_CREATE_SIGNALED_BIT
 	}, nullptr, &f->sync.in_flight_fence));
 	NAME_VK_OBJECT(r, f->sync.in_flight_fence, VK_OBJECT_TYPE_FENCE, "in flight fence for frame %u", frame_index);
+
+	f->index = frame_index;
+	f->swapchain_image = VK_NULL_HANDLE;
+	f->swapchain_image_view = VK_NULL_HANDLE;
 }
 
 void deinit_frame(struct vulkan_renderer *r, struct per_frame_data *f) {
@@ -4852,8 +4850,7 @@ struct do_frame_stuff {
 
 static void write_frame_data(
 	struct vulkan_renderer *r,
-	uint32_t current_frame,
-	uint32_t image_index,
+	struct per_frame_data *f,
 	size_t frame_number,
 	struct do_frame_stuff *stuff
 ) {
@@ -4948,7 +4945,7 @@ static void write_frame_data(
 		};
 		char *data;
 		vmaMapMemory(r->allocator, r->data.global_uniform_buffer.allocation, (void**)&data);
-		data += get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame;
+		data += get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * f->index;
 		memcpy(data, &new_data, sizeof(new_data));
 		vmaUnmapMemory(r->allocator, r->data.global_uniform_buffer.allocation);
 	}
@@ -5015,7 +5012,7 @@ static void write_frame_data(
 
 		vmaCopyMemoryToAllocation(
 			r->allocator, &new_data, ship->graphics_data->uniform_buffer.allocation,
-			get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * current_frame,
+			get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * f->index,
 			sizeof(new_data)
 		);
 	}
@@ -5108,7 +5105,7 @@ static void write_frame_data(
 			}
 			char *data_raw;
 			vmaMapMemory(r->allocator, uniform_buffer->allocation, (void**)&data_raw);
-			data_raw += get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame;
+			data_raw += get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * f->index;
 			memcpy(data_raw, &new_data, sizeof(new_data));
 			vmaUnmapMemory(r->allocator, uniform_buffer->allocation);
 			// Rings
@@ -5132,7 +5129,7 @@ static void write_frame_data(
 					.shadow_smoothing = b->rings.shadow_smoothing,
 				};
 				vmaCopyMemoryToAllocation(r->allocator, &new_data_rings, rings_uniform_buffer->allocation,
-					get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * current_frame,
+					get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * f->index,
 					sizeof(new_data_rings));
 			}
 		}
@@ -5184,7 +5181,7 @@ static void write_frame_data(
 					r->allocator,
 					&new_data,
 					p->graphics_data->atmo_uniform_buffer.allocation,
-					get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * current_frame,
+					get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * f->index,
 					sizeof(new_data)
 				);
 			}
@@ -5199,7 +5196,7 @@ static void write_frame_data(
 					r->allocator,
 					&new_data,
 					p->graphics_data->material_uniform_buffer.allocation,
-					get_padded_uniform_buffer_size(r, sizeof(struct planet_material_uniform_data)) * current_frame,
+					get_padded_uniform_buffer_size(r, sizeof(struct planet_material_uniform_data)) * f->index,
 					sizeof(new_data)
 				);
 			}
@@ -5207,31 +5204,62 @@ static void write_frame_data(
 	}
 }
 
+static void render_frame(
+	struct vulkan_renderer *r,
+	struct per_frame_data *f,
+	struct do_frame_stuff *stuff,
+	size_t frame_number
+);
+
 static void do_frame(
 	struct vulkan_renderer *r,
-	uint32_t current_frame,
-	uint32_t image_index,
+	struct per_frame_data *f,
 	size_t frame_number
 ) {
-	struct per_frame_data *f = &r->frames[current_frame];
 	struct do_frame_stuff stuff = {};
-	write_frame_data(r, current_frame, image_index, frame_number, &stuff);
-	struct pshine_star_system *current_system = stuff.current_system;
-	double3 camera_pos_scs = stuff.camera_pos_scs;
-
-	/////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////
-	///                                                                                   ///
-	///                                                                                   ///
-	///         COMMAND ENCODING                                                          ///
-	///                                                                                   ///
-	///                                                                                   ///
-	/////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////
+	write_frame_data(r, f, frame_number, &stuff);
 
 	CHECKVK(vkBeginCommandBuffer(f->command_buffer, &(VkCommandBufferBeginInfo){
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	}));
+
+	render_frame(r, f, &stuff, frame_number);
+
+	vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &(VkImageMemoryBarrier2){
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.image = f->swapchain_image,
+				.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+				.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+				.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+				.dstAccessMask = 0,
+				.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+				.subresourceRange = (VkImageSubresourceRange){
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.baseArrayLayer = 0,
+					.baseMipLevel = 0,
+					.layerCount = 1,
+					.levelCount = 1,
+				},
+				.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			},
+		});
+
+	CHECKVK(vkEndCommandBuffer(f->command_buffer));
+}
+
+static void render_frame(
+	struct vulkan_renderer *r,
+	struct per_frame_data *f,
+	struct do_frame_stuff *stuff,
+	size_t frame_number
+) {
+	struct pshine_star_system *current_system = stuff->current_system;
+	double3 camera_pos_scs = stuff->camera_pos_scs;
 
 	// Image transitions for the bloom, as early as possible.
 	// transients-color0 is shader-read-only-optimal, which is what we need for the compute shaders already.
@@ -5275,8 +5303,8 @@ static void do_frame(
 			.extent = r->swapchain_extent,
 		},
 		r->queue_families[QUEUE_GRAPHICS],
-		r->swapchain_images_own[image_index],
-		r->swapchain_image_views_own[image_index],
+		f->swapchain_image,
+		f->swapchain_image_view,
 		f->command_buffer
 	);
 
@@ -5310,7 +5338,7 @@ static void do_frame(
 				f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_shadow_layout,
 				0, 1, (VkDescriptorSet[]){ ship->graphics_data->descriptor_set },
 				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * current_frame
+					get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * f->index
 				}
 			);
 			for (size_t j = 0; j < ship->graphics_data->model.part_count; ++j) {
@@ -5347,8 +5375,8 @@ static void do_frame(
 					2,
 					(VkDescriptorSet[]){ r->data.global_descriptor_set, p->graphics_data->material_descriptor_set },
 					2, (uint32_t[]){
-						get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame,
-						get_padded_uniform_buffer_size(r, sizeof(struct planet_material_uniform_data)) * current_frame,
+						get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * f->index,
+						get_padded_uniform_buffer_size(r, sizeof(struct planet_material_uniform_data)) * f->index,
 					}
 				);
 
@@ -5362,7 +5390,7 @@ static void do_frame(
 					1,
 					&p->graphics_data->descriptor_set,
 					1, (uint32_t[]){
-						get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame
+						get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * f->index
 					}
 				);
 				vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer,
@@ -5390,7 +5418,7 @@ static void do_frame(
 			1,
 			(VkDescriptorSet[]){ r->data.global_descriptor_set },
 			1, (uint32_t[]){
-				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * f->index
 			}
 		);
 
@@ -5418,7 +5446,7 @@ static void do_frame(
 					1,
 					&p->graphics_data->descriptor_set,
 					1, (uint32_t[]){
-						get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * current_frame
+						get_padded_uniform_buffer_size(r, sizeof(struct planet_mesh_uniform_data)) * f->index
 					}
 				);
 				vkCmdBindVertexBuffers(f->command_buffer, 0, 1, &r->own_sphere_meshes[lod].vertex_buffer.buffer, &(VkDeviceSize){0});
@@ -5450,7 +5478,7 @@ static void do_frame(
 					1,
 					(VkDescriptorSet[]){ p->graphics_data->rings_descriptor_set },
 					1, (uint32_t[]){
-						get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * current_frame
+						get_padded_uniform_buffer_size(r, sizeof(struct rings_uniform_data)) * f->index
 					}
 				);
 				vkCmdDraw(f->command_buffer, 6, 1, 0, 0);
@@ -5475,7 +5503,7 @@ static void do_frame(
 			1,
 			(VkDescriptorSet[]){ r->data.global_descriptor_set },
 			1, (uint32_t[]){
-				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * f->index
 			}
 		);
 		for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
@@ -5489,7 +5517,7 @@ static void do_frame(
 				f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_de_layout,
 				2, 1, (VkDescriptorSet[]){ ship->graphics_data->descriptor_set },
 				1, (uint32_t[]){
-					get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * current_frame
+					get_padded_uniform_buffer_size(r, sizeof(struct std_mesh_uniform_data)) * f->index
 				}
 			);
 			for (size_t j = 0; j < ship->graphics_data->model.material_count; ++j) {
@@ -5497,7 +5525,7 @@ static void do_frame(
 					f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_de_layout,
 					1, 1, (VkDescriptorSet[]){ ship->graphics_data->model.materials_own[j].descriptor_set },
 					1, (uint32_t[]){
-						get_padded_uniform_buffer_size(r, sizeof(struct std_material_uniform_data)) * current_frame
+						get_padded_uniform_buffer_size(r, sizeof(struct std_material_uniform_data)) * f->index
 					}
 				);
 				for (size_t k = 0; k < ship->graphics_data->model.part_count; ++k) {
@@ -5513,8 +5541,8 @@ static void do_frame(
 		// Skybox
 		{
 			float4x4 data[2] = {
-				stuff.proj_mat32,
-				stuff.view_mat32,
+				stuff->proj_mat32,
+				stuff->view_mat32,
 			};
 
 			// Remove the translation
@@ -5564,7 +5592,7 @@ static void do_frame(
 			1,
 			(VkDescriptorSet[]){ r->data.global_descriptor_set },
 			1, (uint32_t[]){
-				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * f->index
 			}
 		);
 
@@ -5581,7 +5609,7 @@ static void do_frame(
 					1,
 					&p->graphics_data->atmo_descriptor_set,
 					1, (uint32_t[]){
-						get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * current_frame
+						get_padded_uniform_buffer_size(r, sizeof(struct atmo_uniform_data)) * f->index
 					}
 				);
 				vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
@@ -5638,7 +5666,7 @@ static void do_frame(
 			1,
 			(VkDescriptorSet[]){ r->data.light_descriptor_set },
 			1, (uint32_t[]){
-				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * f->index
 			}
 		);
 
@@ -5735,7 +5763,7 @@ static void do_frame(
 			1,
 			(VkDescriptorSet[]){ r->data.blit_descriptor_set },
 			1, (uint32_t[]){
-				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * current_frame
+				get_padded_uniform_buffer_size(r, sizeof(struct global_uniform_data)) * f->index
 			}
 		);
 		vkCmdDraw(f->command_buffer, 3, 1, 0, 0);
@@ -5747,32 +5775,6 @@ static void do_frame(
 	}
 	rg_graph_end_pass(&r->rgraph);
 	rg_graph_end_frame(&r->rgraph);
-
-	vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
-			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-			.imageMemoryBarrierCount = 1,
-			.pImageMemoryBarriers = &(VkImageMemoryBarrier2){
-				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-				.image = r->swapchain_images_own[image_index],
-				.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-				.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-				.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
-				.dstAccessMask = 0,
-				.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-				.subresourceRange = (VkImageSubresourceRange){
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.baseArrayLayer = 0,
-					.baseMipLevel = 0,
-					.layerCount = 1,
-					.levelCount = 1,
-				},
-				.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-				.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
-			},
-		});
-
-	CHECKVK(vkEndCommandBuffer(f->command_buffer));
 }
 
 static void render(struct vulkan_renderer *r, uint32_t current_frame, size_t frame_number) {
@@ -5800,7 +5802,11 @@ static void render(struct vulkan_renderer *r, uint32_t current_frame, size_t fra
 		CHECKVK(acquireImageRes);
 	}
 	CHECKVK(vkResetCommandBuffer(f->command_buffer, 0));
-	do_frame(r, current_frame, image_index, frame_number);
+
+	r->frames[current_frame].swapchain_image = r->swapchain_images_own[image_index];
+	r->frames[current_frame].swapchain_image_view = r->swapchain_image_views_own[image_index];
+	do_frame(r, &r->frames[current_frame], frame_number);
+
 	CHECKVK(vkQueueSubmit(r->queues[QUEUE_GRAPHICS], 1, &(VkSubmitInfo){
 		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 		.commandBufferCount = 1,
@@ -6045,6 +6051,35 @@ static void show_gizmos(struct vulkan_renderer *r) {
 			}
 		}
 	}
+}
+
+void pshine_take_screenshot(
+	struct pshine_renderer *renderer,
+	const struct pshine_render_settings *settings
+) {
+	struct vulkan_renderer *r = (void*)renderer;
+	struct pshine_render_settings old_settings = renderer->settings;
+	if (settings != nullptr) renderer->settings = *settings;
+
+	struct per_frame_data *f = &r->frames[FRAMES_IN_FLIGHT];
+	CHECKVK(vkAllocateCommandBuffers(r->device, &(VkCommandBufferAllocateInfo){
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		.commandBufferCount = 1,
+		.commandPool = r->command_pool_graphics,
+		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+	}, &f->command_buffer));
+	f->sync.image_avail_semaphore = VK_NULL_HANDLE;
+	CHECKVK(vkCreateFence(r->device, &(VkFenceCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+		.flags = VK_FENCE_CREATE_SIGNALED_BIT,
+	}, nullptr, &f->sync.in_flight_fence));
+	CHECKVK(vkCreateSemaphore(r->device, &(VkSemaphoreCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+	}, nullptr, &f->sync.render_finish_semaphore));
+
+	do_frame(r, f, 0);
+
+	renderer->settings = old_settings;
 }
 
 void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer) {

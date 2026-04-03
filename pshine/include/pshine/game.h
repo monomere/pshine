@@ -314,14 +314,25 @@ void pshine_generate_planet_mesh(
 	size_t lod
 );
 
+struct pshine_render_settings {
+	bool render_ships;
+	bool do_bloom;
+};
+
 struct pshine_renderer {
 	const char *name;
+	struct pshine_render_settings settings;
 };
 
 struct pshine_renderer *pshine_create_renderer();
 void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *game);
 void pshine_deinit_renderer(struct pshine_renderer *renderer);
 void pshine_destroy_renderer(struct pshine_renderer *renderer);
+
+void pshine_take_screenshot(
+	struct pshine_renderer *renderer,
+	const struct pshine_render_settings *settings
+);
 
 uintptr_t pshine_renderer_get_planet_heightmap_image(
 	struct pshine_renderer *renderer,
