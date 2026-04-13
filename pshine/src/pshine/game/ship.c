@@ -79,11 +79,11 @@ void update_ship(struct pshine_game *game, struct pshine_ship *ship, float delta
 		if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_THROTTLE_INC].key)) delta += 1.0;
 		else if (pshine_is_key_down(game->renderer, kbd->keys[KEYBIND_SHIP_THROTTLE_DEC].key)) delta -= 1.0;
 		if (ship->velocity < 0.0001 && delta > 0.0001) {
-			pshine_sound sound = pshine_create_sound_from_file(game->data_own->audio, &(struct pshine_sound_info){
-				.name = "data/audio/laser.wav",
-				.quiet = 0.9f,
-			});
-			pshine_play_sound(game->data_own->audio, sound);
+			// pshine_sound sound = pshine_create_sound_from_file(game->data_own->audio, &(struct pshine_sound_info){
+			// 	.name = "data/audio/laser.wav",
+			// 	.quiet = 0.9f,
+			// });
+			// pshine_play_sound(game->data_own->audio, sound);
 		}
 		delta *= delta_time;
 		ship->velocity += delta * 5000.0;

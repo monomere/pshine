@@ -8,6 +8,7 @@ gl3w_gen.py
 
 # Compiled files.
 build
+builddir
 
 # 3rd-party files, GL3W, etc.
 # */**/vendor
@@ -40,3 +41,6 @@ ninja/set-platform.ninja
 
 # Visual Studio Code
 .vscode
+
+# Backup files
+*.bak

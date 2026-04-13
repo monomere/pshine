@@ -52,6 +52,8 @@ static inline struct pshine_timeval pshine_timeval_now() {
 	return (struct pshine_timeval){ .sec = tp.tv_sec, .nsec = tp.tv_nsec };
 }
 
+void pshine_sleep_ms(size_t ms);
+
 struct pshine_log_sink {
 	FILE *fout;
 	bool enable_color;
@@ -140,11 +142,14 @@ void pshine_log_impl(
 		res; \
 	})
 
-// May not print the stacktrace if library is missing.
+/// May not print the stacktrace if the library is missing.
 void pshine_print_stacktrace(FILE *fout, bool color);
 
-// NB: returns a malloc'd buffer
+/// NB: returns a malloc'd buffer
 char *pshine_read_file(const char *fname, size_t *size);
+
+/// Set the working directory to the directory of the executable.
+void pshine_set_cwd_to_exe();
 
 // in KiB
 size_t pshine_get_mem_usage();

@@ -1,3 +1,4 @@
+#include "perf.h"
 #include <pshine/game.h>
 #include <pshine/util.h>
 #include <stdio.h>
@@ -9,10 +10,8 @@
 #include <GLFW/glfw3.h>
 #include <vk_mem_alloc.h>
 
-#include <cimgui/cimgui.h>
-#include <cimgui/backends/cimgui_impl_glfw.h>
-#define IMGUI_IMPL_VULKAN_USE_VOLK 1
-#include <cimgui/backends/cimgui_impl_vulkan.h>
+#include <dcimgui/dcimgui.h>
+#include "imgui_backend.h"
 #include <stb_image.h>
 // TODO: weird include guard error. included in vk_util.h
 // #include <cgltf.h>
@@ -456,15 +455,15 @@ static void init_glfw(struct vulkan_renderer *r); static void deinit_glfw(struct
 static void init_vulkan(struct vulkan_renderer *r); static void deinit_vulkan(struct vulkan_renderer *r);
 static void init_swapchain(struct vulkan_renderer *r); static void deinit_swapchain(struct vulkan_renderer *r);
 // static void init_rpasses(struct vulkan_renderer *r); static void deinit_rpasses(struct vulkan_renderer *r);
-static void init_pipelines(struct vulkan_renderer *r); static void deinit_pipelines(struct vulkan_renderer *r);
+static void add_pipelines_jobs(struct vulkan_renderer *r); static void deinit_pipelines(struct vulkan_renderer *r);
 static void init_transients(struct vulkan_renderer *r); static void deinit_transients(struct vulkan_renderer *r);
 static void init_rendergraph(struct vulkan_renderer *r); static void deinit_rendergraph(struct vulkan_renderer *r);
 // static void init_fbufs(struct vulkan_renderer *r); static void deinit_fbufs(struct vulkan_renderer *r);
 static void init_cmdbufs(struct vulkan_renderer *r); static void deinit_cmdbufs(struct vulkan_renderer *r);
 static void init_sync(struct vulkan_renderer *r); static void deinit_sync(struct vulkan_renderer *r);
-static void init_ubufs(struct vulkan_renderer *r); static void deinit_ubufs(struct vulkan_renderer *r);
 static void init_descriptors(struct vulkan_renderer *r); static void deinit_descriptors(struct vulkan_renderer *r);
 static void init_frames(struct vulkan_renderer *r); static void deinit_frames(struct vulkan_renderer *r);
+static void init_game_data(struct vulkan_renderer *r); static void deinit_game_data(struct vulkan_renderer *r);
 static void init_imgui(struct vulkan_renderer *r); static void deinit_imgui(struct vulkan_renderer *r);
 
 static void init_atmo_lut_compute(struct vulkan_renderer *r, struct pshine_planet *planet);
@@ -1779,70 +1778,24 @@ static void init_star_system(struct vulkan_renderer *r, struct pshine_star_syste
 	}
 }
 
-void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *game) {
-	struct vulkan_renderer *r = (void*)renderer;
-	r->game = game;
-	r->as_base.name = "Vulkan Renderer";
+static void init_transients_job(struct pshine_job *job) { init_transients(job->user); }
+static void init_rendergraph_job(struct pshine_job *job) { init_rendergraph(job->user); }
+static void init_descriptors_job(struct pshine_job *job) { init_descriptors(job->user); }
+static void init_game_data_job(struct pshine_job *job) { init_game_data(job->user); }
 
-	r->key_states = calloc(PSHINE_KEY_COUNT_, sizeof(uint8_t));
+static void init_star_system_job(struct pshine_job *job) {
+	struct vulkan_renderer *r = job->user;
+	init_star_system(r, &r->game->star_systems_own[job->id]);
+}
 
-	r->lod_ranges[0] = 300'000.0;
-	r->lod_ranges[1] = 25'000.0;
-	r->lod_ranges[2] = 1'500.0;
-	r->lod_ranges[3] = 290.0;
+static void init_ship_job(struct pshine_job *job) {
+	struct vulkan_renderer *r = job->user;
+	if (r->game->ships.ptr[job->id]._alive_marker != (size_t)-1) return;
+	init_ship(r, &r->game->ships.ptr[job->id]);
+}
 
-	r->opt_bloom = true;
-
-	init_glfw(r);
-	init_vulkan(r);
-	init_swapchain(r);
-	init_cmdbufs(r);
-	init_transients(r);
-	// init_rpasses(r);
-	init_rendergraph(r);
-	init_descriptors(r);
-	// init_fbufs(r);
-	init_pipelines(r);
-	init_sync(r);
-	init_ubufs(r);
-	init_frames(r);
-	init_imgui(r);
-
-	{
-		VkPhysicalDeviceFeatures features = {};
-		vkGetPhysicalDeviceFeatures(r->physical_device, &features);
-		PSHINE_INFO("GPU 64 bit float support: %s", features.shaderFloat64 ? "true" : "false");
-		PSHINE_INFO("GPU 64 bit int support:   %s", features.shaderInt64   ? "true" : "false");
-	}
-
-	{
-		r->sphere_mesh_count = 5;
-		r->own_sphere_meshes = calloc(r->sphere_mesh_count, sizeof(struct vulkan_mesh));
-		for (size_t lod = 0; lod < r->sphere_mesh_count; ++lod) {
-			struct pshine_mesh_data mesh_data = {
-				.index_count = 0,
-				.indices = nullptr,
-				.vertex_count = 0,
-				.vertices = nullptr,
-				.vertex_type = PSHINE_VERTEX_PLANET
-			};
-			pshine_generate_planet_mesh(renderer, nullptr, &mesh_data, lod);
-			create_mesh(r, &mesh_data, &r->own_sphere_meshes[lod]);
-			free(mesh_data.indices);
-			free(mesh_data.vertices);
-		}
-	}
-
-	for (size_t i = 0; i < r->game->star_system_count; ++i) {
-		init_star_system(r, &r->game->star_systems_own[i]);
-	}
-
-	for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
-		if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) continue;
-		init_ship(r, &r->game->ships.ptr[i]);
-	}
-
-	PSHINE_DEBUG("Loading environment cubemap");
+static void init_skybox_job(struct pshine_job *job) {
+	struct vulkan_renderer *r = job->user;
 	r->skybox_image = load_texture_from_file(
 		r,
 		r->game->environment.texture_path_own,
@@ -1875,6 +1828,129 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 			},
 		},
 	}, 0, nullptr);
+}
+
+static void init_planet_mesh_job(struct pshine_job *job) {
+	struct vulkan_renderer *r = job->user;
+	struct pshine_mesh_data mesh_data = {
+		.index_count = 0,
+		.indices = nullptr,
+		.vertex_count = 0,
+		.vertices = nullptr,
+		.vertex_type = PSHINE_VERTEX_PLANET
+	};
+	pshine_generate_planet_mesh(&r->as_base, nullptr, &mesh_data, job->id);
+	create_mesh(r, &mesh_data, &r->own_sphere_meshes[job->id]);
+	free(mesh_data.indices);
+	free(mesh_data.vertices);
+}
+
+void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *game) {
+	struct vulkan_renderer *r = (void*)renderer;
+	r->game = game;
+	r->as_base.name = "Vulkan Renderer";
+	r->as_base.settings.do_bloom = true;
+	r->as_base.settings.render_ships = true;
+
+	r->key_states = calloc(PSHINE_KEY_COUNT_, sizeof(uint8_t));
+
+	r->lod_ranges[0] = 300'000.0;
+	r->lod_ranges[1] = 25'000.0;
+	r->lod_ranges[2] = 1'500.0;
+	r->lod_ranges[3] = 290.0;
+
+	r->opt_bloom = true;
+
+	init_glfw(r);
+	init_vulkan(r);
+	init_swapchain(r);
+	init_cmdbufs(r);
+	{
+		size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs);
+		r->game->jobs.ptr[idx] = (struct pshine_job){
+			.name_own = pshine_strdup("Transient images"),
+			.user = r,
+			.callback = &init_transients_job,
+		};
+	}
+	{
+		size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs);
+		r->game->jobs.ptr[idx] = (struct pshine_job){
+			.name_own = pshine_strdup("Render graph"),
+			.user = r,
+			.callback = &init_rendergraph_job,
+		};
+	}
+	{
+		size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs);
+		r->game->jobs.ptr[idx] = (struct pshine_job){
+			.name_own = pshine_strdup("Descriptors"),
+			.user = r,
+			.callback = &init_descriptors_job,
+		};
+	}
+	add_pipelines_jobs(r);
+	{
+		size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs);
+		r->game->jobs.ptr[idx] = (struct pshine_job){
+			.name_own = pshine_strdup("Game-related rendering data"),
+			.user = r,
+			.callback = &init_game_data_job,
+		};
+	}
+	init_sync(r);
+	init_frames(r);
+	init_imgui(r);
+
+	{
+		VkPhysicalDeviceFeatures features = {};
+		vkGetPhysicalDeviceFeatures(r->physical_device, &features);
+		PSHINE_INFO("GPU 64 bit float support: %s", features.shaderFloat64 ? "true" : "false");
+		PSHINE_INFO("GPU 64 bit int support:   %s", features.shaderInt64   ? "true" : "false");
+	}
+
+	{
+		r->sphere_mesh_count = 5;
+		r->own_sphere_meshes = calloc(r->sphere_mesh_count, sizeof(struct vulkan_mesh));
+		for (size_t lod = 0; lod < r->sphere_mesh_count; ++lod) {
+			size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs);
+			r->game->jobs.ptr[idx] = (struct pshine_job){
+				.name_own = pshine_format_string("Planet Mesh (LOD %zu)", lod),
+				.user = r,
+				.id = lod,
+				.callback = &init_planet_mesh_job,
+			};
+		}
+	}
+
+	for (size_t i = 0; i < r->game->star_system_count; ++i) {
+		size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs);
+		r->game->jobs.ptr[idx] = (struct pshine_job){
+			.name_own = pshine_format_string("Star system graphics (%s)", r->game->star_systems_own[i].name_own),
+			.user = r,
+			.id = i,
+			.callback = &init_star_system_job,
+		};
+	}
+
+	for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
+		size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs);
+		r->game->jobs.ptr[idx] = (struct pshine_job){
+			.name_own = pshine_format_string("Ship #%zu graphics", i + 1),
+			.user = r,
+			.id = i,
+			.callback = &init_ship_job,
+		};
+	}
+
+	{
+		size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs);
+		r->game->jobs.ptr[idx] = (struct pshine_job){
+			.name_own = pshine_format_string("Skybox"),
+			.user = r,
+			.callback = &init_skybox_job,
+		};
+	}
 }
 
 static const VkExtent2D atmo_lut_extent = { 1024, 1024 };
@@ -2102,6 +2178,7 @@ static void init_glfw(struct vulkan_renderer *r) {
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
 	// glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
 
 	int window_width = 1920 / 1.5, window_height = 1080 / 1.5;
@@ -2138,6 +2215,7 @@ static void deinit_glfw(struct vulkan_renderer *r) {
 
 
 static void init_vulkan(struct vulkan_renderer *r) {
+	PSHINE_INFO("Initializing Vulkan");
 	CHECKVK(volkInitialize());
 
 	uint32_t extension_count_glfw = 0;
@@ -2174,11 +2252,20 @@ static void init_vulkan(struct vulkan_renderer *r) {
 		VkLayerProperties props[count];
 		CHECKVK(vkEnumerateInstanceLayerProperties(&count, props));
 		for (uint32_t i = 0; i < count; ++i) {
+			PSHINE_DEBUG("Available instance layer: %s", props[i].layerName);
 			if (strcmp(props[i].layerName, "VK_LAYER_KHRONOS_validation") == 0) {
 				have_validation = true;
 				break;
 			}
 		}
+	}
+
+	// /opt/homebrew/Cellar/vulkan-validationlayers/1.4.341.0/lib/libVkLayer_khronos_validation.dylib
+	// /opt/homebrew/Cellar/vulkan-loader/1.4.335.0/lib/libVkLayer_khronos_validation.dylib
+
+	if (have_validation) PSHINE_DEBUG("Creating instance with validation layers");
+	for (uint32_t i = 0; i < ext_count; ++i) {
+		PSHINE_DEBUG("Creating instance with extension: %s", extensions[i]);
 	}
 
 	CHECKVK(vkCreateInstance(&(VkInstanceCreateInfo){
@@ -2439,11 +2526,13 @@ static VkFormat find_optimal_format(
 static void reinit_swapchain(struct vulkan_renderer *r) {
 	// vkDeviceWaitIdle(r->device);
 	// if (r->swapchain != VK_NULL_HANDLE) vkDestroySwapchainKHR(r->device, r->swapchain, nullptr);
-	int width, height;
+	int width = 0, height = 0;
+	float xscale = 1, yscale = 1;
 	glfwGetFramebufferSize(r->window, &width, &height);
-	r->swapchain_extent.width = width;
-	r->swapchain_extent.height = height;
-	// PSHINE_INFO("swapchain extent: %ux%u", r->swapchain_extent.width, r->swapchain_extent.height);
+	glfwGetWindowContentScale(r->window, &xscale, &yscale);
+	r->swapchain_extent.width = width / xscale;
+	r->swapchain_extent.height = height / yscale;
+	PSHINE_INFO("swapchain extent: %ux%u", r->swapchain_extent.width, r->swapchain_extent.height);
 	CHECKVK(vkCreateSwapchainKHR(r->device, &(VkSwapchainCreateInfoKHR){
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 		.surface = r->surface,
@@ -3363,254 +3452,210 @@ static struct vulkan_pipeline create_graphics_pipeline(
 	return (struct vulkan_pipeline){ .pipeline = pipeline, .layout = layout };
 }
 
-static void init_pipelines(struct vulkan_renderer *r) {
-	struct vulkan_pipeline mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/mesh.2.vert.spv",
-		.frag_fname = "build/pshine/data/shaders/mesh.frag.spv",
-		.render_pass = RPASS_HDR_GEOMETRY,
-		.push_constant_range_count = 0,
-		.set_layout_count = 3,
-		.set_layouts = (VkDescriptorSetLayout[]){
-			r->descriptors.global_layout,
-			r->descriptors.planet_material_layout,
-			r->descriptors.planet_mesh_layout,
-		},
-		.blend = false,
-		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
-		.vertex_kind = PSHINE_VERTEX_PLANET,
-		.layout_name = "planet mesh pipeline layout",
-		.pipeline_name = "planet mesh pipeline",
-		.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
-	});
-	r->pipelines.planet_mesh_pipeline = mesh_pipeline.pipeline;
-	r->pipelines.planet_mesh_layout = mesh_pipeline.layout;
+#define INIT_PIPELINE_JOB_FN(CNAME, ...) \
+	static void init_pipelines_job_##CNAME(struct pshine_job *job) { \
+		struct vulkan_renderer *r = job->user; \
+		struct vulkan_pipeline p = create_graphics_pipeline(r, \
+			&(struct graphics_pipeline_info)__VA_ARGS__); \
+		r->pipelines.CNAME##_pipeline = p.pipeline; \
+		r->pipelines.CNAME##_layout = p.layout; \
+	}
 
-	struct vulkan_pipeline color_mesh_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/mesh.1.vert.spv",
-		.frag_fname = "build/pshine/data/shaders/solid_color.frag.spv",
-		.render_pass = RPASS_HDR_GEOMETRY,
-		.push_constant_range_count = 1,
-		.push_constant_ranges = (VkPushConstantRange[]){
-			(VkPushConstantRange){
-				.offset = 0,
-				.size = sizeof(float4),
-				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-			}
+INIT_PIPELINE_JOB_FN(planet_mesh, {
+	.vert_fname = "build/pshine/data/shaders/mesh.2.vert.spv",
+	.frag_fname = "build/pshine/data/shaders/mesh.frag.spv",
+	.render_pass = RPASS_HDR_GEOMETRY,
+	.push_constant_range_count = 0,
+	.set_layout_count = 3,
+	.set_layouts = (VkDescriptorSetLayout[]){
+		r->descriptors.global_layout,
+		r->descriptors.planet_material_layout,
+		r->descriptors.planet_mesh_layout,
+	},
+	.blend = false,
+	.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
+	.vertex_kind = PSHINE_VERTEX_PLANET,
+	.layout_name = "planet mesh pipeline layout",
+	.pipeline_name = "planet mesh pipeline",
+	.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
+});
+INIT_PIPELINE_JOB_FN(planet_color_mesh, {
+	.vert_fname = "build/pshine/data/shaders/mesh.1.vert.spv",
+	.frag_fname = "build/pshine/data/shaders/solid_color.frag.spv",
+	.render_pass = RPASS_HDR_GEOMETRY,
+	.push_constant_range_count = 1,
+	.push_constant_ranges = (VkPushConstantRange[]){
+		(VkPushConstantRange){
+			.offset = 0,
+			.size = sizeof(float4),
+			.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+		}
+	},
+	.set_layout_count = 2,
+	.set_layouts = (VkDescriptorSetLayout[]){
+		r->descriptors.global_layout,
+		r->descriptors.planet_mesh_layout,
+	},
+	.blend = false,
+	.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
+	.vertex_kind = PSHINE_VERTEX_PLANET,
+	.layout_name = "solid color planet mesh pipeline layout",
+	.pipeline_name = "solid color planet mesh pipeline",
+	.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
+});
+INIT_PIPELINE_JOB_FN(rings, {
+	.vert_fname = "build/pshine/data/shaders/rings.vert.spv",
+	.frag_fname = "build/pshine/data/shaders/rings.frag.spv",
+	.render_pass = RPASS_HDR_GEOMETRY,
+	.push_constant_range_count = 0,
+	.set_layout_count = 2,
+	.set_layouts = (VkDescriptorSetLayout[]){
+		r->descriptors.global_layout,
+		r->descriptors.rings_layout,
+	},
+	.blend = true,
+	.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
+	.vertex_kind = PSHINE_VERTEX_NONE,
+	.layout_name = "rings pipeline layout",
+	.pipeline_name = "rings pipeline",
+	.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
+});
+INIT_PIPELINE_JOB_FN(std_mesh_de, {
+	.vert_fname = "build/pshine/data/shaders/std_mesh.vert.spv",
+	.frag_fname = "build/pshine/data/shaders/std_mesh.de.frag.spv",
+	.render_pass = RPASS_HDR_GEOMETRY,
+	.push_constant_range_count = 0,
+	.set_layout_count = 3,
+	.set_layouts = (VkDescriptorSetLayout[]){
+		r->descriptors.global_layout,
+		r->descriptors.std_material_layout,
+		r->descriptors.std_mesh_layout,
+	},
+	.triangle_strip = false,
+	.blend = false,
+	.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
+	.cull_mode = VK_CULL_MODE_BACK_BIT,
+	.vertex_kind = PSHINE_VERTEX_STATIC_MESH,
+	.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
+	.layout_name = "std mesh deferred pipeline layout",
+	.pipeline_name = "std mesh deferred pipeline",
+});
+INIT_PIPELINE_JOB_FN(std_mesh_shadow, {
+	.vert_fname = "build/pshine/data/shaders/std_mesh.shadow.vert.spv",
+	.frag_fname = "build/pshine/data/shaders/std_mesh.shadow.frag.spv",
+	.render_pass = RPASS_SHADOW,
+	.push_constant_range_count = 0,
+	.set_layout_count = 1,
+	.set_layouts = (VkDescriptorSetLayout[]){
+		r->descriptors.std_mesh_layout,
+	},
+	.triangle_strip = false,
+	.blend = false,
+	.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
+	.cull_mode = VK_CULL_MODE_FRONT_BIT,
+	.vertex_kind = PSHINE_VERTEX_STATIC_MESH,
+	.output_kind = GRAPHICS_PIPELINE_OUTPUT_SHADOW,
+	.layout_name = "std mesh shadow pipeline layout",
+	.pipeline_name = "std mesh shadow pipeline",
+});
+INIT_PIPELINE_JOB_FN(light, {
+	.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
+	.frag_fname = "build/pshine/data/shaders/light.frag.spv",
+	.render_pass = RPASS_HDR_LIGHTING,
+	.push_constant_range_count = 0,
+	.set_layout_count = 1,
+	.set_layouts = (VkDescriptorSetLayout[]){
+		r->descriptors.light_layout,
+	},
+	.triangle_strip = false,
+	.blend = false,
+	.depth = GRAPHICS_PIPELINE_DEPTH_NONE,
+	.vertex_kind = PSHINE_VERTEX_NONE,
+	.output_kind = GRAPHICS_PIPELINE_OUTPUT_COLOR,
+	.layout_name = "deferred light pipeline layout",
+	.pipeline_name = "deferred light pipeline",
+});
+INIT_PIPELINE_JOB_FN(skybox, {
+	.vert_fname = "build/pshine/data/shaders/skybox.vert.spv",
+	.frag_fname = "build/pshine/data/shaders/skybox.frag.spv",
+	.render_pass = RPASS_HDR_GEOMETRY,
+	.push_constant_range_count = 1,
+	.push_constant_ranges = (VkPushConstantRange[]) {
+		(VkPushConstantRange){
+			.offset = 0,
+			.size = sizeof(float4x4) * 2,
+			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
 		},
-		.set_layout_count = 2,
-		.set_layouts = (VkDescriptorSetLayout[]){
-			r->descriptors.global_layout,
-			r->descriptors.planet_mesh_layout,
+	},
+	.set_layout_count = 1,
+	.set_layouts = (VkDescriptorSetLayout[]){
+		r->descriptors.skybox_layout,
+	},
+	.blend = false,
+	.depth = GRAPHICS_PIPELINE_DEPTH_TEST_BIT,
+	.vertex_kind = false,
+	.lines = false,
+	.triangle_strip = true,
+	.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
+	.layout_name = "skybox pipeline layout",
+	.pipeline_name = "skybox pipeline",
+});
+INIT_PIPELINE_JOB_FN(atmo, {
+	.vert_fname = "build/pshine/data/shaders/atmo.vert.spv",
+	.frag_fname = "build/pshine/data/shaders/atmo.frag.spv",
+	.render_pass = RPASS_HDR_ATMOSPHERE,
+	.push_constant_range_count = 0,
+	.set_layout_count = 3,
+	.set_layouts = (VkDescriptorSetLayout[]){
+		r->descriptors.global_layout,
+		r->descriptors.planet_material_layout,
+		r->descriptors.atmo_layout,
+	},
+	.blend = false,
+	.depth = GRAPHICS_PIPELINE_DEPTH_NONE,
+	.vertex_kind = false,
+	.output_kind = GRAPHICS_PIPELINE_OUTPUT_COLOR,
+	.layout_name = "atmosphere pipeline layout",
+	.pipeline_name = "atmosphere pipeline",
+});
+INIT_PIPELINE_JOB_FN(blit, {
+	.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
+	.frag_fname = "build/pshine/data/shaders/blit.frag.spv",
+	.render_pass = RPASS_SDR_TONEMAP,
+	.push_constant_range_count = 1,
+	.push_constant_ranges = (VkPushConstantRange[]) {
+		(VkPushConstantRange){
+			.offset = 0,
+			.size = sizeof(struct pshine_graphics_settings),
+			.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 		},
-		.blend = false,
-		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
-		.vertex_kind = PSHINE_VERTEX_PLANET,
-		.layout_name = "solid color planet mesh pipeline layout",
-		.pipeline_name = "solid color planet mesh pipeline",
-		.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
-	});
-	r->pipelines.planet_color_mesh_pipeline = color_mesh_pipeline.pipeline;
-	r->pipelines.planet_color_mesh_layout = color_mesh_pipeline.layout;
-	PSHINE_DEBUG("created color_mesh_pipeline");
-
-	struct vulkan_pipeline rings_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/rings.vert.spv",
-		.frag_fname = "build/pshine/data/shaders/rings.frag.spv",
-		.render_pass = RPASS_HDR_GEOMETRY,
-		.push_constant_range_count = 0,
-		.set_layout_count = 2,
-		.set_layouts = (VkDescriptorSetLayout[]){
-			r->descriptors.global_layout,
-			r->descriptors.rings_layout,
-		},
-		.blend = true,
-		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
-		.vertex_kind = PSHINE_VERTEX_NONE,
-		.layout_name = "rings pipeline layout",
-		.pipeline_name = "rings pipeline",
-		.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
-	});
-	r->pipelines.rings_pipeline = rings_pipeline.pipeline;
-	r->pipelines.rings_layout = rings_pipeline.layout;
-	PSHINE_DEBUG("created rings_pipeline");
-
-	struct vulkan_pipeline std_mesh_de_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/std_mesh.vert.spv",
-		.frag_fname = "build/pshine/data/shaders/std_mesh.de.frag.spv",
-		.render_pass = RPASS_HDR_GEOMETRY,
-		.push_constant_range_count = 0,
-		.set_layout_count = 3,
-		.set_layouts = (VkDescriptorSetLayout[]){
-			r->descriptors.global_layout,
-			r->descriptors.std_material_layout,
-			r->descriptors.std_mesh_layout,
-		},
-		.triangle_strip = false,
-		.blend = false,
-		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
-		.cull_mode = VK_CULL_MODE_BACK_BIT,
-		.vertex_kind = PSHINE_VERTEX_STATIC_MESH,
-		.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
-		.layout_name = "std mesh deferred pipeline layout",
-		.pipeline_name = "std mesh deferred pipeline",
-	});
-	r->pipelines.std_mesh_de_pipeline = std_mesh_de_pipeline.pipeline;
-	r->pipelines.std_mesh_de_layout = std_mesh_de_pipeline.layout;
-	PSHINE_DEBUG("created std_mesh_de_pipeline");
-
-	struct vulkan_pipeline std_mesh_shadow_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/std_mesh.shadow.vert.spv",
-		.frag_fname = "build/pshine/data/shaders/std_mesh.shadow.frag.spv",
-		.render_pass = RPASS_SHADOW,
-		.push_constant_range_count = 0,
-		.set_layout_count = 1,
-		.set_layouts = (VkDescriptorSetLayout[]){
-			r->descriptors.std_mesh_layout,
-		},
-		.triangle_strip = false,
-		.blend = false,
-		.depth = GRAPHICS_PIPELINE_DEPTH_FULL,
-		.cull_mode = VK_CULL_MODE_FRONT_BIT,
-		.vertex_kind = PSHINE_VERTEX_STATIC_MESH,
-		.output_kind = GRAPHICS_PIPELINE_OUTPUT_SHADOW,
-		.layout_name = "std mesh shadow pipeline layout",
-		.pipeline_name = "std mesh shadow pipeline",
-	});
-	r->pipelines.std_mesh_shadow_pipeline = std_mesh_shadow_pipeline.pipeline;
-	r->pipelines.std_mesh_shadow_layout = std_mesh_shadow_pipeline.layout;
-	PSHINE_DEBUG("created std_mesh_shadow_pipeline");
-
-	struct vulkan_pipeline light_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
-		.frag_fname = "build/pshine/data/shaders/light.frag.spv",
-		.render_pass = RPASS_HDR_LIGHTING,
-		.push_constant_range_count = 0,
-		.set_layout_count = 1,
-		.set_layouts = (VkDescriptorSetLayout[]){
-			r->descriptors.light_layout,
-		},
-		.triangle_strip = false,
-		.blend = false,
-		.depth = GRAPHICS_PIPELINE_DEPTH_NONE,
-		.vertex_kind = PSHINE_VERTEX_NONE,
-		.output_kind = GRAPHICS_PIPELINE_OUTPUT_COLOR,
-		.layout_name = "deferred light pipeline layout",
-		.pipeline_name = "deferred light pipeline",
-	});
-	r->pipelines.light_pipeline = light_pipeline.pipeline;
-	r->pipelines.light_layout = light_pipeline.layout;
-	PSHINE_DEBUG("created light_pipeline");
-
-	struct vulkan_pipeline skybox_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/skybox.vert.spv",
-		.frag_fname = "build/pshine/data/shaders/skybox.frag.spv",
-		.render_pass = RPASS_HDR_GEOMETRY,
-		.push_constant_range_count = 1,
-		.push_constant_ranges = (VkPushConstantRange[]) {
-			(VkPushConstantRange){
-				.offset = 0,
-				.size = sizeof(float4x4) * 2,
-				.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-			},
-		},
-		.set_layout_count = 1,
-		.set_layouts = (VkDescriptorSetLayout[]){
-			r->descriptors.skybox_layout,
-		},
-		.blend = false,
-		.depth = GRAPHICS_PIPELINE_DEPTH_TEST_BIT,
-		.vertex_kind = false,
-		.lines = false,
-		.triangle_strip = true,
-		.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
-		.layout_name = "skybox pipeline layout",
-		.pipeline_name = "skybox pipeline",
-	});
-	r->pipelines.skybox_layout = skybox_pipeline.layout;
-	r->pipelines.skybox_pipeline = skybox_pipeline.pipeline;
-
-	struct vulkan_pipeline atmo_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/atmo.vert.spv",
-		.frag_fname = "build/pshine/data/shaders/atmo.frag.spv",
-		.render_pass = RPASS_HDR_ATMOSPHERE,
-		.push_constant_range_count = 0,
-		.set_layout_count = 3,
-		.set_layouts = (VkDescriptorSetLayout[]){
-			r->descriptors.global_layout,
-			r->descriptors.planet_material_layout,
-			r->descriptors.atmo_layout,
-		},
-		.blend = false,
-		.depth = GRAPHICS_PIPELINE_DEPTH_NONE,
-		.vertex_kind = false,
-		.output_kind = GRAPHICS_PIPELINE_OUTPUT_COLOR,
-		.layout_name = "atmosphere pipeline layout",
-		.pipeline_name = "atmosphere pipeline",
-	});
-	r->pipelines.atmo_pipeline = atmo_pipeline.pipeline;
-	r->pipelines.atmo_layout = atmo_pipeline.layout;
-	PSHINE_DEBUG("created atmo_pipeline");
-
-	struct vulkan_pipeline blit_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-		.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
-		.frag_fname = "build/pshine/data/shaders/blit.frag.spv",
-		.render_pass = RPASS_SDR_TONEMAP,
-		.push_constant_range_count = 1,
-		.push_constant_ranges = (VkPushConstantRange[]) {
-			(VkPushConstantRange){
-				.offset = 0,
-				.size = sizeof(struct pshine_graphics_settings),
-				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-			},
-		},
-		.set_layout_count = 1,
-		.set_layouts = (VkDescriptorSetLayout[]){
-			r->descriptors.blit_layout,
-		},
-		.blend = false,
-		.depth = GRAPHICS_PIPELINE_DEPTH_NONE,
-		.vertex_kind = false,
-		.output_kind = GRAPHICS_PIPELINE_OUTPUT_COLOR,
-		.layout_name = "blit pipeline layout",
-		.pipeline_name = "blit pipeline",
-	});
-	r->pipelines.blit_pipeline = blit_pipeline.pipeline;
-	r->pipelines.blit_layout = blit_pipeline.layout;
-
-	// struct vulkan_pipeline line_gizmo_pipeline = create_graphics_pipeline(r, &(struct graphics_pipeline_info){
-	// 	.vert_fname = "build/pshine/data/line_gizmo.vert.spv",
-	// 	.frag_fname = "build/pshine/data/line_gizmo.frag.spv",
-	// 	.render_pass = r->render_passes.main_pass,
-	// 	.subpass = 1,
-	// 	.push_constant_range_count = 0,
-	// 	.set_layout_count = 3,
-	// 	.set_layouts = (VkDescriptorSetLayout[]){
-	// 		r->descriptors.global_layout,
-	// 		r->descriptors.static_mesh_layout,
-	// 	},
-	// 	.blend = false,
-	// 	.depth_test = false,
-	// 	.vertex_input = true,
-	// 	.lines = true,
-	// 	.layout_name = "line gizmo pipeline layout",
-	// 	.pipeline_name = "line gizmo pipeline",
-	// });
-	// r->pipelines.line_gizmo_layout = line_gizmo_pipeline.layout;
-	// r->pipelines.line_gizmo_pipeline = line_gizmo_pipeline.pipeline;
+	},
+	.set_layout_count = 1,
+	.set_layouts = (VkDescriptorSetLayout[]){
+		r->descriptors.blit_layout,
+	},
+	.blend = false,
+	.depth = GRAPHICS_PIPELINE_DEPTH_NONE,
+	.vertex_kind = false,
+	.output_kind = GRAPHICS_PIPELINE_OUTPUT_COLOR,
+	.layout_name = "blit pipeline layout",
+	.pipeline_name = "blit pipeline",
+});
+static void init_pipelines_job_bloom(struct pshine_job *job) { \
+	struct vulkan_renderer *r = job->user; \
+	vkCreatePipelineLayout(r->device, &(VkPipelineLayoutCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.setLayoutCount = 1,
+		.pSetLayouts = &r->descriptors.atmo_lut_layout,
+		.pushConstantRangeCount = 1,
+		.pPushConstantRanges = &(VkPushConstantRange){
+			.offset = 0,
+			.size = sizeof(struct atmo_lut_push_const_data),
+			.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
+		}
+	}, nullptr, &r->pipelines.atmo_lut_layout);
 
 	{
-		vkCreatePipelineLayout(r->device, &(VkPipelineLayoutCreateInfo){
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = 1,
-			.pSetLayouts = &r->descriptors.atmo_lut_layout,
-			.pushConstantRangeCount = 1,
-			.pPushConstantRanges = &(VkPushConstantRange){
-				.offset = 0,
-				.size = sizeof(struct atmo_lut_push_const_data),
-				.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
-			}
-		}, nullptr, &r->pipelines.atmo_lut_layout);
-
 		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/atmo_lut.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
@@ -3625,8 +3670,6 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		}, nullptr, &r->pipelines.atmo_lut_pipeline);
 		NAME_VK_OBJECT(r, r->pipelines.atmo_lut_pipeline, VK_OBJECT_TYPE_PIPELINE, "atmo lut pipeline");
 		vkDestroyShaderModule(r->device, comp_shader_module, nullptr);
-	}
-	{
 		vkCreatePipelineLayout(r->device, &(VkPipelineLayoutCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 			.setLayoutCount = 1,
@@ -3642,7 +3685,9 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		}, nullptr, &r->pipelines.upsample_bloom_layout);
 		NAME_VK_OBJECT(r, r->pipelines.upsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT,
 			"upsample&bloom pipeline layout");
+	}
 
+	{
 		VkShaderModule comp_shader_module = create_shader_module_file(r,
 			"build/pshine/data/shaders/bloom_upsample.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
@@ -3658,8 +3703,6 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		}, nullptr, &r->pipelines.upsample_bloom_pipeline);
 		NAME_VK_OBJECT(r, r->pipelines.upsample_bloom_pipeline, VK_OBJECT_TYPE_PIPELINE, "upsample&bloom pipeline");
 		vkDestroyShaderModule(r->device, comp_shader_module, nullptr);
-	}
-	{
 		vkCreatePipelineLayout(r->device, &(VkPipelineLayoutCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 			.setLayoutCount = 1,
@@ -3675,7 +3718,9 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		}, nullptr, &r->pipelines.downsample_bloom_layout);
 		NAME_VK_OBJECT(r, r->pipelines.downsample_bloom_layout, VK_OBJECT_TYPE_PIPELINE_LAYOUT,
 			"downsample&bloom pipeline layout");
+	}
 
+	{
 		VkShaderModule comp_shader_module = create_shader_module_file(r,
 			"build/pshine/data/shaders/bloom_downsample.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
@@ -3720,6 +3765,26 @@ static void init_pipelines(struct vulkan_renderer *r) {
 		NAME_VK_OBJECT(r, r->pipelines.downsample_bloom_pipeline, VK_OBJECT_TYPE_PIPELINE, "downsample&bloom pipeline");
 		vkDestroyShaderModule(r->device, comp_shader_module, nullptr);
 	}
+}
+
+static void add_pipelines_jobs(struct vulkan_renderer *r) {
+	#define ADD_JOB(CALLBACK, NAME, ...) { \
+		size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs); \
+		r->game->jobs.ptr[idx] = (struct pshine_job){ \
+			.name_own = pshine_format_string(NAME __VA_OPT__(,) __VA_ARGS__), \
+			.id = 0, .user = r, .callback = &CALLBACK }; \
+	}
+	
+	ADD_JOB(init_pipelines_job_planet_mesh, "Planet Mesh Shaders");
+	ADD_JOB(init_pipelines_job_planet_color_mesh, "Planet Color Mesh Shaders");
+	ADD_JOB(init_pipelines_job_rings, "Rings Shaders");
+	ADD_JOB(init_pipelines_job_std_mesh_de, "Mesh Shaders");
+	ADD_JOB(init_pipelines_job_std_mesh_shadow, "Mesh Shadow Shaders");
+	ADD_JOB(init_pipelines_job_light, "Deferred Lighting Shaders");
+	ADD_JOB(init_pipelines_job_skybox, "Skybox Shaders");
+	ADD_JOB(init_pipelines_job_atmo, "Atmosphere Shaders");
+	ADD_JOB(init_pipelines_job_blit, "Blit Shaders");
+	ADD_JOB(init_pipelines_job_bloom, "Bloom Shaders");
 }
 
 static void deinit_pipelines(struct vulkan_renderer *r) {
@@ -3793,17 +3858,6 @@ static void deinit_sync(struct vulkan_renderer *r) {
 }
 
 
-// Uniform buffers
-
-static void init_ubufs(struct vulkan_renderer *r) {
-	(void)r;
-}
-
-static void deinit_ubufs(struct vulkan_renderer *r) {
-	(void)r;
-}
-
-
 // Descriptors
 
 static void init_descriptors(struct vulkan_renderer *r) {
@@ -3820,16 +3874,6 @@ static void init_descriptors(struct vulkan_renderer *r) {
 		}
 	}, nullptr, &r->descriptors.pool);
 	NAME_VK_OBJECT(r, r->descriptors.pool, VK_OBJECT_TYPE_DESCRIPTOR_POOL, "descriptor pool 1");
-	vkCreateDescriptorPool(r->device, &(VkDescriptorPoolCreateInfo){
-		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-		.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-		.maxSets = 1024,
-		.poolSizeCount = 1,
-		.pPoolSizes = (VkDescriptorPoolSize[]){
-			(VkDescriptorPoolSize){ .descriptorCount = 256, .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER },
-		}
-	}, nullptr, &r->descriptors.pool_imgui);
-	NAME_VK_OBJECT(r, r->descriptors.pool_imgui, VK_OBJECT_TYPE_DESCRIPTOR_POOL, "descriptor pool 2 (imgui)");
 
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -4169,7 +4213,6 @@ static void init_descriptors(struct vulkan_renderer *r) {
 
 static void deinit_descriptors(struct vulkan_renderer *r) {
 	vkDestroyDescriptorPool(r->device, r->descriptors.pool, nullptr);
-	vkDestroyDescriptorPool(r->device, r->descriptors.pool_imgui, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.global_layout, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.planet_material_layout, nullptr);
 	vkDestroyDescriptorSetLayout(r->device, r->descriptors.planet_mesh_layout, nullptr);
@@ -4437,7 +4480,7 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 
 // Game data
 
-static void init_data(struct vulkan_renderer *r) {
+static void init_game_data(struct vulkan_renderer *r) {
 	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
@@ -4562,11 +4605,19 @@ static void init_data(struct vulkan_renderer *r) {
 	init_view_dep_data(r, false);
 }
 
+static void deinit_game_data(struct vulkan_renderer *r) {
+	deallocate_buffer(r, r->data.global_uniform_buffer);
+
+	vkDestroySampler(r->device, r->skybox_sampler, nullptr);
+	vkDestroySampler(r->device, r->atmo_lut_sampler, nullptr);
+	vkDestroySampler(r->device, r->material_texture_sampler, nullptr);
+	vkDestroySampler(r->device, r->bloom_mipmap_sampler, nullptr);
+}
+
 static void init_frame(
 	struct vulkan_renderer *r,
 	uint32_t frame_index,
-	struct per_frame_data *f,
-	size_t planet_count
+	struct per_frame_data *f
 ) {
 	CHECKVK(vkAllocateCommandBuffers(r->device, &(VkCommandBufferAllocateInfo){
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -4606,17 +4657,8 @@ void deinit_frame(struct vulkan_renderer *r, struct per_frame_data *f) {
 }
 
 static void init_frames(struct vulkan_renderer *r) {
-	init_data(r);
-	size_t planet_count = 0;
-	for (size_t i = 0; i < r->game->star_system_count; ++i) {
-		struct pshine_star_system *system = &r->game->star_systems_own[i];
-		for (size_t j = 0; j < system->body_count; ++j) {
-			struct pshine_celestial_body *b = system->bodies_own[j];
-			planet_count += b->type == PSHINE_CELESTIAL_BODY_PLANET;
-		}
-	}
 	for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
-		init_frame(r, i, &r->frames[i], planet_count);
+		init_frame(r, i, &r->frames[i]);
 	}
 }
 
@@ -4624,10 +4666,6 @@ static void deinit_frames(struct vulkan_renderer *r) {
 	for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
 		deinit_frame(r, &r->frames[i]);
 	}
-
-	deallocate_buffer(r, r->data.global_uniform_buffer);
-	// deallocate_buffer(r, r->data.material_uniform_buffer);
-	// deallocate_buffer(r, r->data.atmo_uniform_buffer);
 }
 
 // ImGui
@@ -4654,56 +4692,67 @@ static void init_imgui(struct vulkan_renderer *r) {
 
 	ImGui_StyleColorsDark(nullptr);
 
-	cImGui_ImplVulkan_LoadFunctionsEx(&vulkan_loader_func_imgui, r);
-	cImGui_ImplGlfw_InitForVulkan(r->window, true);
+	// struct rg_pass *pass = &r->rgraph.passes_own[RPASS_SDR_GUI];
+	// uint32_t color_attachment_count = pass->color_attachment_count;
+	// VkFormat color_attachment_formats[8] = {};
+	// for (uint32_t i = 0; i < color_attachment_count; ++i) {
+	// 	struct rg_image_ref *ref = &pass->image_refs_own[pass->color_attachments[i]];
+	// 	color_attachment_formats[i] = ref->image_index == UINT32_MAX
+	// 		? r->surface_format.format
+	// 		: r->rgraph.images_own[ref->image_index].format;
+	// }
 
-	struct rg_pass *pass = &r->rgraph.passes_own[RPASS_SDR_GUI];
-	uint32_t color_attachment_count = pass->color_attachment_count;
-	VkFormat color_attachment_formats[8] = {};
-	for (uint32_t i = 0; i < color_attachment_count; ++i) {
-		struct rg_image_ref *ref = &pass->image_refs_own[pass->color_attachments[i]];
-		color_attachment_formats[i] = ref->image_index == UINT32_MAX
-			? r->surface_format.format
-			: r->rgraph.images_own[ref->image_index].format;
-	}
+	// VkFormat depth_attachment_format = {};
+	// if (pass->has_depth_attachment) {
+	// 	struct rg_image_ref *ref = &pass->image_refs_own[pass->depth_attachment];
+	// 	PSHINE_CHECK(ref->image_index != UINT32_MAX, "swapchain used as depth attachment");
+	// 	depth_attachment_format = r->rgraph.images_own[ref->image_index].format;
+	// }
 
-	VkFormat depth_attachment_format = {};
-	if (pass->has_depth_attachment) {
-		struct rg_image_ref *ref = &pass->image_refs_own[pass->depth_attachment];
-		PSHINE_CHECK(ref->image_index != UINT32_MAX, "swapchain used as depth attachment");
-		depth_attachment_format = r->rgraph.images_own[ref->image_index].format;
-	}
+	vkCreateDescriptorPool(r->device, &(VkDescriptorPoolCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+		.maxSets = 1024,
+		.poolSizeCount = 1,
+		.pPoolSizes = (VkDescriptorPoolSize[]){
+			(VkDescriptorPoolSize){ .descriptorCount = 256, .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER },
+		}
+	}, nullptr, &r->descriptors.pool_imgui);
+	NAME_VK_OBJECT(r, r->descriptors.pool_imgui, VK_OBJECT_TYPE_DESCRIPTOR_POOL, "descriptor pool for imgui");
 
-	cImGui_ImplVulkan_Init(&(ImGui_ImplVulkan_InitInfo){
-		.Instance = r->instance,
-		.PhysicalDevice = r->physical_device,
-		.Device = r->device,
-		.QueueFamily = r->queue_families[QUEUE_GRAPHICS],
-		.Queue = r->queues[QUEUE_GRAPHICS],
-		.PipelineCache = VK_NULL_HANDLE,
-		.DescriptorPool = r->descriptors.pool_imgui,
-		.MinImageCount = FRAMES_IN_FLIGHT,
-		.ImageCount = FRAMES_IN_FLIGHT,
-		.MSAASamples = VK_SAMPLE_COUNT_1_BIT,
-		.Allocator = nullptr,
-		.CheckVkResultFn = &check_vk_result_imgui,
-		.UseDynamicRendering = true,
-		.PipelineRenderingCreateInfo = {
+	pshine_imgui_backend_init(&(struct pshine_imgui_backend_init_info){
+		.instance = r->instance,
+		.physical_device = r->physical_device,
+		.device = r->device,
+		.queue_family = r->queue_families[QUEUE_GRAPHICS],
+		.queue = r->queues[QUEUE_GRAPHICS],
+		.pipeline_cache = VK_NULL_HANDLE,
+		.descriptor_pool = r->descriptors.pool_imgui,
+		.min_image_count = FRAMES_IN_FLIGHT,
+		.image_count = FRAMES_IN_FLIGHT,
+		.allocator = nullptr,
+		.check_vk_result_fn = &check_vk_result_imgui,
+		.msaa_samples = VK_SAMPLE_COUNT_1_BIT,
+		.main_pipeline = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-			.colorAttachmentCount = color_attachment_count,
-			.pColorAttachmentFormats = color_attachment_formats,
-			.depthAttachmentFormat = depth_attachment_format,
+			.colorAttachmentCount = 1,
+			.pColorAttachmentFormats = &r->surface_format.format,
 		},
+		.loader_fn = &vulkan_loader_func_imgui,
+		.user = r,
+		.window = r->window,
 	});
 
-	imgui_shadowcolor_ds = cImGui_ImplVulkan_AddTexture(r->material_texture_sampler,
+	imgui_shadowcolor_ds = pshine_imgui_backend_add_texture(r->material_texture_sampler,
 		r->transients.color_s.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	ImGui_GetIO()->DisplayFramebufferScale = (ImVec2){2.0, 2.0};
 }
 
 static void deinit_imgui(struct vulkan_renderer *r) {
-	cImGui_ImplVulkan_Shutdown();
-	cImGui_ImplGlfw_Shutdown();
+	pshine_imgui_backend_shutdown();
 	ImGui_DestroyContext(ImGui_GetCurrentContext());
+	vkDestroyDescriptorPool(r->device, r->descriptors.pool_imgui, nullptr);
 }
 
 static void deinit_star_system(struct vulkan_renderer *r, struct pshine_star_system *system) {
@@ -4731,7 +4780,6 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 	struct vulkan_renderer *r = (void*)renderer;
 
 	vkDeviceWaitIdle(r->device);
-	cImGui_ImplVulkan_DestroyFontsTexture();
 
 	for (size_t i = 0; i < r->game->star_system_count; ++i) {
 		deinit_star_system(r, &r->game->star_systems_own[i]);
@@ -4742,10 +4790,7 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 		deallocate_buffer(r, r->game->ships.ptr[i].graphics_data->uniform_buffer);
 	}
 
-	vkDestroySampler(r->device, r->skybox_sampler, nullptr);
-	vkDestroySampler(r->device, r->atmo_lut_sampler, nullptr);
-	vkDestroySampler(r->device, r->material_texture_sampler, nullptr);
-	vkDestroySampler(r->device, r->bloom_mipmap_sampler, nullptr);
+	deinit_game_data(r);
 
 	for (size_t i = 0; i < r->sphere_mesh_count; ++i)
 		destroy_mesh(r, &r->own_sphere_meshes[i]);
@@ -4781,7 +4826,6 @@ void pshine_deinit_renderer(struct pshine_renderer *renderer) {
 
 	deinit_imgui(r);
 	deinit_frames(r);
-	deinit_ubufs(r);
 	deinit_sync(r);
 	deinit_cmdbufs(r);
 	// deinit_fbufs(r);
@@ -4848,12 +4892,13 @@ struct do_frame_stuff {
 	struct pshine_star_system *current_system;
 };
 
-static void write_frame_data(
+static void write_game_frame_data(
 	struct vulkan_renderer *r,
 	struct per_frame_data *f,
 	size_t frame_number,
 	struct do_frame_stuff *stuff
 ) {
+	PSHINE_PERF_FUNC();
 	double3 camera_pos_scs = SCSd3_WCSp3(r->game->camera_position);
 	stuff->camera_pos_scs = camera_pos_scs;
 	double3 offset = double3vs(r->game->render_origin.values);
@@ -5204,26 +5249,27 @@ static void write_frame_data(
 	}
 }
 
-static void render_frame(
+static void render_game_frame(
 	struct vulkan_renderer *r,
 	struct per_frame_data *f,
 	struct do_frame_stuff *stuff,
 	size_t frame_number
 );
 
-static void do_frame(
+static void do_game_frame(
 	struct vulkan_renderer *r,
 	struct per_frame_data *f,
 	size_t frame_number
 ) {
+	PSHINE_PERF_FUNC();
 	struct do_frame_stuff stuff = {};
-	write_frame_data(r, f, frame_number, &stuff);
+	write_game_frame_data(r, f, frame_number, &stuff);
 
 	CHECKVK(vkBeginCommandBuffer(f->command_buffer, &(VkCommandBufferBeginInfo){
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	}));
 
-	render_frame(r, f, &stuff, frame_number);
+	render_game_frame(r, f, &stuff, frame_number);
 
 	vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
 			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -5252,12 +5298,13 @@ static void do_frame(
 	CHECKVK(vkEndCommandBuffer(f->command_buffer));
 }
 
-static void render_frame(
+static void render_game_frame(
 	struct vulkan_renderer *r,
 	struct per_frame_data *f,
 	struct do_frame_stuff *stuff,
 	size_t frame_number
 ) {
+	PSHINE_PERF_FUNC();
 	struct pshine_star_system *current_system = stuff->current_system;
 	double3 camera_pos_scs = stuff->camera_pos_scs;
 
@@ -5266,6 +5313,7 @@ static void render_frame(
 	// so no need to transition that. but we do need to transition the transient bloom images to general for
 	// the compute shader to write to them.
 	{
+		PSHINE_PERF_ZONE("Bloom barriers");
 		VkImageMemoryBarrier2 bloom_image_barriers[BLOOM_STAGE_COUNT];
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
 			bloom_image_barriers[i] = (VkImageMemoryBarrier2){
@@ -5310,6 +5358,7 @@ static void render_frame(
 
 	rg_graph_begin_pass(&r->rgraph); // Shadow
 	{
+		PSHINE_PERF_ZONE("Pass: Shadow");
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.std_mesh_shadow_pipeline);
 		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
 			.x = 0.0f,
@@ -5353,6 +5402,7 @@ static void render_frame(
 
 	rg_graph_begin_pass(&r->rgraph); // HDR Geometry
 	{
+		PSHINE_PERF_ZONE("Pass: HDR Geometry");
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.planet_mesh_pipeline);
 		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
 			.x = 0.0f,
@@ -5426,13 +5476,19 @@ static void render_frame(
 			struct pshine_celestial_body *b = current_system->bodies_own[i];
 			if (b->type == PSHINE_CELESTIAL_BODY_STAR) {
 				struct pshine_star *p = (void *)b;
+				double3 star_pos_scs = SCSd3_WCSp3(p->as_body.position);
+				double3 to_star = double3sub(star_pos_scs, camera_pos_scs);
+				double cam_distance = hypot(hypot(to_star.x, to_star.y), to_star.z);
+				// 149 598 000
+				double distance_factor = pow(cam_distance / PSHINE_AU_SCS, -2.0);
+				// double3 camera_pos_scs;
 				pshine_color_rgb rgb = pshine_blackbody_temp_to_rgb(p->temperature);
 				float4 color = float4xyz3w(
 					float3add(
 						float3xyz(rgb.rgb.r, rgb.rgb.g, rgb.rgb.b),
 						float3v(0.0f)
 					),
-					p->temperature / 20.0f
+					p->temperature / 20.0f * (float)distance_factor
 				);
 				vkCmdPushConstants(f->command_buffer, r->pipelines.planet_color_mesh_layout,
 					VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float4), &color);
@@ -5507,6 +5563,9 @@ static void render_frame(
 			}
 		);
 		for (size_t i = 0; i < r->game->ships.dyna.count; ++i) {
+			if (!r->as_base.settings.render_ships) {
+				continue;
+			}
 			/// Technically, accessing this might be UB if this is not a valid marker,
 			/// but no compilers care because most code relies on this being non-UB.
 			if (r->game->ships.ptr[i]._alive_marker != (size_t)-1) {
@@ -5573,6 +5632,7 @@ static void render_frame(
 	rg_graph_end_pass(&r->rgraph);
 	rg_graph_begin_pass(&r->rgraph); // HDR Atmosphere
 	{
+		PSHINE_PERF_ZONE("Pass: HDR Atmosphere");
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.atmo_pipeline);
 		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
 			.x = 0.0f,
@@ -5647,6 +5707,7 @@ static void render_frame(
 	rg_graph_end_pass(&r->rgraph);
 	rg_graph_begin_pass(&r->rgraph); // HDR Lighting
 	{
+		PSHINE_PERF_ZONE("Pass: HDR Lighting");
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.light_pipeline);
 		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
 			.x = 0.0f,
@@ -5674,7 +5735,8 @@ static void render_frame(
 	}
 	rg_graph_end_pass(&r->rgraph);
 	rg_graph_begin_pass(&r->rgraph); // Bloom
-	{
+	if (r->as_base.settings.do_bloom) {
+		PSHINE_PERF_ZONE("Pass: Bloom");
 		// The downsampling compute.
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, r->pipelines.first_downsample_bloom_pipeline);
 		for (size_t i = 0; i < BLOOM_STAGE_COUNT; ++i) {
@@ -5743,6 +5805,7 @@ static void render_frame(
 	rg_graph_end_pass(&r->rgraph);
 	rg_graph_begin_pass(&r->rgraph); // SDR Tonemap
 	{
+		PSHINE_PERF_ZONE("Pass: SDR Tonemap");
 		vkCmdBindPipeline(f->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines.blit_pipeline);
 		vkCmdSetViewport(f->command_buffer, 0, 1, &(VkViewport){
 			.x = 0.0f,
@@ -5771,23 +5834,31 @@ static void render_frame(
 	rg_graph_end_pass(&r->rgraph);
 	rg_graph_begin_pass(&r->rgraph); // SDR GUI
 	{
-		cImGui_ImplVulkan_RenderDrawData(ImGui_GetDrawData(), f->command_buffer);
+		PSHINE_PERF_ZONE("Pass: SDR GUI");
+		pshine_imgui_backend_render_draw_data(f->command_buffer);
 	}
 	rg_graph_end_pass(&r->rgraph);
 	rg_graph_end_frame(&r->rgraph);
 }
 
-static void render(struct vulkan_renderer *r, uint32_t current_frame, size_t frame_number) {
+static uint32_t render_begin(struct vulkan_renderer *r, uint32_t current_frame) {
 	struct per_frame_data *f = &r->frames[current_frame];
-	vkWaitForFences(r->device, 1, &f->sync.in_flight_fence, VK_TRUE, UINT64_MAX);
+	{
+		PSHINE_PERF_ZONE("Waiting for in flight fence");
+		vkWaitForFences(r->device, 1, &f->sync.in_flight_fence, VK_TRUE, UINT64_MAX);
+	}
 	vkResetFences(r->device, 1, &f->sync.in_flight_fence);
 	uint32_t image_index = 0;
-	VkResult acquireImageRes = vkAcquireNextImageKHR(
-		r->device, r->swapchain,
-		UINT64_MAX,
-		f->sync.image_avail_semaphore, VK_NULL_HANDLE,
-		&image_index
-	);
+	VkResult acquireImageRes;
+	{
+		PSHINE_PERF_ZONE("Acquire next image");
+		acquireImageRes = vkAcquireNextImageKHR(
+			r->device, r->swapchain,
+			UINT64_MAX,
+			f->sync.image_avail_semaphore, VK_NULL_HANDLE,
+			&image_index
+		);
+	}
 	if (acquireImageRes == VK_ERROR_OUT_OF_DATE_KHR || acquireImageRes == VK_SUBOPTIMAL_KHR) {
 		reinit_swapchain(r);
 		// deinit_fbufs(r);
@@ -5805,8 +5876,11 @@ static void render(struct vulkan_renderer *r, uint32_t current_frame, size_t fra
 
 	r->frames[current_frame].swapchain_image = r->swapchain_images_own[image_index];
 	r->frames[current_frame].swapchain_image_view = r->swapchain_image_views_own[image_index];
-	do_frame(r, &r->frames[current_frame], frame_number);
+	return image_index;
+}
 
+static void render_end(struct vulkan_renderer *r, uint32_t current_frame, uint32_t image_index) {
+	struct per_frame_data *f = &r->frames[current_frame];
 	CHECKVK(vkQueueSubmit(r->queues[QUEUE_GRAPHICS], 1, &(VkSubmitInfo){
 		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 		.commandBufferCount = 1,
@@ -5830,6 +5904,13 @@ static void render(struct vulkan_renderer *r, uint32_t current_frame, size_t fra
 	}));
 }
 
+static void render_game(struct vulkan_renderer *r, uint32_t current_frame, size_t frame_number) {
+	PSHINE_PERF_FUNC();
+	uint32_t image_index = render_begin(r, current_frame);
+	do_game_frame(r, &r->frames[current_frame], frame_number);
+	render_end(r, current_frame, image_index);
+}
+
 struct renderer_stats {
 	float fps;
 	float delta_time;
@@ -5842,18 +5923,29 @@ struct renderer_stats {
 	float cpu_memory_used;
 };
 
+static inline ImTextureRef ImTextureRefFromID(ImTextureID tex_id) {
+	ImTextureRef tex_ref;
+	tex_ref._TexData = NULL;
+	tex_ref._TexID = tex_id;
+	return tex_ref;
+}
+
+static inline ImTextureRef ImTextureRefFromDS(VkDescriptorSet ds) {
+	return ImTextureRefFromID((ImTextureID)ds);
+}
+
 static void show_stats_window(struct vulkan_renderer *r, const struct renderer_stats *stats) {
+	if (r->game->ui_dont_render_windows) return;
 	if (ImGui_Begin("Shadow Debug", nullptr, 0)) {
 		ImGui_SliderFloat("Height", &shadow_proj_height, 0.1f, 30.0f);
 		ImGui_PushStyleColor(ImGuiCol_Border, 0xFF'FF'FF'FF);
 		ImGui_PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-		ImGui_ImageEx((ImTextureID)imgui_shadowcolor_ds, (ImVec2){ .x = 256.0f, .y = 256.0f },
+		ImGui_ImageWithBgEx(ImTextureRefFromDS(imgui_shadowcolor_ds), (ImVec2){ .x = 256.0f, .y = 256.0f },
 			(ImVec2){0,0}, (ImVec2){1,1}, (ImVec4){1,1,1,1}, (ImVec4){0.5,0.9,0.8,1.0});
 		ImGui_PopStyleVar();
 		ImGui_PopStyleColor();
 	}
 	ImGui_End();
-	if (r->game->ui_dont_render_windows) return;
 	if (ImGui_Begin("Stats", nullptr, 0)) {
 		ImGui_Text("FPS: %.1f", stats->fps);
 		ImGui_Text("Delta Time: %.2fms", stats->delta_time * 1000.0f);
@@ -5889,6 +5981,9 @@ static void show_utils_window(struct vulkan_renderer *r) {
 		ImGui_SliderScalar("LOD1", ImGuiDataType_Double, &r->lod_ranges[1], &r->lod_ranges[2], &r->lod_ranges[0]);
 		ImGui_SliderScalar("LOD0", ImGuiDataType_Double, &r->lod_ranges[0], &r->lod_ranges[1], &lod_max);
 		ImGui_EndGroup();
+		ImGui_Separator();
+		ImGui_Checkbox("Render Ships", &r->as_base.settings.render_ships);
+		ImGui_Checkbox("Enable Bloom", &r->as_base.settings.do_bloom);
 	}
 	ImGui_End();
 }
@@ -6077,81 +6172,9 @@ void pshine_take_screenshot(
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 	}, nullptr, &f->sync.render_finish_semaphore));
 
-	do_frame(r, f, 0);
+	do_game_frame(r, f, 0);
 
 	renderer->settings = old_settings;
-}
-
-void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer) {
-	struct vulkan_renderer *r = (void*)renderer;
-
-	cImGui_ImplVulkan_CreateFontsTexture();
-
-	float last_time = glfwGetTime();
-
-	/// This is mod `FRAMES_IN_FLIGHT`.
-	uint32_t current_frame = 0;
-	/// This is the total count.
-	size_t frame_number = 0;
-
-	/// This is for computing the average dt.
-	size_t frames_since_dt_reset = 0;
-	float delta_time_sum = 0.0f;
-
-	rg_enable_debugging(true);
-
-	int last_width = 0, last_height = 0;
-	glfwGetFramebufferSize(r->window, &last_width, &last_height);
-	while (!glfwWindowShouldClose(r->window)) {
-		++frame_number; ++frames_since_dt_reset;
-		float current_time = glfwGetTime();
-		float delta_time = current_time - last_time;
-		r->scroll_delta = double2v0();
-		glfwPollEvents();
-
-		int current_width = 0, current_height = 0;
-		glfwGetFramebufferSize(r->window, &current_width, &current_height);
-
-		if (current_width != last_width || current_height != last_height) {
-			handle_swapchain_resize(r);
-		}
-
-		last_width = current_width;
-		last_height = current_height;
-
-		cImGui_ImplVulkan_NewFrame();
-		cImGui_ImplGlfw_NewFrame();
-		ImGui_NewFrame();
-		pshine_update_game(game, delta_time);
-
-		if (!game->ui_dont_render_windows)
-			ImGui_ShowDemoWindow(nullptr);
-
-		{
-			struct renderer_stats stats = {
-				.frame_number = frame_number,
-				.avg_delta_time = delta_time_sum / frames_since_dt_reset,
-				.delta_time = delta_time,
-				.cpu_memory_used = pshine_get_mem_usage() / 1024.0f,
-				.gpu_memory = {},
-				.fps = 1.0f / delta_time,
-			};
-			set_gpu_mem_usage(r, &stats);
-			show_stats_window(r, &stats);
-		}
-		show_gizmos(r);
-		show_utils_window(r);
-		ImGui_Render();
-		render(r, current_frame, frame_number);
-		if (delta_time_sum >= 20.0f) {
-			delta_time_sum = 0.0f;
-			frames_since_dt_reset = 0;
-		}
-		delta_time_sum += delta_time;
-		last_time = current_time;
-		current_frame = (current_frame + 1) % FRAMES_IN_FLIGHT;
-		if (frame_number > 2) rg_enable_debugging(false);
-	}
 }
 
 const uint8_t *pshine_get_key_states(struct pshine_renderer *renderer) {
@@ -6173,4 +6196,212 @@ void pshine_get_mouse_scroll_delta(struct pshine_renderer *renderer, double *x, 
 	struct vulkan_renderer *r = (void*)renderer;
 	if (x != nullptr) *x = r->scroll_delta.x;
 	if (y != nullptr) *y = r->scroll_delta.y;
+}
+
+void pshine_main_loop(struct pshine_game *game, struct pshine_renderer *renderer) {
+	struct vulkan_renderer *r = (void*)renderer;
+
+	// cImGui_ImplVulkan_CreateFontsTexture();
+
+	float last_time = glfwGetTime();
+
+	/// This is mod `FRAMES_IN_FLIGHT`.
+	uint32_t current_frame = 0;
+	/// This is the total count.
+	size_t frame_number = 0;
+
+	/// This is for computing the average dt.
+	size_t frames_since_dt_reset = 0;
+	float delta_time_sum = 0.0f;
+
+	rg_enable_debugging(true);
+
+	int last_width = 0, last_height = 0;
+	glfwGetFramebufferSize(r->window, &last_width, &last_height);
+
+	size_t current_job = 0;
+	while (!glfwWindowShouldClose(r->window)) {
+		glfwPollEvents();
+
+		int current_width = 0, current_height = 0;
+		glfwGetFramebufferSize(r->window, &current_width, &current_height);
+
+		if (current_width != last_width || current_height != last_height) {
+			handle_swapchain_resize(r);
+		}
+
+		last_width = current_width;
+		last_height = current_height;
+
+		if (current_job >= r->game->jobs.dyna.count) {
+			break;
+		}
+
+		pshine_imgui_backend_new_frame();
+		ImGui_NewFrame();
+		ImVec2 imgui_screen_size = ImGui_GetIO()->DisplaySize;
+		ImVec2 loading_window_size = { .x = 400.0f, .y = 200.0f };
+		ImGui_SetNextWindowPos((ImVec2){
+			.x = (imgui_screen_size.x - loading_window_size.x) / 2,
+			.y = (imgui_screen_size.y - loading_window_size.y) / 2,
+		}, ImGuiCond_None);
+		ImGui_SetNextWindowSize(loading_window_size, ImGuiCond_None);
+		if (ImGui_Begin(
+			"Game Load Progress",
+			nullptr,
+			ImGuiWindowFlags_NoDecoration |
+			ImGuiWindowFlags_NoBackground |
+			ImGuiWindowFlags_NoSavedSettings |
+			ImGuiWindowFlags_NoInputs
+		)) {
+			ImGui_Text(
+				"%.1f%% (%zu/%zu) %s",
+				current_job / (float)r->game->jobs.dyna.count * 100.0f,
+				current_job + 1,
+				r->game->jobs.dyna.count,
+				r->game->jobs.ptr[current_job].name_own
+			);
+		}
+		ImGui_End();
+		ImGui_Render();
+
+		uint32_t image_index = render_begin(r, current_frame);
+		struct per_frame_data *f = &r->frames[current_frame];
+		CHECKVK(vkBeginCommandBuffer(f->command_buffer, &(VkCommandBufferBeginInfo){
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		}));
+
+		vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &(VkImageMemoryBarrier2){
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.image = f->swapchain_image,
+				.srcStageMask = VK_PIPELINE_STAGE_2_NONE,
+				.srcAccessMask = VK_ACCESS_2_NONE,
+				.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+				.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				.subresourceRange = (VkImageSubresourceRange){
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.baseArrayLayer = 0,
+					.baseMipLevel = 0,
+					.layerCount = 1,
+					.levelCount = 1,
+				},
+				.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			},
+		});
+
+		vkCmdBeginRendering(f->command_buffer, &(VkRenderingInfo){
+			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+			.colorAttachmentCount = 1,
+			.pColorAttachments = &(VkRenderingAttachmentInfo){
+				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
+				.clearValue = (VkClearValue){
+					.color = (VkClearColorValue){
+						.float32 = { 0.0f, 0.0f, 0.0f, 1.0f }
+					},
+				},
+				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+				.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				.imageView = f->swapchain_image_view,
+			},
+			.renderArea = (VkRect2D){
+				.offset = (VkOffset2D){ .x = 0, .y = 0 },
+				.extent = r->swapchain_extent,
+			},
+			.layerCount = 1,
+		});
+		
+		pshine_imgui_backend_render_draw_data(f->command_buffer);
+
+		vkCmdEndRendering(f->command_buffer);
+
+		vkCmdPipelineBarrier2(f->command_buffer, &(VkDependencyInfo){
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &(VkImageMemoryBarrier2){
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.image = f->swapchain_image,
+				.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+				.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+				.dstStageMask = VK_PIPELINE_STAGE_2_NONE,
+				.dstAccessMask = 0,
+				.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+				.subresourceRange = (VkImageSubresourceRange){
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.baseArrayLayer = 0,
+					.baseMipLevel = 0,
+					.layerCount = 1,
+					.levelCount = 1,
+				},
+				.srcQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+				.dstQueueFamilyIndex = r->queue_families[QUEUE_GRAPHICS],
+			},
+		});
+
+		CHECKVK(vkEndCommandBuffer(f->command_buffer));
+		render_end(r, current_frame, image_index);
+
+		struct pshine_job *job = &r->game->jobs.ptr[current_job++];
+		job->callback(job);
+
+		current_frame = (current_frame + 1) % FRAMES_IN_FLIGHT;
+	}
+
+	while (!glfwWindowShouldClose(r->window)) {
+		++frame_number; ++frames_since_dt_reset;
+		float current_time = glfwGetTime();
+		float delta_time = current_time - last_time;
+		r->scroll_delta = double2v0();
+		glfwPollEvents();
+
+		int current_width = 0, current_height = 0;
+		glfwGetFramebufferSize(r->window, &current_width, &current_height);
+
+		if (current_width != last_width || current_height != last_height) {
+			handle_swapchain_resize(r);
+		}
+
+		last_width = current_width;
+		last_height = current_height;
+
+		pshine_imgui_backend_new_frame();
+		ImGui_NewFrame();
+		pshine_update_game(game, delta_time);
+
+		if (!game->ui_dont_render_windows)
+			ImGui_ShowDemoWindow(nullptr);
+
+		{
+			struct renderer_stats stats = {
+				.frame_number = frame_number,
+				.avg_delta_time = delta_time_sum / frames_since_dt_reset,
+				.delta_time = delta_time,
+				.cpu_memory_used = pshine_get_mem_usage() / 1024.0f,
+				.gpu_memory = {},
+				.fps = 1.0f / delta_time,
+			};
+			set_gpu_mem_usage(r, &stats);
+			show_stats_window(r, &stats);
+		}
+		show_gizmos(r);
+		show_utils_window(r);
+		ImGui_Render();
+		render_game(r, current_frame, frame_number);
+		if (delta_time_sum >= 20.0f) {
+			delta_time_sum = 0.0f;
+			frames_since_dt_reset = 0;
+		}
+		delta_time_sum += delta_time;
+		last_time = current_time;
+		current_frame = (current_frame + 1) % FRAMES_IN_FLIGHT;
+		if (frame_number > 2) rg_enable_debugging(false);
+		PSHINE_PERF_FRAME_MARK();
+	}
 }

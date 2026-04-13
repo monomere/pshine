@@ -10,6 +10,8 @@ int main(int argc, char **argv) {
 	//            ^^^^^^^
 	//         C being dumb
 
+	pshine_set_cwd_to_exe();
+
 	FILE *log_fout = fopen("log.log", "wb");
 	pshine_log_sinks = (struct pshine_log_sink[]){
 		(struct pshine_log_sink){ stderr, true },

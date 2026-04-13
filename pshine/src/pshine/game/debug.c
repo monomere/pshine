@@ -1,5 +1,5 @@
 #include "game.h"
-#include <cimgui/cimgui.h>
+#include <dcimgui/dcimgui.h>
 
 static void spectrometry_imgui(struct pshine_game *game, float actual_delta_time) {
 	if (ImGui_Begin("Spectrometry", nullptr, 0)) {
@@ -142,7 +142,7 @@ static void science_imgui(struct pshine_game *game, float actual_delta_time) {
 		ImGui_PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0);
 		ImGui_PushStyleColor(ImGuiCol_ChildBg, 0xFF050505);
 		ImVec2 size = { 100, 100 };
-		if (ImGui_BeginChild("Superposition", size, ImGuiChildFlags_Border, 0)) {
+		if (ImGui_BeginChild("Superposition", size, ImGuiChildFlags_Borders, 0)) {
 			double3 sum = double3v0();
 			for (size_t i = 0; i < game->star_systems_own[game->current_star_system].body_count; ++i) {
 				struct pshine_celestial_body *body = game->star_systems_own[game->current_star_system].bodies_own[i];

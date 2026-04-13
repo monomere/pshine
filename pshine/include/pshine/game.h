@@ -24,25 +24,28 @@ typedef union pshine_vector3d_ {
 } pshine_vector3d;
 
 /// eXtra Scaled Coordinate Space Scale (XCS -> SCS)
-static const double PSHINE_XCS_SCALE = 1048576.0;
+static constexpr double PSHINE_XCS_SCALE = 1048576.0;
 
 /// eXtra Scaled Coordinate Space Factor (SCS -> XCS) (`1.0 / PSHINE_XCS_SCALE`)
-static const double PSHINE_XCS_FACTOR = (1.0 / PSHINE_XCS_SCALE);
+static constexpr double PSHINE_XCS_FACTOR = (1.0 / PSHINE_XCS_SCALE);
 
 /// Scaled Coordinate Space Scale (SCS -> WCS)
-static const double PSHINE_SCS_SCALE = 8192.0;
+static constexpr double PSHINE_SCS_SCALE = 8192.0;
 
 /// Scaled Coordinate Space Factor (WCS -> SCS) (`1.0 / PSHINE_SCS_SCALE`)
-static const double PSHINE_SCS_FACTOR = 1.0 / PSHINE_SCS_SCALE;
+static constexpr double PSHINE_SCS_FACTOR = 1.0 / PSHINE_SCS_SCALE;
 
 /// eXtra Scaled Coordinate Space Factor (WCS -> XCS) (`PSHINE_XCS_FACTOR * PSHINE_SCS_FACTOR`)
-static const double PSHINE_XCS_WCS_FACTOR = PSHINE_XCS_FACTOR * PSHINE_SCS_FACTOR;
+static constexpr double PSHINE_XCS_WCS_FACTOR = PSHINE_XCS_FACTOR * PSHINE_SCS_FACTOR;
 
 /// eXtra Scaled Coordinate Space Scale (XCS -> SCS)
-static const double PSHINE_XCS_WCS_SCALE = PSHINE_XCS_SCALE * PSHINE_SCS_SCALE;
+static constexpr double PSHINE_XCS_WCS_SCALE = PSHINE_XCS_SCALE * PSHINE_SCS_SCALE;
 
 /// in m/s
-static const double PSHINE_SPEED_OF_LIGHT = 299'792'458.0;
+static constexpr double PSHINE_SPEED_OF_LIGHT = 299'792'458.0;
+
+static constexpr double PSHINE_AU = 149'598'000'000.;
+static constexpr double PSHINE_AU_SCS = PSHINE_AU / PSHINE_SCS_SCALE;
 
 /// ~1:8000000000 (see `PSHINE_XCS_SCALE`)
 typedef union pshine_point3d_xscaled_ {
@@ -365,6 +368,14 @@ struct pshine_graphics_settings {
 	float camera_fov;
 };
 
+struct pshine_job {
+	char *name_own;
+	size_t id;
+	char *id_str_own;
+	void *user;
+	void (*callback)(struct pshine_job *job);
+};
+
 struct pshine_game {
 	struct pshine_game_data *data_own;
 
@@ -403,6 +414,9 @@ struct pshine_game {
 	struct pshine_pcg64_state rng64;
 
 	PSHINE_DYNA_(struct pshine_ship) ships;
+
+	// Insert-only.
+	PSHINE_DYNA_(struct pshine_job) jobs;
 };
 
 /// This is ran at the start of the game, before the renderer is initialized.

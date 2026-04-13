@@ -8,10 +8,40 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#ifdef __MACH__
+#include <mach-o/dyld.h>
+#endif
+
 #include <pshine/util.h>
 
-// TODO: don't panic on error, return nullptr instead.
+void pshine_sleep_ms(size_t ms) {
+	usleep(ms * 1000);
+}
 
+void pshine_set_cwd_to_exe() {
+	char buf[1024] = {};
+	uint32_t len = sizeof(buf) - 1;
+#if defined(__MACH__)
+	PSHINE_CHECK(_NSGetExecutablePath(buf, &len) >= 0, "Why is the executable so deep wth");
+#elif defined(__unix__) || defined(__unix)
+	readlink("/proc/self/exe", buf, len);
+#else
+#error platform not fully implemented yet
+#endif
+	fprintf(stderr, "Executable path is '%s'\n", buf);
+	char *buf2 = realpath(buf, nullptr);
+	char *end = buf2 + strlen(buf2);
+	for (int i = 0; i < 3; ++i) {
+		--end;
+		while (end != buf2 && *end != '/') --end;
+	}
+	*end = '\0';
+	fprintf(stderr, "Setting working directory to '%s'\n", buf2);
+	chdir(buf2);
+	free(buf2);
+}
+
+// TODO: don't panic on error, return nullptr instead.
 /// Returns malloc'd buffer
 char *pshine_read_file(const char *fname, size_t *size) {
 	PSHINE_DEBUG("reading file '%s'", fname);

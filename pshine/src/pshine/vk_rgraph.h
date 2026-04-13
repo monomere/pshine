@@ -57,6 +57,8 @@
 #include <limits.h>
 #include <vulkan/vulkan.h>
 
+#include "perf.h"
+
 #if __STDC_VERSION__ < 202300L
 #include <stdbool.h>
 #endif
@@ -961,6 +963,7 @@ void rg_graph_begin_frame(
 	VkImageView swapchain_image_view,
 	VkCommandBuffer command_buffer
 ) {
+	PSHINE_PERF_FUNC();
 	graph->current.pass_index = 0;
 	graph->current.render_area = render_area;
 	graph->current.swapchain_image.image = swapchain_image;
@@ -1018,6 +1021,7 @@ static VkRenderingAttachmentInfo rg_i_vulkan_from_image_ref(
 }
 
 void rg_graph_begin_pass(struct rg_graph *graph) {
+	PSHINE_PERF_FUNC();
 	struct rg_pass *pass = &graph->passes_own[graph->current.pass_index];
 	RG_DEBUG_PRINTF("begin_pass %s%s\n", pass->name, pass->merged_with_prev ? " (<-merged)" : "");
 	if (pass->merged_with_prev) return;
@@ -1080,6 +1084,7 @@ void rg_graph_begin_pass(struct rg_graph *graph) {
 }
 
 void rg_graph_end_pass(struct rg_graph *graph) {
+	PSHINE_PERF_FUNC();
 	// RG_DEBUG_PRINTF("current pass index: %u\n", graph->current.pass_index);
 	struct rg_pass *pass = &graph->passes_own[graph->current.pass_index];
 	if (!pass->compute && !pass->merged_with_next && graph->current.command_buffer) {

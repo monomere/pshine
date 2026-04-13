@@ -1,7 +1,8 @@
 #include "game.h"
+#include "../perf.h"
 #include <string.h>
 #include <pshine/util.h>
-#include <cimgui/cimgui.h>
+#include <dcimgui/dcimgui.h>
 
 static struct keybinds keybinds_arc_movement = {
 	.name = "arc_movement",
@@ -152,10 +153,27 @@ static void init_star_system(struct pshine_game *game, struct pshine_star_system
 	}
 }
 
+void sleep_job(struct pshine_job *job) {
+	pshine_sleep_ms(job->id * 1000);
+}
+
+static void init_star_system_job(struct pshine_job *job) {
+	struct pshine_game *game = job->user;
+	init_star_system(game, &game->star_systems_own[job->id]);
+}
+
 void pshine_init_game(struct pshine_game *game) {
 	{
 		struct pshine_timeval now = pshine_timeval_now();
 		pshine_pcg64_init(&game->rng64, now.sec, now.nsec);
+	}
+
+	for (size_t i = 0; i < 1; ++i) {
+		size_t idx = PSHINE_DYNA_ALLOC(game->jobs);
+		game->jobs.ptr[idx].callback = sleep_job;
+		game->jobs.ptr[idx].id = i;
+		game->jobs.ptr[idx].user = game;
+		game->jobs.ptr[idx].name_own = pshine_format_string("Loading stuff #%zu", i);
 	}
 
 	game->time_scale = 1.0f;
@@ -163,9 +181,15 @@ void pshine_init_game(struct pshine_game *game) {
 	load_game_config(game, "data/config.toml");
 
 	game->data_own->audio = pshine_create_audio();
-
+	
 	for (size_t i = 0; i < game->star_system_count; ++i) {
-		init_star_system(game, &game->star_systems_own[i]);
+		size_t idx = PSHINE_DYNA_ALLOC(game->jobs);
+		game->jobs.ptr[idx] = (struct pshine_job){
+			.callback = &init_star_system_job,
+			.user = game,
+			.id = i,
+			.name_own = pshine_format_string("Star system (%s)", game->star_systems_own[i].name_own),
+		};
 	}
 
 	{
@@ -191,7 +215,8 @@ void pshine_init_game(struct pshine_game *game) {
 		PSHINE_PANIC("No star systems present, there's nothing to show; exiting.");
 	}
 	game->data_own->selected_body = 0;
-	game->data_own->camera_dist = game->star_systems_own[game->current_star_system].bodies_own[0]->radius + 165'000'000.0;
+	game->data_own->camera_dist = 365'000'000.0;
+	// game->star_systems_own[game->current_star_system].bodies_own[0]->radius + 165'000'000.0;
 	game->camera_position.xyz.z = -game->data_own->camera_dist;
 	game->data_own->camera_yaw = π/2;
 	game->data_own->camera_pitch = 0.0;
@@ -210,7 +235,7 @@ void pshine_init_game(struct pshine_game *game) {
 	game->material_smoothness_ = 0.02f;
 	game->data_own->is_control_precise = false;
 	game->data_own->ship_camera_data.target_distance = 50.0;
-	
+
 	game->data_own->keybinds_ship_movement = &keybinds_ship_movement;
 	game->data_own->keybinds_arc_movement = &keybinds_arc_movement;
 	game->data_own->keybinds_fly_movement = &keybinds_fly_movement;
@@ -264,6 +289,12 @@ void pshine_deinit_game(struct pshine_game *game) {
 	PSHINE_DEBUG("Destroying Audio");
 	pshine_destroy_audio(&game->data_own->audio);
 	free(game->data_own);
+	for (size_t i = 0; i < game->jobs.dyna.count; ++i) {
+		free(game->jobs.ptr[i].name_own);
+		if (game->jobs.ptr[i].id_str_own != nullptr)
+			free(game->jobs.ptr[i].id_str_own);
+	}
+	pshine_free_dyna_(&game->jobs.dyna);
 }
 
 [[maybe_unused]]
@@ -400,10 +431,10 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	floatR cam_global_orient = floatRnlerp(*prev_orient, target_orient, 0.1);
 	*prev_orient = cam_global_orient;
 	float3 cam_forward = floatRapply(cam_global_orient, float3xyz(0, 0, 1));
-	
+
 	float3 cam_up = floatRapply(cam_global_orient, float3xyz(0, 1, 0));
 	float3 cam_right = floatRapply(cam_global_orient, float3xyz(1, 0, 0));
-	
+
 	double velocity_frac = ship->is_in_warp ? 1.0 : ship->velocity / ship->max_space_velocity;
 
 	float shake_x = pshine_pcg64_random_float(&game->rng64);
@@ -420,7 +451,7 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 	double3 cam_offset =
 		double3add(
 			double3mul(
-				double3_float3(cam_forward), 
+				double3_float3(cam_forward),
 				-game->data_own->ship_camera_data.distance - speed_distance_offset
 			),
 			double3_float3(cam_shake)
@@ -433,6 +464,7 @@ static void update_camera_ship(struct pshine_game *game, float delta_time) {
 }
 
 void pshine_update_game(struct pshine_game *game, float actual_delta_time) {
+	PSHINE_PERF_FUNC();
 	game->time += actual_delta_time * game->time_scale;
 
 	double2 mouse_pos;

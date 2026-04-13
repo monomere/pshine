@@ -16,24 +16,22 @@ build $builddir/pshine/game/debug.c.o     : cc $mod/src/pshine/game/debug.c
 build $builddir/pshine/game/config.c.o    : cc $mod/src/pshine/game/config.c
 build $builddir/pshine/game/terrain.c.o   : cc $mod/src/pshine/game/terrain.c
 
-build $builddir/pshine/cgltf.c.o         : cc  $mod/src/pshine/single_header/cgltf.c
-build $builddir/pshine/stb.c.o           : cc  $mod/src/pshine/single_header/stb.c
-build $builddir/pshine/miniaudio.c.o     : cc  $mod/src/pshine/single_header/miniaudio.c
-build $builddir/pshine/vk_mem_alloc.cc.o : cxx $mod/src/pshine/single_header/vk_mem_alloc.cc
-build $builddir/vendor/volk.c.o          : cc  $mod/src/vendor/volk.c
-build $builddir/vendor/toml.c.o          : cc  $mod/src/vendor/toml.c
+build $builddir/pshine/cgltf.c.o          : cc  $mod/src/pshine/single_header/cgltf.c
+build $builddir/pshine/stb.c.o            : cc  $mod/src/pshine/single_header/stb.c
+build $builddir/pshine/miniaudio.c.o      : cc  $mod/src/pshine/single_header/miniaudio.c
+build $builddir/pshine/imgui_backend.cc.o : cxx $mod/src/pshine/imgui_backend.cc
+build $builddir/pshine/vk_mem_alloc.cc.o  : cxx $mod/src/pshine/single_header/vk_mem_alloc.cc
+build $builddir/vendor/volk.c.o           : cc  $mod/src/vendor/volk.c
+build $builddir/vendor/toml.c.o           : cc  $mod/src/vendor/toml.c
 
-build $builddir/vendor/cimgui/backends/cimgui_impl_glfw.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_glfw.cpp
-build $builddir/vendor/cimgui/backends/cimgui_impl_vulkan.cpp.o : cxx $mod/src/vendor/cimgui/backends/cimgui_impl_vulkan.cpp
-  cflags2 = -DIMGUI_IMPL_VULKAN_USE_VOLK=1
-build $builddir/vendor/imgui/backends/imgui_impl_glfw.cpp.o : cxx vendor/imgui/backends/imgui_impl_glfw.cpp
-build $builddir/vendor/imgui/backends/imgui_impl_vulkan.cpp.o : cxx vendor/imgui/backends/imgui_impl_vulkan.cpp
-build $builddir/vendor/cimgui/cimgui.cpp.o       : cxx $mod/src/vendor/cimgui/cimgui.cpp
+build $builddir/vendor/dcimgui/dcimgui.cpp.o     : cxx $mod/src/vendor/dcimgui/dcimgui.cpp
 build $builddir/vendor/imgui/imgui.cpp.o         : cxx vendor/imgui/imgui.cpp
 build $builddir/vendor/imgui/imgui_demo.cpp.o    : cxx vendor/imgui/imgui_demo.cpp
 build $builddir/vendor/imgui/imgui_draw.cpp.o    : cxx vendor/imgui/imgui_draw.cpp
 build $builddir/vendor/imgui/imgui_tables.cpp.o  : cxx vendor/imgui/imgui_tables.cpp
 build $builddir/vendor/imgui/imgui_widgets.cpp.o : cxx vendor/imgui/imgui_widgets.cpp
+build $builddir/vendor/imgui/backends/imgui_impl_vulkan.cpp.o : cxx vendor/imgui/backends/imgui_impl_vulkan.cpp
+build $builddir/vendor/imgui/backends/imgui_impl_glfw.cpp.o : cxx vendor/imgui/backends/imgui_impl_glfw.cpp
 
 build $builddir/data/shaders/tri.vert.spv              : glslc data/shaders/tri.vert
 build $builddir/data/shaders/tri.frag.spv              : glslc data/shaders/tri.frag
@@ -82,14 +80,13 @@ build $builddir/main: ld $
   $builddir/pshine/cgltf.c.o $
   $builddir/pshine/miniaudio.c.o $
   $builddir/pshine/vk_mem_alloc.cc.o $
-  $builddir/vendor/cimgui/cimgui.cpp.o $
+  $builddir/pshine/imgui_backend.cc.o $
+  $builddir/vendor/dcimgui/dcimgui.cpp.o $
   $builddir/vendor/imgui/imgui.cpp.o $
   $builddir/vendor/imgui/imgui_demo.cpp.o $
   $builddir/vendor/imgui/imgui_draw.cpp.o $
   $builddir/vendor/imgui/imgui_tables.cpp.o $
   $builddir/vendor/imgui/imgui_widgets.cpp.o $
-  $builddir/vendor/cimgui/backends/cimgui_impl_glfw.cpp.o $
-  $builddir/vendor/cimgui/backends/cimgui_impl_vulkan.cpp.o $
   $builddir/vendor/imgui/backends/imgui_impl_glfw.cpp.o $
   $builddir/vendor/imgui/backends/imgui_impl_vulkan.cpp.o $
   | $

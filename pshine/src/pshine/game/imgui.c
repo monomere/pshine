@@ -1,5 +1,5 @@
 #include "game.h"
-#include <cimgui/cimgui.h>
+#include <dcimgui/dcimgui.h>
 
 struct eximgui_state {
 	ImGuiStorage storage;
@@ -28,7 +28,7 @@ void init_imgui_style() {
 	st->Colors[ImGuiCol_SliderGrab] = rgbint_to_vec4(0x30, 0x30, 0x30, 0xFF);
 	st->Colors[ImGuiCol_SliderGrabActive] = rgbint_to_vec4(0x2C, 0x2C, 0x2C, 0xFF);
 	st->Colors[ImGuiCol_Tab] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
-	st->Colors[ImGuiCol_TabActive] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
+	st->Colors[ImGuiCol_TabSelected] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
 	st->Colors[ImGuiCol_TabHovered] = rgbint_to_vec4(0x05, 0x05, 0x05, 0xFF);
 	st->Colors[ImGuiCol_TabSelectedOverline] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
 	st->Colors[ImGuiCol_TabDimmedSelectedOverline] = rgbint_to_vec4(0x12, 0x0A, 0x0A, 0xFF);
@@ -52,7 +52,7 @@ void init_imgui_style() {
 
 void eximgui_begin_frame() {
 	ImGui_DockSpaceOverViewportEx(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode, nullptr);
-	ImGui_PushFont(g__eximgui_state->font_regular);
+	ImGui_PushFontFloat(g__eximgui_state->font_regular, 0.0f);
 }
 
 void eximgui_end_frame() {
@@ -86,7 +86,7 @@ void eximgui_deinit() {
 }
 
 void eximgui_bold_text(const char *fmt, ...) {
-	ImGui_PushFont(g__eximgui_state->font_bold);
+	ImGui_PushFontFloat(g__eximgui_state->font_bold, 0.0f);
 	va_list va;
 	va_start(va, fmt);
 	ImGui_TextV(fmt, va);
@@ -95,7 +95,7 @@ void eximgui_bold_text(const char *fmt, ...) {
 }
 
 void eximgui_title_text(const char *fmt, ...) {
-	ImGui_PushFont(g__eximgui_state->font_title);
+	ImGui_PushFontFloat(g__eximgui_state->font_title, 24.0f);
 	va_list va;
 	va_start(va, fmt);
 	ImGui_TextV(fmt, va);
@@ -111,7 +111,7 @@ bool eximgui_begin_input_box(const char *label, const char *tooltip) {
 	ImGui_PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0);
 	ImGui_PushStyleVar(ImGuiStyleVar_SeparatorTextBorderSize, 1.0);
 	ImGui_PushStyleColor(ImGuiCol_ChildBg, 0xFF050505);
-	bool r = ImGui_BeginChild(label, (ImVec2){}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border, 0);
+	bool r = ImGui_BeginChild(label, (ImVec2){}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, 0);
 	ImGui_SetCursorPosY(ImGui_GetCursorPosY() - 5.0f);
 	ImGui_SeparatorText(label);
 	ImGui_SetItemTooltip("%s", tooltip);

@@ -1,3 +1,4 @@
+#version 450 core
 #extension GL_ARB_shading_language_include: enable
 #pragma shader_stage(fragment)
 #include "common.glsl"
@@ -28,11 +29,12 @@ vec3 uncharted2_filmic(vec3 v) {
 	return curr * white_scale;
 }
 
+float random2d(vec2 uv) {
+	return fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
 void main() {
 	vec4 col0 = subpassLoad(u_input_color).rgba;
-	// vec3 col1 = gbuffer_light();
-	// vec3 col = col1;
-
 	o_col = vec4(uncharted2_filmic(col0.rgb), col0.a);
-	// o_col = vec4(i_uv, 0.0, 0.0);
+  o_col += vec4(vec3(mix(-1.0, 1.0, random2d(i_uv)) * 0.5 / 1024.0), 0.0);
 }

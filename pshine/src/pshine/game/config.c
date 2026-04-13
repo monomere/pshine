@@ -170,10 +170,23 @@ static struct pshine_celestial_body *load_celestial_body(
 	toml_free(tab);
 
 	free(errbuf);
+
 	return body;
 }
 
-static void load_star_system_config(struct pshine_game *game, struct pshine_star_system *out, const char *fpath) {
+static void load_celestial_body_job(struct pshine_job *job) {
+	struct pshine_star_system *system = job->user;
+	system->bodies_own[job->id] = load_celestial_body(job->id_str_own);
+}
+
+static void load_star_system(
+	struct pshine_game *game,
+	struct pshine_star_system *out,
+	const char *fpath
+) {
+	//  = job->user;
+	//  = &game->star_systems_own[job->id];
+	//  = job->id_str_own;
 	PSHINE_DEBUG("loading star system from '%s'", fpath);
 	FILE *fin = fopen(fpath, "rb");
 	if (fin == nullptr) {
@@ -200,8 +213,15 @@ static void load_star_system_config(struct pshine_game *game, struct pshine_star
 				PSHINE_ERROR("star system config planets[%zu] isn't a string", i);
 				continue;
 			}
-			out->bodies_own[i] = load_celestial_body(body_fpath.u.s);
-			free(body_fpath.u.s);
+
+			size_t idx = PSHINE_DYNA_ALLOC(game->jobs);
+			game->jobs.ptr[idx] = (struct pshine_job){
+				.callback = &load_celestial_body_job,
+				.name_own = pshine_format_string("Celestial body config (%s)", body_fpath.u.s),
+				.id = i,
+				.id_str_own = body_fpath.u.s,
+				.user = out,
+			};
 		}
 	}
 	toml_datum_t name = toml_string_in(tab, "name");
@@ -212,6 +232,7 @@ static void load_star_system_config(struct pshine_game *game, struct pshine_star
 		out->name_own = name.u.s;
 	}
 }
+
 
 void load_game_config(struct pshine_game *game, const char *fpath) {
 	FILE *fin = fopen(fpath, "rb");
@@ -241,8 +262,15 @@ void load_game_config(struct pshine_game *game, const char *fpath) {
 				PSHINE_ERROR("game config systems[%zu] isn't a string", i);
 				continue;
 			}
-			load_star_system_config(game, &game->star_systems_own[i], body_fpath.u.s);
-			free(body_fpath.u.s);
+			load_star_system(game, &game->star_systems_own[i], body_fpath.u.s);
+			// size_t idx = PSHINE_DYNA_ALLOC(game->jobs);
+			// game->jobs.ptr[idx] = (struct pshine_job){
+			// 	.callback = &,
+			// 	.name_own = pshine_format_string("Star system config (%s)", body_fpath.u.s),
+			// 	.id = i,
+			// 	.id_str_own = body_fpath.u.s,
+			// 	.user = game,
+			// };
 		}
 	}
 	game->environment.type = PSHINE_ENVIRONMENT_PROJECTION_EQUIRECTANGULAR;
