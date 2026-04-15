@@ -1,3 +1,62 @@
+#include <pshine/audio.h>
+
+struct pshine_audio *pshine_create_audio() {
+	return nullptr;
+}
+void pshine_destroy_audio(struct pshine_audio **au) {
+	(void)au;
+}
+
+pshine_sound pshine_create_sound_from_file(struct pshine_audio *au, const struct pshine_sound_info *info) {
+	(void)au; (void)info;
+	return (pshine_sound){};
+}
+void pshine_play_sound(struct pshine_audio *au, pshine_sound sound) {
+	(void)au; (void)sound;
+}
+void pshine_pause_sound(struct pshine_audio *au, pshine_sound sound) {
+	(void)au; (void)sound;
+}
+void pshine_rewind_sound(struct pshine_audio *au, pshine_sound sound) {
+	(void)au; (void)sound;
+}
+void pshine_destroy_sound(struct pshine_audio *au, pshine_sound *sound) {
+	(void)au; (void)sound;
+}
+
+pshine_sound_group pshine_create_sound_group(
+	struct pshine_audio *au,
+	const struct pshine_sound_group_info *info
+) {
+	(void)au;
+	(void)info;
+	return (pshine_sound_group){};
+}
+void pshine_destroy_group(struct pshine_audio *au, pshine_sound_group *group) {
+	(void)au;
+	(void)group;
+}
+
+pshine_sound_producer pshine_create_sound_producer(
+	struct pshine_audio *au, const struct pshine_sound_producer_info *info
+) {
+	(void)au;
+	(void)info;
+	return (pshine_sound_producer){};
+}
+
+void pshine_destroy_sound_producer(struct pshine_audio *au, pshine_sound_producer *producer) {
+	(void)au;
+	(void)producer;
+}
+
+pshine_sound pshine_create_produced_sound(struct pshine_audio *au, pshine_sound_producer producer) {
+	(void)au;
+	(void)producer;
+	return (pshine_sound){};
+}
+
+#if 0
 #include "audio.h"
 #include <pshine/util.h>
 #include "miniaudio.h"
@@ -185,3 +244,5 @@ pshine_sound pshine_create_produced_sound(struct pshine_audio *au, pshine_sound_
 	CHECKMA(ma_node_init(graph, &cfg, nullptr, n));
 	return (pshine_sound){ idx };
 }
+
+#endif

@@ -1,5 +1,5 @@
 # Ninja and clangd stuff.
-.ninja_log
+.ninja*
 .cache
 compile_commands.json
 
@@ -44,3 +44,9 @@ ninja/set-platform.ninja
 
 # Backup files
 *.bak
+
+# Staging directory for making a windows package
+win32pkg
+
+# Compiled packages
+*.7z

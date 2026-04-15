@@ -1,0 +1,37 @@
+# Output directory of an xwin splat command.
+# This is specific to my system, change if needed.
+xwin_sysroot = /Users/monomere/Projects/Cross/XWin
+glfw_path = /Users/monomere/Projects/Cross/GLFW
+
+cxxstdlib =
+cxxld = -fuse-ld=lld /link /subsystem:console
+cl = clang-cl -fdiagnostics-color $
+  -target x86_64-pc-windows-msvc $
+  -fno-ms-compatibility $
+  -vctoolsdir $xwin_sysroot/crt -winsdkdir $xwin_sysroot/sdk
+clc = $cl -DWIN32_LEAN_AND_MEAN -DVC_EXTRALEAN
+msc_warns = -Wno-format-nonliteral -Wno-missing-format-attribute -Wno-switch-enum -Wno-nullability-extension -Wno-unsafe-buffer-usage -Wno-shadow -Wno-implicit-float-conversion -Wno-pre-c11-compat -Wno-padded -Wno-c++98-compat -Wno-unused-function -Wno-unused-macros -Wno-sign-conversion -Wno-c23-extensions -Wno-extra-semi-stmt -Wno-declaration-after-statement -Wno-pre-c23-compat -Wno-covered-switch-default -Wno-implicit-void-ptr-cast
+cxx = $clc /std:c++20 $msc_warns -Wno-unused-template -Wno-nrvo -Wno-ms-bitfield-padding -Wno-c++98-compat-pedantic -Wno-c++98-compat -Wno-unsafe-buffer-usage -Wno-padded -Wno-old-style-cast
+cc = $clc -Xclang -std=c23 $msc_warns
+ld = lld-link $
+  /libpath:$xwin_sysroot/sdk/lib/um/x86_64 $
+  /libpath:$xwin_sysroot/sdk/lib/ucrt/x86_64 $
+  /libpath:$xwin_sysroot/crt/lib/x86_64
+
+ldflags = /libpath:$glfw_path/lib-static-ucrt glfw3dll.lib
+
+input-yes = /debug
+input-no =
+include ninja/if-$debug.ninja
+debugc = $output
+
+rule cc
+  deps = msvc
+  command = $cc -c -xc $in -o $out $cflags $cflags2 -O$opt $debugc -I$$(basename $in) /showIncludes
+
+rule cxx
+  deps = msvc
+  command = $cxx -c $in -o $out $cxxflags $cxxflags2 -O$opt $debugc /showIncludes
+
+rule ld
+  command = $ld $in /out:$out $ldflags $ldflags2

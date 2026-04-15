@@ -1,4 +1,4 @@
-#include "perf.h"
+#include <pshine/perf.h>
 #include <pshine/game.h>
 #include <pshine/util.h>
 #include <stdio.h>
@@ -19,9 +19,12 @@
 // #include <giraffe/giraffe.h>
 
 #include "vk_util.h"
-#include "math.h"
+#include "psmath.h"
 #include "vertex_util.h"
 #include "vk_rgraph.h"
+
+#define SHADERS_PATH "build/pshine/data/shaders"
+#define SHADERS_PATH "data/shaders"
 
 #define SCSd3_WCSd3(wcs) (double3mul((wcs), PSHINE_SCS_FACTOR))
 #define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
@@ -2337,7 +2340,8 @@ static void init_vulkan(struct vulkan_renderer *r) {
 		r->physical_device_features_own = calloc(1, sizeof(*r->physical_device_features_own));
 		vkGetPhysicalDeviceFeatures(r->physical_device, r->physical_device_features_own);
 
-		PSHINE_CHECK(p14->dynamicRenderingLocalReadDepthStencilAttachments, "local read depth");
+		PSHINE_CHECK(p14->dynamicRenderingLocalReadDepthStencilAttachments,
+			"Your GPU and/or Drivers don't support dynamic rendering local read for depth");
 	}
 
 	{
@@ -3462,8 +3466,8 @@ static struct vulkan_pipeline create_graphics_pipeline(
 	}
 
 INIT_PIPELINE_JOB_FN(planet_mesh, {
-	.vert_fname = "build/pshine/data/shaders/mesh.2.vert.spv",
-	.frag_fname = "build/pshine/data/shaders/mesh.frag.spv",
+	.vert_fname = SHADERS_PATH "/mesh.2.vert.spv",
+	.frag_fname = SHADERS_PATH "/mesh.frag.spv",
 	.render_pass = RPASS_HDR_GEOMETRY,
 	.push_constant_range_count = 0,
 	.set_layout_count = 3,
@@ -3480,8 +3484,8 @@ INIT_PIPELINE_JOB_FN(planet_mesh, {
 	.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
 });
 INIT_PIPELINE_JOB_FN(planet_color_mesh, {
-	.vert_fname = "build/pshine/data/shaders/mesh.1.vert.spv",
-	.frag_fname = "build/pshine/data/shaders/solid_color.frag.spv",
+	.vert_fname = SHADERS_PATH "/mesh.1.vert.spv",
+	.frag_fname = SHADERS_PATH "/solid_color.frag.spv",
 	.render_pass = RPASS_HDR_GEOMETRY,
 	.push_constant_range_count = 1,
 	.push_constant_ranges = (VkPushConstantRange[]){
@@ -3504,8 +3508,8 @@ INIT_PIPELINE_JOB_FN(planet_color_mesh, {
 	.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
 });
 INIT_PIPELINE_JOB_FN(rings, {
-	.vert_fname = "build/pshine/data/shaders/rings.vert.spv",
-	.frag_fname = "build/pshine/data/shaders/rings.frag.spv",
+	.vert_fname = SHADERS_PATH "/rings.vert.spv",
+	.frag_fname = SHADERS_PATH "/rings.frag.spv",
 	.render_pass = RPASS_HDR_GEOMETRY,
 	.push_constant_range_count = 0,
 	.set_layout_count = 2,
@@ -3521,8 +3525,8 @@ INIT_PIPELINE_JOB_FN(rings, {
 	.output_kind = GRAPHICS_PIPELINE_OUTPUT_GBUFFER,
 });
 INIT_PIPELINE_JOB_FN(std_mesh_de, {
-	.vert_fname = "build/pshine/data/shaders/std_mesh.vert.spv",
-	.frag_fname = "build/pshine/data/shaders/std_mesh.de.frag.spv",
+	.vert_fname = SHADERS_PATH "/std_mesh.vert.spv",
+	.frag_fname = SHADERS_PATH "/std_mesh.de.frag.spv",
 	.render_pass = RPASS_HDR_GEOMETRY,
 	.push_constant_range_count = 0,
 	.set_layout_count = 3,
@@ -3541,8 +3545,8 @@ INIT_PIPELINE_JOB_FN(std_mesh_de, {
 	.pipeline_name = "std mesh deferred pipeline",
 });
 INIT_PIPELINE_JOB_FN(std_mesh_shadow, {
-	.vert_fname = "build/pshine/data/shaders/std_mesh.shadow.vert.spv",
-	.frag_fname = "build/pshine/data/shaders/std_mesh.shadow.frag.spv",
+	.vert_fname = SHADERS_PATH "/std_mesh.shadow.vert.spv",
+	.frag_fname = SHADERS_PATH "/std_mesh.shadow.frag.spv",
 	.render_pass = RPASS_SHADOW,
 	.push_constant_range_count = 0,
 	.set_layout_count = 1,
@@ -3559,8 +3563,8 @@ INIT_PIPELINE_JOB_FN(std_mesh_shadow, {
 	.pipeline_name = "std mesh shadow pipeline",
 });
 INIT_PIPELINE_JOB_FN(light, {
-	.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
-	.frag_fname = "build/pshine/data/shaders/light.frag.spv",
+	.vert_fname = SHADERS_PATH "/blit.vert.spv",
+	.frag_fname = SHADERS_PATH "/light.frag.spv",
 	.render_pass = RPASS_HDR_LIGHTING,
 	.push_constant_range_count = 0,
 	.set_layout_count = 1,
@@ -3576,8 +3580,8 @@ INIT_PIPELINE_JOB_FN(light, {
 	.pipeline_name = "deferred light pipeline",
 });
 INIT_PIPELINE_JOB_FN(skybox, {
-	.vert_fname = "build/pshine/data/shaders/skybox.vert.spv",
-	.frag_fname = "build/pshine/data/shaders/skybox.frag.spv",
+	.vert_fname = SHADERS_PATH "/skybox.vert.spv",
+	.frag_fname = SHADERS_PATH "/skybox.frag.spv",
 	.render_pass = RPASS_HDR_GEOMETRY,
 	.push_constant_range_count = 1,
 	.push_constant_ranges = (VkPushConstantRange[]) {
@@ -3601,8 +3605,8 @@ INIT_PIPELINE_JOB_FN(skybox, {
 	.pipeline_name = "skybox pipeline",
 });
 INIT_PIPELINE_JOB_FN(atmo, {
-	.vert_fname = "build/pshine/data/shaders/atmo.vert.spv",
-	.frag_fname = "build/pshine/data/shaders/atmo.frag.spv",
+	.vert_fname = SHADERS_PATH "/atmo.vert.spv",
+	.frag_fname = SHADERS_PATH "/atmo.frag.spv",
 	.render_pass = RPASS_HDR_ATMOSPHERE,
 	.push_constant_range_count = 0,
 	.set_layout_count = 3,
@@ -3619,8 +3623,8 @@ INIT_PIPELINE_JOB_FN(atmo, {
 	.pipeline_name = "atmosphere pipeline",
 });
 INIT_PIPELINE_JOB_FN(blit, {
-	.vert_fname = "build/pshine/data/shaders/blit.vert.spv",
-	.frag_fname = "build/pshine/data/shaders/blit.frag.spv",
+	.vert_fname = SHADERS_PATH "/blit.vert.spv",
+	.frag_fname = SHADERS_PATH "/blit.frag.spv",
 	.render_pass = RPASS_SDR_TONEMAP,
 	.push_constant_range_count = 1,
 	.push_constant_ranges = (VkPushConstantRange[]) {
@@ -3656,7 +3660,7 @@ static void init_pipelines_job_bloom(struct pshine_job *job) { \
 	}, nullptr, &r->pipelines.atmo_lut_layout);
 
 	{
-		VkShaderModule comp_shader_module = create_shader_module_file(r, "build/pshine/data/shaders/atmo_lut.comp.spv");
+		VkShaderModule comp_shader_module = create_shader_module_file(r, SHADERS_PATH "/atmo_lut.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
 			.layout = r->pipelines.atmo_lut_layout,
@@ -3689,7 +3693,7 @@ static void init_pipelines_job_bloom(struct pshine_job *job) { \
 
 	{
 		VkShaderModule comp_shader_module = create_shader_module_file(r,
-			"build/pshine/data/shaders/bloom_upsample.comp.spv");
+			SHADERS_PATH "/bloom_upsample.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
 			.layout = r->pipelines.upsample_bloom_layout,
@@ -3722,7 +3726,7 @@ static void init_pipelines_job_bloom(struct pshine_job *job) { \
 
 	{
 		VkShaderModule comp_shader_module = create_shader_module_file(r,
-			"build/pshine/data/shaders/bloom_downsample.comp.spv");
+			SHADERS_PATH "/bloom_downsample.comp.spv");
 		vkCreateComputePipelines(r->device, VK_NULL_HANDLE, 1, &(VkComputePipelineCreateInfo){
 			.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
 			.layout = r->pipelines.downsample_bloom_layout,

@@ -1,16 +1,16 @@
 #ifndef PSHINE_VERTEX_UTIL_H_
 #define PSHINE_VERTEX_UTIL_H_
-#include "math.h"
+#include "psmath.h"
 
 // The next couple of functions are from https://www.jeremyong.com/graphics/2023/01/09/tangent-spaces-and-diamond-encoding/
 
 static inline float encode_diamond(float2 p) {
 	// Project to the unit diamond, then to the x-axis.
-	float x = p.x / (fabs(p.x) + fabs(p.y));
+	float x = p.x / (fabsf(p.x) + fabsf(p.y));
 
 	// Contract the x coordinate by a factor of 4 to represent all 4 quadrants in
 	// the unit range and remap
-	float py_sign = copysign(1, p.y);
+	float py_sign = copysignf(1, p.y);
 	return -py_sign * 0.25f * x + 0.5f + py_sign * 0.25f;
 }
 
@@ -18,9 +18,9 @@ static inline float2 decode_diamond(float p) {
 	float2 v;
 
 	// Remap p to the appropriate segment on the diamond
-	float p_sign = copysign(1, p - 0.5f);
+	float p_sign = copysignf(1, p - 0.5f);
 	v.x = -p_sign * 4.f * p + 1.f + p_sign * 2.f;
-	v.y = p_sign * (1.f - fabs(v.x));
+	v.y = p_sign * (1.f - fabsf(v.x));
 
 	// Normalization extends the point on the diamond back to the unit circle
 	return float2norm(v);
@@ -31,7 +31,7 @@ static inline float2 decode_diamond(float p) {
 static inline float encode_tangent(float3 normal, float3 tangent) {
 	// First, find a canonical direction in the tangent plane
 	float3 t1;
-	if (fabs(normal.y) > fabs(normal.z)) {
+	if (fabsf(normal.y) > fabsf(normal.z)) {
 		// Pick a canonical direction orthogonal to n with z = 0
 		t1 = float3xyz(normal.y, -normal.x, 0.f);
 	} else {
@@ -53,7 +53,7 @@ static inline float encode_tangent(float3 normal, float3 tangent) {
 static inline float3 decode_tangent(float3 normal, float diamond_tangent) {
 	// As in the encode step, find our canonical tangent basis span(t1, t2)
 	float3 t1;
-	if (fabs(normal.y) > fabs(normal.z)) {
+	if (fabsf(normal.y) > fabsf(normal.z)) {
 		t1 = float3xyz(normal.y, -normal.x, 0.f);
 	} else {
 		t1 = float3xyz(normal.z, 0.f, -normal.x);
@@ -70,19 +70,19 @@ static inline float3 decode_tangent(float3 normal, float diamond_tangent) {
 
 // From the unit vector survey paper
 static inline float sign_not_zero(float v) {
-	return (v >= 0.0) ? +1.0 : -1.0;
+	return (v >= 0) ? +1 : -1;
 }
 // Assume normalized input. Output is on [-1, 1] for each component.
 static inline float2 float32x3_to_oct(float3 v) {
 	// Project the sphere onto the octahedron, and then onto the xy plane
-	float2 p = float2mul(float2vs(v.vs), (1.0 / (fabs(v.x) + fabs(v.y) + fabs(v.z))));
+	float2 p = float2mul(float2vs(v.vs), (1 / (fabsf(v.x) + fabsf(v.y) + fabsf(v.z))));
 	// Reflect the folds of the lower hemisphere over the diagonals
-	return (v.z <= 0.0) ? float2xy((1.0 - fabs(p.y)) * sign_not_zero(p.x), (1.0 - fabs(p.x)) * sign_not_zero(p.y)) : p;
+	return (v.z <= 0) ? float2xy((1 - fabsf(p.y)) * sign_not_zero(p.x), (1 - fabsf(p.x)) * sign_not_zero(p.y)) : p;
 }
 
 static inline float3 oct_to_float32x3(float2 e) {
-	float3 v = float3xyz(e.x, e.y, 1.0 - fabs(e.x) - fabs(e.y));
-	if (v.z < 0) v = float3xyz((1.0 - fabs(v.y)) * sign_not_zero(v.x), (1.0 - fabs(v.x)) * sign_not_zero(v.y), v.z);
+	float3 v = float3xyz(e.x, e.y, 1 - fabsf(e.x) - fabsf(e.y));
+	if (v.z < 0) v = float3xyz((1 - fabsf(v.y)) * sign_not_zero(v.x), (1 - fabsf(v.x)) * sign_not_zero(v.y), v.z);
 	return float3norm(v);
 }
 

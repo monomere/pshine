@@ -1,6 +1,6 @@
-#include "game.h"
-#include "../perf.h"
 #include <string.h>
+#include "game.h"
+#include <pshine/perf.h>
 #include <pshine/util.h>
 #include <dcimgui/dcimgui.h>
 

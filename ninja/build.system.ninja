@@ -3,5 +3,22 @@
 cxxstdlib =
 cxxld =
 
-cc = cc
-cxx = c++
+cc = cc -std=c23
+cxx = c++ -std=c++20
+ld = $cxx $cxxstdlib $cxxld
+
+input-yes = -g
+input-no =
+include if-$debug.ninja
+debugc = $output
+
+rule cc
+  command = $cc -c $in -o $out $cflags $cflags2 -O$opt $debugc -MD -MF $out.d
+  depfile = $out.d
+
+rule cxx
+  command = $cxx -c $in -o $out $cxxflags $cxxflags2 -O$opt $debugc -MD -MF $out.d
+  depfile = $out.d
+
+rule ld
+  command = $ld $in -o $out $libs $ldflags $ldflags2 $debugc

@@ -57,7 +57,7 @@
 #include <limits.h>
 #include <vulkan/vulkan.h>
 
-#include "perf.h"
+#include <pshine/perf.h>
 
 #if __STDC_VERSION__ < 202300L
 #include <stdbool.h>

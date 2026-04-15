@@ -1,8 +1,8 @@
 #ifndef GAME_H_INCLUDED_
 #define GAME_H_INCLUDED_
 #include <pshine/game.h>
-#include "../math.h"
-#include "../audio.h"
+#include "../psmath.h"
+#include <pshine/audio.h>
 
 enum si_prefix {
 	SI_ONE,
@@ -40,8 +40,8 @@ static inline const char *si_prefix_string(enum si_prefix p) {
 	case SI_YOTTA:  return "Y";
 	case SI_RONNA:  return "R";
 	case SI_QUETTA: return "Q";
+	default:        return "?";
 	}
-	return "";
 }
 
 static inline const char *si_prefix_english(enum si_prefix p) {
@@ -56,6 +56,7 @@ static inline const char *si_prefix_english(enum si_prefix p) {
 	case SI_YOTTA:  return "sextillion";
 	case SI_RONNA:  return "septillion";
 	case SI_QUETTA: return "octillion";
+	default:        return "?";
 	}
 	return "";
 }
@@ -72,6 +73,7 @@ static inline double apply_si_prefix(enum si_prefix p, double value) {
 	case SI_YOTTA:  return value / 1'000'000'000'000'000'000'000.0;
 	case SI_RONNA:  return value / 1'000'000'000'000'000'000'000'000.0;
 	case SI_QUETTA: return value / 1'000'000'000'000'000'000'000'000'000.0;
+	default:        return value;
 	}
 	return value;
 }

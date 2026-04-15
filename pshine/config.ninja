@@ -7,12 +7,8 @@ opt = 1
 incs = -I$mod/include/vendor -I/opt/homebrew/include -I$mod/src/vendor/cimgui -I$mod/src/vendor -I$mod/include -Ivendor -Ivendor/imgui -Igiraffe/ffi/include
 defs = -DIMGUI_USER_CONFIG=\<pshine/imconfig.h\> -DPSHINE_USE_CPPTRACE=0 -DIMGUI_IMPL_VULKAN_NO_PROTOTYPES $
   -DVULKAN_NO_PROTOTYPES=1 -DIMGUI_IMPL_VULKAN_USE_VOLK=1 -DTRACY_VK_USE_SYMBOL_TABLE=1
-cflags = -std=c2x $incs $cwarns $defs
-cxxflags = $cxxstdlib -std=c++2b $incs $cxxwarns $defs
-
-debug = -g
-debugc =
-debugcxx =
+cflags = $incs $cwarns $defs
+cxxflags = $cxxstdlib $incs $cxxwarns $defs
 
 libs_math = -lm
 
@@ -29,6 +25,6 @@ include $mod/config.$platform.ninja
 rule extra_debug_file
   command = $extra_debug_command $in
 
-osapi = unix
+osapi = win32
 
 libs = $libs_cpptrace $libs_glfw $libs_math $libs_vulkan -Wl,-rpath,/opt/homebrew/lib

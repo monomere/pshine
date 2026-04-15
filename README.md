@@ -22,7 +22,7 @@ Graphics playground. Eternally WIP.
 > requirements: git, internet connection
 
 ```bash
-git clone https://github.com/monomere/pshine --recurse-submodules --shallow-submodules
+git clone https://github.com/monomere/pshine --recurse-submodules --shallow-submodules --depth=1
 cd pshine
 ./setup.sh # Sets the ninja platform file, you can do it manually instead.
 ```

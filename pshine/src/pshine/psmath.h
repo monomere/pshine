@@ -8,9 +8,10 @@
 #define MATH_FN_ static inline
 #define MATH_FAST_FN_ MATH_FN_
 
-static const double π = 3.141592653589793;
-static const double euler = 2.718281828459045;
-static const double τ = 6.283185307179586;
+#define π 3.141592653589793
+#define πf 3.141592653589793f
+#define euler 2.718281828459045
+#define τ 6.283185307179586
 static const float float_pinfty = +0x1.fffffep+127f;
 static const float float_ninfty = -0x1.fffffep+127f;
 
@@ -231,12 +232,12 @@ MATH_FN_ float3 floatRapply(floatR r, float3 v) {
 /// First the aircraft does a yaw turn (Y), taxiing to the runway,
 /// then it takes off, pitches (X), then rolls (Z).
 MATH_FN_ floatR floatReuler(float pitch, float yaw, float roll) {
-	const float cr = cosf(roll * 0.5);
-	const float sr = sinf(roll * 0.5);
-	const float cp = cosf(pitch * 0.5);
-	const float sp = sinf(pitch * 0.5);
-	const float cy = cosf(yaw * 0.5);
-	const float sy = sinf(yaw * 0.5);
+	const float cr = cosf(roll * 0.5f);
+	const float sr = sinf(roll * 0.5f);
+	const float cp = cosf(pitch * 0.5f);
+	const float sp = sinf(pitch * 0.5f);
+	const float cy = cosf(yaw * 0.5f);
+	const float sy = sinf(yaw * 0.5f);
 
 	// TODO: verify that the sequence is correct...
 	return floatRwxyz(
@@ -525,16 +526,16 @@ MATH_FN_ struct float4x4persp_info setfloat4x4persp_rhoz(float4x4 *m, float fov,
 	// https://gist.github.com/pezcode/1609b61a1eedd207ec8c5acf6f94f53a
 	memset(m->vs, 0, sizeof(m->vs));
 	struct float4x4persp_info info;
-	float t = tanf(fov * 0.5f * π / 180.0f);
+	float t = tanf(fov * 0.5f * πf / 180.0f);
 	info.plane.y = t * znear;
 	info.plane.x = info.plane.y * aspect;
 	info.znear = znear;
 	float k = znear / (znear - zfar);
-	float g = 1.0 / t;
+	float g = 1 / t;
 	m->vs[0][0] = g / aspect;
 	m->vs[1][1] = -g;
 	m->vs[2][2] = -k;
-	m->vs[2][3] = 1.0;
+	m->vs[2][3] = 1;
 	m->vs[3][2] = -znear * k;
 
 	return info;
@@ -547,16 +548,17 @@ MATH_FN_ struct float4x4persp_info setfloat4x4persp_rhozi(float4x4 *m, float fov
 	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
 	memset(m->vs, 0, sizeof(m->vs));
 	struct float4x4persp_info info;
-	float t = tanf(fov * 0.5f * π / 180.0f);
+	float t = tanf(fov * 0.5f * πf / 180.0f);
+	// float t = tanf(fov * 0.5f * πf / 180.0f);
 	info.plane.y = t * znear;
 	info.plane.x = info.plane.y * aspect;
 	info.znear = znear;
-	float g = 1.0f / t;
+	float g = 1 / t;
 
 	m->vs[0][0] = g / aspect;
 	m->vs[1][1] = -g;
 	m->vs[3][2] = znear;
-	m->vs[2][3] = 1.0f;
+	m->vs[2][3] = 1;
 
 	return info;
 }
@@ -587,7 +589,7 @@ MATH_FN_ void setfloat4x4lookat(float4x4 *m, float3 eye, float3 center, float3 u
 	m->vs[3][0] = -float3dot(s, eye);
 	m->vs[3][1] = -float3dot(u, eye);
 	m->vs[3][2] = -float3dot(f, eye);
-	m->vs[3][3] = 1.0f;
+	m->vs[3][3] = 1;
 }
 
 
@@ -604,10 +606,14 @@ MATH_FN_ __attribute__((__always_inline__, __nodebug__)) void float4x4invert(con
 
 	/* Load matrix: */
 
-	col0 = ((float4 *) src)[0];
-	col1 = ((float4 *) src)[1];
-	col2 = ((float4 *) src)[2];
-	col3 = ((float4 *) src)[3];
+	memcpy(&col0, src + 0, sizeof(col0));
+	memcpy(&col1, src + 4, sizeof(col1));
+	memcpy(&col2, src + 8, sizeof(col2));
+	memcpy(&col3, src + 12, sizeof(col3));
+	// col0 = ((float4 *) src)[0];
+	// col1 = ((float4 *) src)[1];
+	// col2 = ((float4 *) src)[2];
+	// col3 = ((float4 *) src)[3];
 
 	/* Transpose: */
 
@@ -717,10 +723,14 @@ MATH_FN_ __attribute__((__always_inline__, __nodebug__)) void float4x4invert(con
 
 	/* Store inverted matrix: */
 
-	((float4 *) dst)[0] = col0;
-	((float4 *) dst)[1] = col1;
-	((float4 *) dst)[2] = col2;
-	((float4 *) dst)[3] = col3;
+	memcpy(dst + 0, &col0, sizeof(col0));
+	memcpy(dst + 4, &col1, sizeof(col1));
+	memcpy(dst + 8, &col2, sizeof(col2));
+	memcpy(dst + 12, &col3, sizeof(col3));
+	// ((float4 *) dst)[0] = col0;
+	// ((float4 *) dst)[1] = col1;
+	// ((float4 *) dst)[2] = col2;
+	// ((float4 *) dst)[3] = col3;
 }
 
 #else // defined(__clang__)
@@ -1148,7 +1158,7 @@ MATH_FN_ doubleR doubleRnlerp(doubleR lhs, doubleR rhs, double t) {
 	r.yz = lerpd(lhs.yz, rhs.yz, t);
 	r.zx = lerpd(lhs.zx, rhs.zx, t);
 
-	const float magnitude = sqrt(r.s*r.s + r.xy*r.xy + r.yz*r.yz + r.zx*r.zx);
+	const double magnitude = sqrt(r.s*r.s + r.xy*r.xy + r.yz*r.yz + r.zx*r.zx);
 	r.s /= magnitude;
 	r.xy /= magnitude;
 	r.yz /= magnitude;
@@ -1398,16 +1408,16 @@ MATH_FN_ struct double4x4persp_info setdouble4x4persp_rhoz(double4x4 *m, double 
 	// https://gist.github.com/pezcode/1609b61a1eedd207ec8c5acf6f94f53a
 	memset(m->vs, 0, sizeof(m->vs));
 	struct double4x4persp_info info;
-	double t = tan(fov * 0.5f * π / 180.0f);
+	double t = tan(fov * 0.5 * π / 180.0);
 	info.plane.y = t * znear;
 	info.plane.x = info.plane.y * aspect;
 	info.znear = znear;
 	double k = znear / (znear - zfar);
-	double g = 1.0 / t;
+	double g = 1 / t;
 	m->vs[0][0] = g / aspect;
 	m->vs[1][1] = -g;
 	m->vs[2][2] = -k;
-	m->vs[2][3] = 1.0;
+	m->vs[2][3] = 1;
 	m->vs[3][2] = -znear * k;
 
 	return info;
@@ -1420,16 +1430,17 @@ MATH_FN_ struct double4x4persp_info setdouble4x4persp_rhozi(double4x4 *m, double
 	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
 	memset(m->vs, 0, sizeof(m->vs));
 	struct double4x4persp_info info;
-	double t = tan(fov * 0.5f * π / 180.0f);
+	double t = tan(fov * 0.5 * π / 180.0);
+	// double t = tan(fov * 0.5f * πf / 180.0f);
 	info.plane.y = t * znear;
 	info.plane.x = info.plane.y * aspect;
 	info.znear = znear;
-	double g = 1.0f / t;
+	double g = 1 / t;
 
 	m->vs[0][0] = g / aspect;
 	m->vs[1][1] = -g;
 	m->vs[3][2] = znear;
-	m->vs[2][3] = 1.0f;
+	m->vs[2][3] = 1;
 
 	return info;
 }
@@ -1460,7 +1471,7 @@ MATH_FN_ void setdouble4x4lookat(double4x4 *m, double3 eye, double3 center, doub
 	m->vs[3][0] = -double3dot(s, eye);
 	m->vs[3][1] = -double3dot(u, eye);
 	m->vs[3][2] = -double3dot(f, eye);
-	m->vs[3][3] = 1.0f;
+	m->vs[3][3] = 1;
 }
 
 

@@ -1,0 +1,8 @@
+# yes/no
+debug = yes
+
+# 1/2/3
+opt = 1
+
+# toolchain
+include ninja/build.llvm.ninja

@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <time.h>
+#include <pshine/msc_compat.h>
 
 // These are defined in `main.c`
 extern int pshine_argc;
@@ -283,6 +284,7 @@ static inline void pshine_dyna_kill_(struct pshine_dyna_ *d, size_t item_size, s
 	d->next_free = idx;
 }
 
+[[gnu::format(printf, 1, 2)]]
 static inline char *pshine_format_string(const char *fmt, ...) {
 	va_list va;
 	va_start(va, fmt);
@@ -296,6 +298,7 @@ static inline char *pshine_format_string(const char *fmt, ...) {
 	return a;
 }
 
+[[gnu::format(printf, 1, 0)]]
 static inline char *pshine_vformat_string(const char *fmt, va_list va) {
 	va_list va2;
 	va_copy(va2, va);

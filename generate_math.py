@@ -12,9 +12,10 @@ HEADER = f"""
 """.strip()
 
 CONSTS = f"""
-static const double π = {math.pi};
-static const double euler = {math.e};
-static const double τ = {math.tau};
+#define π {math.pi}
+#define πf {math.pi}f
+#define euler {math.e}
+#define τ {math.tau}
 static const float float_pinfty = +0x1.fffffep+127f;
 static const float float_ninfty = -0x1.fffffep+127f;
 """.strip()
@@ -144,12 +145,12 @@ MATH_FN_ `B3 `$apply(`T r, `B3 v) {
 /// First the aircraft does a yaw turn (Y), taxiing to the runway,
 /// then it takes off, pitches (X), then rolls (Z).
 MATH_FN_ `T `$euler(`B pitch, `B yaw, `B roll) {
-	const `B cr = `[roll,0.5,$Tb,mul,$Gbinop,$cos];
-	const `B sr = `[roll,0.5,$Tb,mul,$Gbinop,$sin];
-	const `B cp = `[pitch,0.5,$Tb,mul,$Gbinop,$cos];
-	const `B sp = `[pitch,0.5,$Tb,mul,$Gbinop,$sin];
-	const `B cy = `[yaw,0.5,$Tb,mul,$Gbinop,$cos];
-	const `B sy = `[yaw,0.5,$Tb,mul,$Gbinop,$sin];
+	const `B cr = `[roll,0.5,$Tb,$L,$Tb,mul,$Gbinop,$cos];
+	const `B sr = `[roll,0.5,$Tb,$L,$Tb,mul,$Gbinop,$sin];
+	const `B cp = `[pitch,0.5,$Tb,$L,$Tb,mul,$Gbinop,$cos];
+	const `B sp = `[pitch,0.5,$Tb,$L,$Tb,mul,$Gbinop,$sin];
+	const `B cy = `[yaw,0.5,$Tb,$L,$Tb,mul,$Gbinop,$cos];
+	const `B sy = `[yaw,0.5,$Tb,$L,$Tb,mul,$Gbinop,$sin];
 
 	// TODO: verify that the sequence is correct...
 	return `$wxyz(
@@ -188,7 +189,7 @@ MATH_FN_ `T `$nlerp(`T lhs, `T rhs, `B t) {
 	r.yz = `[$Tb,lerp,$TyFmt](lhs.yz, rhs.yz, t);
 	r.zx = `[$Tb,lerp,$TyFmt](lhs.zx, rhs.zx, t);
 
-	const float magnitude = `[r.s*r.s + r.xy*r.xy + r.yz*r.yz + r.zx*r.zx,$sqrt];
+	const `B magnitude = `[r.s*r.s + r.xy*r.xy + r.yz*r.yz + r.zx*r.zx,$sqrt];
 	r.s /= magnitude;
 	r.xy /= magnitude;
 	r.yz /= magnitude;
@@ -398,16 +399,16 @@ MATH_FN_ struct `B4x4persp_info set`B4x4persp_rhoz(`B4x4 *m, `B fov, `B aspect, 
 	// https://gist.github.com/pezcode/1609b61a1eedd207ec8c5acf6f94f53a
 	memset(m->vs, 0, sizeof(m->vs));
 	struct `B4x4persp_info info;
-	`B t = `[fov * 0.5f * π / 180.0f,$tan];
+	`B t = `[fov,0.5,$Tb,$L,$Tb,mul,$Gbinop,π,$Tb,$L,$Tb,mul,$Gbinop,180.0,$Tb,$L,$Tb,div,$Gbinop,$tan];
 	info.plane.y = t * znear;
 	info.plane.x = info.plane.y * aspect;
 	info.znear = znear;
 	`B k = znear / (znear - zfar);
-	`B g = 1.0 / t;
+	`B g = 1 / t;
 	m->vs[0][0] = g / aspect;
 	m->vs[1][1] = -g;
 	m->vs[2][2] = -k;
-	m->vs[2][3] = 1.0;
+	m->vs[2][3] = 1;
 	m->vs[3][2] = -znear * k;
 
 	return info;
@@ -420,16 +421,17 @@ MATH_FN_ struct `B4x4persp_info set`B4x4persp_rhozi(`B4x4 *m, `B fov, `B aspect,
 	// https://discourse.nphysics.org/t/reversed-z-and-infinite-zfar-in-projections/341/2
 	memset(m->vs, 0, sizeof(m->vs));
 	struct `B4x4persp_info info;
-	`B t = `[fov * 0.5f * π / 180.0f,$tan];
+	`B t = `[fov,0.5,$Tb,$L,$Tb,mul,$Gbinop,π,$Tb,$L,$Tb,mul,$Gbinop,180.0,$Tb,$L,$Tb,div,$Gbinop,$tan];
+	// `B t = `[fov * 0.5f * πf / 180.0f,$tan];
 	info.plane.y = t * znear;
 	info.plane.x = info.plane.y * aspect;
 	info.znear = znear;
-	`B g = 1.0f / t;
+	`B g = 1 / t;
 
 	m->vs[0][0] = g / aspect;
 	m->vs[1][1] = -g;
 	m->vs[3][2] = znear;
-	m->vs[2][3] = 1.0f;
+	m->vs[2][3] = 1;
 
 	return info;
 }
@@ -460,7 +462,7 @@ MATH_FN_ void set`B4x4lookat(`B4x4 *m, `B3 eye, `B3 center, `B3 up) {
 	m->vs[3][0] = -`B3dot(s, eye);
 	m->vs[3][1] = -`B3dot(u, eye);
 	m->vs[3][2] = -`B3dot(f, eye);
-	m->vs[3][3] = 1.0f;
+	m->vs[3][3] = 1;
 }
 
 """),
@@ -478,10 +480,14 @@ MATH_FN_ __attribute__((__always_inline__, __nodebug__)) void float4x4invert(con
 
 	/* Load matrix: */
 
-	col0 = ((float4 *) src)[0];
-	col1 = ((float4 *) src)[1];
-	col2 = ((float4 *) src)[2];
-	col3 = ((float4 *) src)[3];
+	memcpy(&col0, src + 0, sizeof(col0));
+	memcpy(&col1, src + 4, sizeof(col1));
+	memcpy(&col2, src + 8, sizeof(col2));
+	memcpy(&col3, src + 12, sizeof(col3));
+	// col0 = ((float4 *) src)[0];
+	// col1 = ((float4 *) src)[1];
+	// col2 = ((float4 *) src)[2];
+	// col3 = ((float4 *) src)[3];
 
 	/* Transpose: */
 
@@ -591,10 +597,14 @@ MATH_FN_ __attribute__((__always_inline__, __nodebug__)) void float4x4invert(con
 
 	/* Store inverted matrix: */
 
-	((float4 *) dst)[0] = col0;
-	((float4 *) dst)[1] = col1;
-	((float4 *) dst)[2] = col2;
-	((float4 *) dst)[3] = col3;
+	memcpy(dst + 0, &col0, sizeof(col0));
+	memcpy(dst + 4, &col1, sizeof(col1));
+	memcpy(dst + 8, &col2, sizeof(col2));
+	memcpy(dst + 12, &col3, sizeof(col3));
+	// ((float4 *) dst)[0] = col0;
+	// ((float4 *) dst)[1] = col1;
+	// ((float4 *) dst)[2] = col2;
+	// ((float4 *) dst)[3] = col3;
 }
 
 #else // defined(__clang__)
@@ -798,6 +808,7 @@ class BaseTy(Ty):
 	epsilon_fmt: str = "??eps"
 	zero_fmt: str = "0"
 	one_fmt: str = "1"
+	lit_fmt: str = "{0}"
 
 	@property
 	def name(self) -> str:
@@ -815,6 +826,9 @@ class BaseTy(Ty):
 	def cast_from(self, ty_from: 'Ty', s: str) -> str | None:
 		return self.cast_from_fmt.format(s, name=self.name, **{"from": ty_from.name}) \
 			if self.cast_from_fmt is not None else ty_from.cast_to(self, s)
+
+	def lit(self, s: str) -> str:
+		return self.lit_fmt.format(s)
 
 	@property
 	def epsilon(self) -> str:
@@ -861,6 +875,9 @@ class RotorTy(Ty):
 		return self.cast_from_fmt.format(s, name=self.name, **{"from": ty_from.name}) \
 			if self.cast_from_fmt is not None else ty_from.cast_to(self, s)
 
+	def lit(self, s: str):
+		raise NotImplementedError("No literals for composite types")
+
 	@property
 	def zero(self) -> str:
 		return f"{self.name}v({self.base_ty.zero})"
@@ -895,6 +912,9 @@ class CompositeTy(Ty):
 
 	def ctor(self, s: str):
 		return self.ctor_fmt.format(s, name=self.name)
+
+	def lit(self, s: str):
+		raise NotImplementedError("No literals for composite types")
 
 	def cast_to(self, ty_to: 'Ty', s: str) -> str | None:
 		return self.cast_to_fmt.format(s, name=self.name, to=ty_to.name)
@@ -980,6 +1000,7 @@ def instantiate(ty: Ty, source: str, vars: dict[str, typing.Any]):
 		"Tb": (0, lambda: ty.base_ty if isinstance(ty, (CompositeTy, RotorTy)) else ty),
 		"Tt": (0, lambda: ty),
 		"V": (1, lambda name: vars[name]),
+		"L": (2, lambda s, ty: ty.lit(s)),
 		"MkVt": (2, lambda n, ty: CompositeTy((int(n),), ty, False, {"muls":"mul","mul":"??"}, {}, ctor_fmt="({name}){{{{ {} }}}}")),
 		"TName": (1, lambda ty: ty.name),
 		"TDim": (1, lambda ty: ty.dim),
@@ -1067,7 +1088,7 @@ BASE_BUILTIN_OPS = {
 
 class Generator:
 	BASE_TYPES = (
-		BaseTy((1,), "float", True, {}, BASE_BUILTIN_OPS, ctor_fmt="{}", epsilon_fmt="0.000001f"),
+		BaseTy((1,), "float", True, {}, BASE_BUILTIN_OPS, ctor_fmt="{}", epsilon_fmt="0.000001f", lit_fmt="{0}f"),
 		BaseTy((1,), "double", True, {}, BASE_BUILTIN_OPS, ctor_fmt="{}", epsilon_fmt="0.000000001"),
 	) + ((BaseTy((1,), "Qfp", False, { "muls": "mul" }, {},
 			ctor_fmt="{}",
