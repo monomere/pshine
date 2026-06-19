@@ -1,8 +1,10 @@
-/// Copyright © 2025 monomere
+/// Copyright © 2026 monomere
 ///
 /// This Source Code Form is subject to the terms of the Mozilla Public
 /// License, v. 2.0. If a copy of the MPL was not distributed with this
 /// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+///
+/// This is vkrgaph version 1.3a.
 /// 
 /// Vulkan 1.4 dynamic rendering render graph implementation with support
 /// for dynamic_rendering_local_read.
@@ -31,6 +33,9 @@
 ///
 /// The general sequence of function calls to use this library is:
 ///   rg_build_graph(&(struct rg_graph_spec){...}, &graph)
+///  	vkCreateGraphicsPipelines({ .pNext = (VkPipelineRenderingCreateInfo){
+///     .pNext = &rg_get_input_attachment_index_info(pass)
+///   })
 ///   {every frame}
 ///     rg_graph_begin_frame(&graph, ...)
 ///     {each specified render pass}
