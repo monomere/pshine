@@ -24,7 +24,7 @@
 #include "vk_rgraph.h"
 
 #define SHADERS_PATH "build/pshine/data/shaders"
-#define SHADERS_PATH "data/shaders"
+// #define SHADERS_PATH "data/shaders"
 
 #define SCSd3_WCSd3(wcs) (double3mul((wcs), PSHINE_SCS_FACTOR))
 #define SCSd3_WCSp3(wcs) SCSd3_WCSd3(double3vs((wcs).values))
@@ -407,6 +407,7 @@ struct vulkan_renderer {
 	size_t sphere_mesh_count;
 	struct vulkan_mesh *own_sphere_meshes;
 
+	VkSampler direct_sampler;
 	VkSampler atmo_lut_sampler;
 	VkSampler material_texture_sampler;
 	VkSampler skybox_sampler;
@@ -1852,8 +1853,8 @@ void pshine_init_renderer(struct pshine_renderer *renderer, struct pshine_game *
 	struct vulkan_renderer *r = (void*)renderer;
 	r->game = game;
 	r->as_base.name = "Vulkan Renderer";
-	r->as_base.settings.do_bloom = true;
-	r->as_base.settings.render_ships = true;
+	// r->as_base.settings.do_bloom = true;
+	// r->as_base.settings.render_ships = true;
 
 	r->key_states = calloc(PSHINE_KEY_COUNT_, sizeof(uint8_t));
 
@@ -2184,7 +2185,8 @@ static void init_glfw(struct vulkan_renderer *r) {
 	glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
 	// glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
 
-	int window_width = 1920 / 1.5, window_height = 1080 / 1.5;
+	int window_width = r->as_base.settings.window_width;
+	int window_height = r->as_base.settings.window_height;
 	GLFWmonitor *monitor = nullptr;
 	if (pshine_check_has_option("--fullscreen")) {
 		monitor = glfwGetPrimaryMonitor();
@@ -2299,9 +2301,31 @@ static void init_vulkan(struct vulkan_renderer *r) {
 	{
 		uint32_t physical_device_count = 0;
 		CHECKVK(vkEnumeratePhysicalDevices(r->instance, &physical_device_count, nullptr));
-		VkPhysicalDevice *physical_devices = malloc(sizeof(VkPhysicalDevice) * physical_device_count);
+		VkPhysicalDevice *physical_devices = calloc(physical_device_count, sizeof(VkPhysicalDevice));
 		CHECKVK(vkEnumeratePhysicalDevices(r->instance, &physical_device_count, physical_devices));
-		r->physical_device = physical_devices[0]; // TODO: physical device selection
+		PSHINE_INFO("Available devices:");
+		uint32_t selected_physical_device = 0;
+		for (uint32_t i = 0; i < physical_device_count; ++i) {
+			VkPhysicalDevice physical_device = physical_devices[i];
+			VkPhysicalDeviceProperties2 properties2 = {};
+			properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+			vkGetPhysicalDeviceProperties2(physical_device, &properties2);
+			PSHINE_INFO("- #%u: %s (%x) %s, drivers: %x, vulkan: %d.%d.%d",
+				i,
+				properties2.properties.deviceName,
+				properties2.properties.deviceID,
+				pshine_vk_physical_device_type_string(properties2.properties.deviceType),
+				properties2.properties.driverVersion,
+				(properties2.properties.apiVersion >> 22) & 0x7F,
+				(properties2.properties.apiVersion >> 12) & 0x3FF,
+				properties2.properties.apiVersion & 0xFFF
+			);
+			if (properties2.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+				selected_physical_device = i;
+			}
+		}
+		PSHINE_INFO("Using device #%u", selected_physical_device);
+		r->physical_device = physical_devices[selected_physical_device];
 		free(physical_devices);
 	}
 
@@ -2659,7 +2683,8 @@ static void init_transients(struct vulkan_renderer *r) {
 			.usage
 				= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT // the the geometry rendering
 				| VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT // for the atmosphere rendering
-				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT, // for the downsampling blit
+				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT // for the downsampling blit
+				| VK_IMAGE_USAGE_SAMPLED_BIT,
 		},
 		.view_info = &(VkImageViewCreateInfo){
 			.viewType = VK_IMAGE_VIEW_TYPE_2D,
@@ -2970,24 +2995,44 @@ static void init_rendergraph(struct vulkan_renderer *r) {
 		},
 		[RPASS_HDR_ATMOSPHERE] = (struct rg_pass_spec){
 			.name = "HDR Atmosphere",
-			.image_ref_count = 3,
-			.image_refs = (struct rg_image_ref_spec[3]){
-				{ RPIMG_COLOR0, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT | RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
-				{ RPIMG_DEPTH0, RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT },
-				{ RPIMG_GBUFFER0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+			.image_ref_count = 5,
+			.image_refs = (struct rg_image_ref_spec[5]){
+				(struct rg_image_ref_spec){ RPIMG_COLOR0,
+					.usage = RG_IMAGE_USE_COLOR_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 0 },
+				(struct rg_image_ref_spec){ RPIMG_DEPTH0,
+					.usage = RG_IMAGE_USE_DEPTH_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 1 },
+				(struct rg_image_ref_spec){ RPIMG_GBUFFER0,
+					.usage = RG_IMAGE_USE_COLOR_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 2 },
+				(struct rg_image_ref_spec){ RPIMG_GBUFFER1,
+					.usage = RG_IMAGE_USE_COLOR_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 3 },
+				(struct rg_image_ref_spec){ RPIMG_GBUFFER2,
+					.usage = RG_IMAGE_USE_COLOR_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 4 },
 			},
 		},
 		[RPASS_HDR_LIGHTING] = (struct rg_pass_spec){
 			.name = "HDR Lighting",
 			.image_ref_count = 5,
 			.image_refs = (struct rg_image_ref_spec[5]){
-				{ RPIMG_COLOR0,
-					RG_IMAGE_USE_COLOR_ATTACHMENT_BIT |
-					RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
-				{ RPIMG_DEPTH0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
-				{ RPIMG_GBUFFER0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
-				{ RPIMG_GBUFFER1, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
-				{ RPIMG_GBUFFER2, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+				(struct rg_image_ref_spec){ RPIMG_COLOR0,
+					.usage = RG_IMAGE_USE_COLOR_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 0 },
+				(struct rg_image_ref_spec){ RPIMG_DEPTH0,
+					.usage = RG_IMAGE_USE_DEPTH_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 1 },
+				(struct rg_image_ref_spec){ RPIMG_GBUFFER0,
+					.usage = RG_IMAGE_USE_COLOR_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 2 },
+				(struct rg_image_ref_spec){ RPIMG_GBUFFER1,
+					.usage = RG_IMAGE_USE_COLOR_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 3 },
+				(struct rg_image_ref_spec){ RPIMG_GBUFFER2,
+					.usage = RG_IMAGE_USE_COLOR_INPUT_ATTACHMENT_BIT,
+					.input_attachment_index = 4 },
 			},
 		},
 		[RPASS_BLOOM] = (struct rg_pass_spec){
@@ -3010,8 +3055,8 @@ static void init_rendergraph(struct vulkan_renderer *r) {
 			.image_ref_count = 3,
 			.image_refs = (struct rg_image_ref_spec[3]){
 				{ RG_IMAGE_SWAPCHAIN, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT | RG_IMAGE_USE_NO_READ_BIT },
-				{ RPIMG_COLOR0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
-				{ RPIMG_DEPTH0, RG_IMAGE_USE_INPUT_ATTACHMENT_BIT },
+				{ RPIMG_COLOR0, RG_IMAGE_USE_SAMPLED_BIT },
+				{ RPIMG_DEPTH0, RG_IMAGE_USE_SAMPLED_BIT },
 			},
 		},
 		[RPASS_SDR_GUI] = (struct rg_pass_spec){
@@ -3019,6 +3064,8 @@ static void init_rendergraph(struct vulkan_renderer *r) {
 			.image_ref_count = 2,
 			.image_refs = (struct rg_image_ref_spec[2]){
 				{ RG_IMAGE_SWAPCHAIN, RG_IMAGE_USE_COLOR_ATTACHMENT_BIT },
+				// { RPIMG_COLOR0, RG_IMAGE_USE_SAMPLED_BIT },
+				// { RPIMG_DEPTH0, RG_IMAGE_USE_SAMPLED_BIT },
 				{ RPIMG_SHADOWC, RG_IMAGE_USE_SAMPLED_BIT },
 			},
 		},
@@ -3354,6 +3401,8 @@ static struct vulkan_pipeline create_graphics_pipeline(
 		depth_attachment_format = r->rgraph.images_own[ref->image_index].format;
 	}
 
+	auto input_attachment_indices = rg_get_input_attachment_index_info(pass);
+
 	CHECKVK(vkCreateGraphicsPipelines(r->device, VK_NULL_HANDLE, 1, &(VkGraphicsPipelineCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
 		.pVertexInputState = vertex_input_state,
@@ -3444,6 +3493,7 @@ static struct vulkan_pipeline create_graphics_pipeline(
 			.colorAttachmentCount = color_attachment_count,
 			.pColorAttachmentFormats = color_attachment_formats,
 			.depthAttachmentFormat = depth_attachment_format,
+			.pNext = &input_attachment_indices,
 		},
 	}, nullptr, &pipeline));
 
@@ -4002,17 +4052,17 @@ static void init_descriptors(struct vulkan_renderer *r) {
 	vkCreateDescriptorSetLayout(r->device, &(VkDescriptorSetLayoutCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		.bindingCount = 3,
-		.pBindings = (VkDescriptorSetLayoutBinding[]){
+		.pBindings = (VkDescriptorSetLayoutBinding[3]){
 			(VkDescriptorSetLayoutBinding){ // color0
 				.binding = 0,
 				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
 			(VkDescriptorSetLayoutBinding){ // depth0
 				.binding = 1,
 				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 			},
 			(VkDescriptorSetLayoutBinding){ // global_uniforms
@@ -4239,27 +4289,27 @@ static void init_view_dep_data(struct vulkan_renderer *r, bool resize) {
 		(VkWriteDescriptorSet){
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			.dstSet = r->data.blit_descriptor_set,
 			.dstBinding = 0,
 			.dstArrayElement = 0,
 			.pImageInfo = &(VkDescriptorImageInfo){
 				.imageView = r->transients.color_0.view,
-				.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
-				.sampler = VK_NULL_HANDLE,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.sampler = r->direct_sampler,
 			},
 		},
 		(VkWriteDescriptorSet){
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			.dstSet = r->data.blit_descriptor_set,
 			.dstBinding = 1,
 			.dstArrayElement = 0,
 			.pImageInfo = &(VkDescriptorImageInfo){
 				.imageView = r->depth_image.view,
-				.imageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ,
-				.sampler = VK_NULL_HANDLE,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.sampler = r->direct_sampler,
 			},
 		},
 		(VkWriteDescriptorSet){
@@ -4504,6 +4554,23 @@ static void init_game_data(struct vulkan_renderer *r) {
 
 	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+		.anisotropyEnable = VK_FALSE,
+		.maxAnisotropy = 1.0f,
+		.compareEnable = VK_FALSE,
+		.magFilter = VK_FILTER_NEAREST,
+		.minFilter = VK_FILTER_NEAREST,
+		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+		.mipLodBias = 0.0f,
+		.minLod = 0.0f,
+		.maxLod = 0.0f,
+	}, nullptr, &r->direct_sampler);
+	NAME_VK_OBJECT(r, r->direct_sampler, VK_OBJECT_TYPE_SAMPLER, "direct sampler");
+
+	vkCreateSampler(r->device, &(VkSamplerCreateInfo){
+		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
 		.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
 		.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
@@ -4612,6 +4679,7 @@ static void init_game_data(struct vulkan_renderer *r) {
 static void deinit_game_data(struct vulkan_renderer *r) {
 	deallocate_buffer(r, r->data.global_uniform_buffer);
 
+	vkDestroySampler(r->device, r->direct_sampler, nullptr);
 	vkDestroySampler(r->device, r->skybox_sampler, nullptr);
 	vkDestroySampler(r->device, r->atmo_lut_sampler, nullptr);
 	vkDestroySampler(r->device, r->material_texture_sampler, nullptr);
@@ -4684,7 +4752,14 @@ static PFN_vkVoidFunction vulkan_loader_func_imgui(const char *name, void *user)
 	return deviceAddr;
 }
 
-static VkDescriptorSet imgui_shadowcolor_ds = 0;
+static VkDescriptorSet imgui_shadowcolor_ds = VK_NULL_HANDLE;
+
+static void imgui_post_job(struct pshine_job *job) {
+	struct vulkan_renderer *r = job->user;
+	imgui_shadowcolor_ds = pshine_imgui_backend_add_texture(r->material_texture_sampler,
+		r->transients.color_s.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
 static void init_imgui(struct vulkan_renderer *r) {
 	ImGuiContext *ctx = ImGui_CreateContext(nullptr);
 	ImGui_SetCurrentContext(ctx);
@@ -4746,11 +4821,16 @@ static void init_imgui(struct vulkan_renderer *r) {
 		.user = r,
 		.window = r->window,
 	});
-
-	imgui_shadowcolor_ds = pshine_imgui_backend_add_texture(r->material_texture_sampler,
-		r->transients.color_s.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
 	ImGui_GetIO()->DisplayFramebufferScale = (ImVec2){2.0, 2.0};
+
+	{
+		size_t idx = PSHINE_DYNA_ALLOC(r->game->jobs);
+		r->game->jobs.ptr[idx] = (struct pshine_job){
+			.callback = &imgui_post_job,
+			.user = r,
+			.name_own = pshine_strdup("ImGui Post-Init"),
+		};
+	}
 }
 
 static void deinit_imgui(struct vulkan_renderer *r) {

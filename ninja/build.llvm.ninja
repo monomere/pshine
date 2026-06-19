@@ -5,13 +5,13 @@ cxxld = -L/opt/homebrew/lib -fuse-ld=lld
 
 sanitize =  -fsanitize=address,undefined -fno-omit-frame-pointer
 sanitize =
-cc = clang -fdiagnostics-color -D_DEFAULT_SOURCE $sanitize -std=c23
-cxx = clang++ -fdiagnostics-color $sanitize -std=c++20
+cc = clang -fdiagnostics-color -D_DEFAULT_SOURCE $sanitize -std=c23 -Wall
+cxx = clang++ -fdiagnostics-color $sanitize -std=c++20 -Wall
 ld = $cxx $cxxstdlib $cxxld
 
 input-yes = -g
 input-no =
-include if-$debug.ninja
+include ninja/if-$debug.ninja
 debugc = $output
 
 rule cc

@@ -1,3 +1,4 @@
+#ifdef _MSC_VER
 #include <time.h>
 #include <Windows.h>
 
@@ -41,3 +42,5 @@ int clock_gettime(clockid_t type, struct timespec *tp) {
 	errno = ENOTSUP;
 	return -1;
 }
+
+#endif

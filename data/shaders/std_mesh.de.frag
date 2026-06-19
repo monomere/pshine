@@ -3,7 +3,7 @@
 #include "common.glsl"
 #include "noise.glsl"
 
-layout (location = 0) out vec4 o_color0; // unused
+// layout (location = 0) out vec4 o_color0; // unused
 layout (location = 1) out vec4 o_diffuse_o;
 layout (location = 2) out vec4 o_normal_r_m;
 layout (location = 3) out vec4 o_emissive_s;

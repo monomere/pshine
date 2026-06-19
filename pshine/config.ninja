@@ -25,6 +25,6 @@ include $mod/config.$platform.ninja
 rule extra_debug_file
   command = $extra_debug_command $in
 
-osapi = win32
+osapi = unix
 
 libs = $libs_cpptrace $libs_glfw $libs_math $libs_vulkan -Wl,-rpath,/opt/homebrew/lib

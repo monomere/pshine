@@ -22,12 +22,13 @@ int main(int argc, char **argv) {
 	PSHINE_INFO("started");
 
 	struct pshine_game game = {};
+	PSHINE_INFO("creating renderer");
+	struct pshine_renderer *renderer = pshine_create_renderer();
+	game.renderer = renderer;
 	PSHINE_INFO("initializing game");
 	pshine_init_game(&game);
-	struct pshine_renderer *renderer = pshine_create_renderer();
 	PSHINE_INFO("initializing renderer");
 	pshine_init_renderer(renderer, &game);
-	game.renderer = renderer;
 	PSHINE_INFO("game post-init");
 	pshine_post_init_game(&game);
 	PSHINE_INFO("main loop");

@@ -320,6 +320,7 @@ void pshine_generate_planet_mesh(
 struct pshine_render_settings {
 	bool render_ships;
 	bool do_bloom;
+	uint32_t window_width, window_height;
 };
 
 struct pshine_renderer {

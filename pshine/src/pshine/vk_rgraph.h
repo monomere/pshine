@@ -61,6 +61,17 @@
 
 #if __STDC_VERSION__ < 202300L
 #include <stdbool.h>
+#if __has_attribute(counted_by)
+#  define RG_COUNTED_BY(X) __attribute__((counted_by(X)))
+#endif
+#else
+#if defined(__has_c_attribute)
+# if __has_c_attribute(clang::counted_by)
+#  define RG_COUNTED_BY(X) [[clang::counted_by(X)]]
+# endif
+#elif __has_attribute(counted_by)
+#  define RG_COUNTED_BY(X) [[counted_by(X)]]
+#endif
 #endif
 
 struct rg_graph;
@@ -84,10 +95,10 @@ struct rg_graph_image_spec {
 };
 
 struct rg_graph_spec {
-	const struct rg_pass_spec *passes;
-	const struct rg_graph_image_spec *images;
 	uint32_t pass_count;
 	uint32_t image_count;
+	RG_COUNTED_BY(pass_count) const struct rg_pass_spec *passes;
+	RG_COUNTED_BY(image_count) const struct rg_graph_image_spec *images;
 };
 
 /// "Newtype" for a render graph image id. `~(rg_image_id)0` is a special value.
@@ -117,6 +128,12 @@ enum : rg_image_ref_use_flags {
 	RG_IMAGE_USE_CLEARED_BIT          = 0b01000000,
 	/// The `loadOp` is `DONT_CARE`.
 	RG_IMAGE_USE_NO_READ_BIT          = 0b00100000,
+	/// Used both as an input and as a color attachment.
+	RG_IMAGE_USE_COLOR_INPUT_ATTACHMENT_BIT
+		= RG_IMAGE_USE_COLOR_ATTACHMENT_BIT | RG_IMAGE_USE_INPUT_ATTACHMENT_BIT,
+	/// Used both as an input and as a color attachment.
+	RG_IMAGE_USE_DEPTH_INPUT_ATTACHMENT_BIT
+		= RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT | RG_IMAGE_USE_INPUT_ATTACHMENT_BIT,
 };
 
 /// Reference to an image in the render graph.
@@ -145,8 +162,12 @@ struct rg_image_ref_spec {
 	/// - if used as input attachment, the access will have `INPUT_ATTACHMENT_READ`,
 	/// - if used as sampled image, the layout is `SHADER_SAMPLED_READ`.
 	VkAccessFlags2 access;
-	/// Used when `usage` has the `CLEARED` bit.
-	VkClearValue clear_value;
+	union {
+		/// Used when `usage` has the `CLEARED` bit.
+		VkClearValue clear_value;
+		/// Used when `usage` has the `INPUT_ATTACHMENT` bit.
+		uint32_t input_attachment_index;
+	};
 };
 
 struct rg_pass_spec {
@@ -187,18 +208,19 @@ struct rg_graph_image {
 
 struct rg_pass {
 	const char *name;
-	struct rg_image_ref *image_refs_own;
 	uint32_t image_ref_count;
 	uint32_t color_attachment_count;
-	uint32_t color_attachments[8];
-	uint32_t input_attachment_count;
-	uint32_t input_attachments[8];
 	uint32_t depth_attachment;
+	uint32_t color_attachments[8];
+	uint32_t color_input_attachment_indices[8];
+	uint32_t depth_input_attachment_index;
+	RG_COUNTED_BY(image_ref_count) struct rg_image_ref *image_refs_own;
 	VkRect2D render_area;
 	bool has_depth_attachment;
 	bool compute;
 	bool merged_with_next;
 	bool merged_with_prev;
+	bool has_depth_input_attachment;
 };
 
 struct rg_graph_impl {
@@ -210,11 +232,11 @@ struct rg_graph_impl {
 };
 
 struct rg_graph {
-	struct rg_graph_image *images_own;
-	struct rg_graph_impl current;
-	struct rg_pass *passes_own;
 	uint32_t image_count;
 	uint32_t pass_count;
+	RG_COUNTED_BY(image_count) struct rg_graph_image *images_own;
+	RG_COUNTED_BY(pass_count) struct rg_pass *passes_own;
+	struct rg_graph_impl current;
 };
 
 /// Can be called at any point.
@@ -245,6 +267,16 @@ void rg_graph_pass_last_use(
 	rg_image_id image
 );
 
+/// Get the `VkRenderingInputAttachmentIndexInfo` corresponding to a render pass.
+VkRenderingInputAttachmentIndexInfo rg_get_input_attachment_index_info(
+	struct rg_pass *pass
+);
+
+#ifdef __INTELLISENSE__
+#define RG_IMPLEMENTATION
+#define RG_DEBUG 1
+#define RG_DEBUG_PIPELINE_BARRIER_CALLS 1
+#endif
 
 #ifdef RG_IMPLEMENTATION
 #include <stdlib.h>
@@ -273,9 +305,9 @@ void rg_graph_pass_last_use(
 #ifndef RG_DEBUG_PRINTF
 # if RG_DEBUG
 #  define RG_DEBUG_PRINTF(msg, ...) \
-	rg_i_current_debug_printf(stderr, (msg) __VA_OPT__(,) __VA_ARGS__);
+	rg_i_current_debug_printf(stderr, (msg) __VA_OPT__(,) __VA_ARGS__)
 # else
-#  define RG_DEBUG_PRINTF(...)
+#  define RG_DEBUG_PRINTF(...) (void)(sizeof((__VA_ARGS__)))
 # endif
 #endif
 
@@ -288,7 +320,7 @@ static int rg_i_debug_noop(FILE *fout, const char *fmt, ...) {
 }
 
 static int (*rg_i_current_debug_printf)(FILE *fout, const char *fmt, ...)
-= fprintf;
+	= fprintf;
 
 void rg_enable_debugging(bool enabled) {
 	if (enabled) rg_i_current_debug_printf = fprintf;
@@ -438,61 +470,89 @@ static const char *rg_i_vk_layout_string(VkImageLayout layout) {
 	}
 }
 
+static bool rg_impl_can_merge(
+	struct rg_graph *graph,
+	uint32_t src_pass_idx,
+	uint32_t dst_pass_idx,
+	bool log_reason
+) {
+	struct rg_pass *src_pass = &graph->passes_own[src_pass_idx];
+	struct rg_pass *dst_pass = &graph->passes_own[dst_pass_idx];
+	
+	if (src_pass->compute || dst_pass->compute) {
+		if (log_reason)
+			RG_DEBUG_PRINTF("Did not merge pass %s and %s because at least "
+				"one of them is a compute pass.\n", src_pass->name, dst_pass->name);
+		return false;
+	}
+
+	uint32_t min_image_ref_count = src_pass->image_ref_count > dst_pass->image_ref_count
+		? dst_pass->image_ref_count
+		: src_pass->image_ref_count
+		;
+
+	for (uint32_t j = 0; j < min_image_ref_count; ++j) {
+		struct rg_image_ref *src_ref = &src_pass->image_refs_own[j];
+		struct rg_image_ref *dst_ref = &dst_pass->image_refs_own[j];
+
+		struct rg_graph_image *src_image = src_ref->image_index != UINT32_MAX
+			? &graph->images_own[src_ref->image_index]
+			: &graph->current.swapchain_image
+			;
+
+		struct rg_graph_image *dst_image = dst_ref->image_index != UINT32_MAX
+			? &graph->images_own[dst_ref->image_index]
+			: &graph->current.swapchain_image
+			;
+
+		if (src_ref->image_index != dst_ref->image_index) {
+			if (log_reason) {
+				RG_DEBUG_PRINTF("Did not merge pass %s and %s because they have an incompatible "
+					"image reference (index %u).\n", src_pass->name, dst_pass->name, j);
+				RG_DEBUG_PRINTF("Pass %s references %s, pass %s references %s.\n",
+					src_pass->name, src_image->name,
+					dst_pass->name, dst_image->name);
+				RG_DEBUG_PRINTF("Pass %s has %u references, pass %s has %u.\n",
+					src_pass->name, src_pass->image_ref_count, dst_pass->name, dst_pass->image_ref_count);
+			}
+			return false;
+		}
+
+		struct rg_graph_image *image = src_image;
+
+		if (
+			(dst_ref->access_flags & VK_ACCESS_2_SHADER_SAMPLED_READ_BIT) &&
+			(
+				(src_ref->access_flags & VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT) ||
+				(src_ref->access_flags & VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
+			)
+		) {
+			if (log_reason)
+				RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a sampled read from %s, "
+					"which %s uses as an attachment.\n",
+					src_pass->name, dst_pass->name, dst_pass->name, image->name, src_pass->name);
+			return false;
+		}
+
+		// if (dst_ref->load_op == VK_ATTACHMENT_LOAD_OP_CLEAR) {
+		// 	if (log_reason)
+		// 		RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a clear on %s, "
+		// 			"which %s uses as an attachment.\n",
+		// 			src_pass->name, dst_pass->name, dst_pass->name, image->name, src_pass->name);
+		// 	return false;
+		// }
+	}
+
+	return true;
+}
 
 static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 	for (uint32_t i = 1; i < graph->pass_count; ++i) {
+		if (!rg_impl_can_merge(graph, i - 1, i, true)) {
+			continue;
+		}
 		struct rg_pass *src_pass = &graph->passes_own[i - 1];
 		struct rg_pass *dst_pass = &graph->passes_own[i];
-		struct rg_pass *small_pass = src_pass, *big_pass = dst_pass;
-		
-		if (small_pass->image_ref_count > big_pass->image_ref_count) {
-			small_pass = dst_pass;
-			big_pass = src_pass;
-		}
-
-		for (uint32_t j = 0; j < small_pass->image_ref_count; ++j) {
-			struct rg_image_ref *small_ref = &small_pass->image_refs_own[j];
-			struct rg_image_ref *big_ref = &big_pass->image_refs_own[j];
-			
-			if (small_ref->image_index != big_ref->image_index) {
-				RG_DEBUG_PRINTF("Did not merge pass %s and %s because they have an incompatible "
-					"image reference (index %u).\n", small_pass->name, big_pass->name, j);
-				RG_DEBUG_PRINTF("Pass %s has %u references, pass %s has %u.\n",
-					small_pass->name, small_pass->image_ref_count, big_pass->name, big_pass->image_ref_count);
-				goto merge_failed; // continue outer loop
-			}
-
-			[[maybe_unused]]
-			struct rg_graph_image *image = small_ref->image_index != UINT32_MAX
-				? &graph->images_own[small_ref->image_index]
-				: &graph->current.swapchain_image
-				;
-
-			if (
-				small_ref->access_flags & VK_ACCESS_2_SHADER_SAMPLED_READ_BIT &&
-				(
-					(big_ref->access_flags & VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT) ||
-					(big_ref->access_flags & VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
-				)
-			) {
-				RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a sampled read from %s, "
-					"which %s uses as an attachment.\n",
-					small_pass->name, big_pass->name, small_pass->name, image->name, big_pass->name);
-				goto merge_failed;
-			}
-			if (
-				big_ref->access_flags & VK_ACCESS_2_SHADER_SAMPLED_READ_BIT &&
-				(
-					(small_ref->access_flags & VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT) ||
-					(small_ref->access_flags & VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
-				)
-			) {
-				RG_DEBUG_PRINTF("Did not merge pass %s and %s because %s has a sampled read from %s, "
-					"which %s uses as an attachment.\n",
-					small_pass->name, big_pass->name, big_pass->name, image->name, small_pass->name);
-				goto merge_failed;
-			}
-		}
 
 		// merge the color attachments form src_pass and dst_pass
 		// the indices are the same because the ref arrays are the same.
@@ -530,45 +590,45 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 
 		// merge the input attachments form src_pass and dst_pass
 		// the indices are the same because the ref arrays are the same.
-		uint32_t input_attachment_count = 0;
-		uint32_t input_attachments[8] = {};
-		{
-			uint32_t src_j = 0, dst_j = 0;
-			while (
-				src_j < src_pass->input_attachment_count &&
-				dst_j < dst_pass->input_attachment_count
-			) {
-				uint32_t src_v = src_pass->input_attachments[src_j];
-				uint32_t dst_v = dst_pass->input_attachments[dst_j];
-				if (src_v < dst_v) {
-					input_attachments[input_attachment_count++] = src_v;
-					src_j += 1;
-				} else if (src_v > dst_v) {
-					input_attachments[input_attachment_count++] = dst_v;
-					dst_j += 1;
-				} else { // dst_v == src_v
-					input_attachments[input_attachment_count++] = dst_v;
-					src_j += 1;
-					dst_j += 1;
-				}
-			}
-			while (src_j < src_pass->input_attachment_count)
-				input_attachments[input_attachment_count++]
-					= src_pass->color_attachments[src_j++];
-			while (dst_j < dst_pass->input_attachment_count)
-				input_attachments[input_attachment_count++]
-					= dst_pass->input_attachments[dst_j++];
-		}
+		// uint32_t input_attachment_count = 0;
+		// uint32_t input_attachments[8] = {};
+		// {
+		// 	uint32_t src_j = 0, dst_j = 0;
+		// 	while (
+		// 		src_j < src_pass->input_attachment_count &&
+		// 		dst_j < dst_pass->input_attachment_count
+		// 	) {
+		// 		uint32_t src_v = src_pass->input_attachments[src_j];
+		// 		uint32_t dst_v = dst_pass->input_attachments[dst_j];
+		// 		if (src_v < dst_v) {
+		// 			input_attachments[input_attachment_count++] = src_v;
+		// 			src_j += 1;
+		// 		} else if (src_v > dst_v) {
+		// 			input_attachments[input_attachment_count++] = dst_v;
+		// 			dst_j += 1;
+		// 		} else { // dst_v == src_v
+		// 			input_attachments[input_attachment_count++] = dst_v;
+		// 			src_j += 1;
+		// 			dst_j += 1;
+		// 		}
+		// 	}
+		// 	while (src_j < src_pass->input_attachment_count)
+		// 		input_attachments[input_attachment_count++]
+		// 			= src_pass->color_attachments[src_j++];
+		// 	while (dst_j < dst_pass->input_attachment_count)
+		// 		input_attachments[input_attachment_count++]
+		// 			= dst_pass->input_attachments[dst_j++];
+		// }
 
 		src_pass->color_attachment_count = color_attachment_count;
 		dst_pass->color_attachment_count = color_attachment_count;
 		memcpy(src_pass->color_attachments, color_attachments, sizeof(color_attachments));
 		memcpy(dst_pass->color_attachments, color_attachments, sizeof(color_attachments));
-		src_pass->input_attachment_count = input_attachment_count;
-		dst_pass->input_attachment_count = input_attachment_count;
-		memcpy(src_pass->input_attachments, input_attachments, sizeof(input_attachments));
-		memcpy(dst_pass->input_attachments, input_attachments, sizeof(input_attachments));
-		
+		// src_pass->input_attachment_count = input_attachment_count;
+		// dst_pass->input_attachment_count = input_attachment_count;
+		// memcpy(src_pass->input_attachments, input_attachments, sizeof(input_attachments));
+		// memcpy(dst_pass->input_attachments, input_attachments, sizeof(input_attachments));
+
 		if (src_pass->has_depth_attachment) {
 			dst_pass->has_depth_attachment = true;
 			dst_pass->depth_attachment = src_pass->depth_attachment;
@@ -576,15 +636,25 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 			src_pass->has_depth_attachment = true;
 			src_pass->depth_attachment = dst_pass->depth_attachment;
 		}
-		small_pass->image_refs_own = realloc(
-			small_pass->image_refs_own,
-			sizeof(*small_pass->image_refs_own) *
-				big_pass->image_ref_count
-		);
-		for (uint32_t j = small_pass->image_ref_count; j < big_pass->image_ref_count; ++j) {
-			small_pass->image_refs_own[j] = big_pass->image_refs_own[j];
+
+		{
+			struct rg_pass *small_pass = src_pass, *big_pass = dst_pass;
+		
+			if (small_pass->image_ref_count > big_pass->image_ref_count) {
+				small_pass = dst_pass;
+				big_pass = src_pass;
+			}
+
+			small_pass->image_refs_own = realloc(
+				small_pass->image_refs_own,
+				sizeof(*small_pass->image_refs_own) *
+					big_pass->image_ref_count
+			);
+			for (uint32_t j = small_pass->image_ref_count; j < big_pass->image_ref_count; ++j) {
+				small_pass->image_refs_own[j] = big_pass->image_refs_own[j];
+			}
+			small_pass->image_ref_count = big_pass->image_ref_count;
 		}
-		small_pass->image_ref_count = big_pass->image_ref_count;
 
 		src_pass->merged_with_next = true;
 		dst_pass->merged_with_prev = true;
@@ -593,10 +663,13 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 		for (uint32_t k = i; k >= 0 && graph->passes_own[k].merged_with_prev; --k) {
 			struct rg_pass *a_pass = &graph->passes_own[k];
 			struct rg_pass *b_pass = &graph->passes_own[k - 1];
-			for (uint32_t j = 0; j < small_pass->image_ref_count; ++j) {
-				bool a_is_input = small_pass->image_refs_own[j].access_flags
+			if (!a_pass->merged_with_prev) break;
+			RG_CHECK(a_pass->image_ref_count == b_pass->image_ref_count, "hrmmm");
+		
+			for (uint32_t j = 0; j < a_pass->image_ref_count; ++j) {
+				bool a_is_input = a_pass->image_refs_own[j].access_flags
 					& VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
-				bool b_is_input = big_pass->image_refs_own[j].access_flags
+				bool b_is_input = b_pass->image_refs_own[j].access_flags
 					& VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
 				if (a_is_input || b_is_input) {
 					a_pass->image_refs_own[j].initial_layout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ;
@@ -606,8 +679,6 @@ static void rg_impl_build_merge_passes(struct rg_graph *graph) {
 				}
 			}
 		}
-	
-	merge_failed:
 	}
 }
 
@@ -615,13 +686,14 @@ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_graph *graph) {
 	// graph->commands = spec->commands;
 	graph->image_count = spec->image_count;
 	graph->images_own = calloc(graph->image_count, sizeof(*graph->images_own));
+
 	for (uint32_t i = 0; i < graph->image_count; ++i) {
 		graph->images_own[i].image_view = spec->images[i].image_view;
 		graph->images_own[i].image = spec->images[i].image;
 		graph->images_own[i].name = spec->images[i].name;
 		graph->images_own[i].format = spec->images[i].format;
 		graph->images_own[i].aspect = spec->images[i].aspect;
-		graph->images_own[i].pass_use_map_own = nullptr; // initialied later in this function
+		graph->images_own[i].pass_use_map_own = nullptr; // initialized later in this function
 	}
 
 	graph->pass_count = spec->pass_count;
@@ -634,11 +706,11 @@ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_graph *graph) {
 		pass->render_area = pass_spec->render_area;
 		pass->image_ref_count = pass_spec->image_ref_count;
 		pass->image_refs_own = calloc(pass->image_ref_count, sizeof(*pass->image_refs_own));
+		pass->depth_input_attachment_index = VK_ATTACHMENT_UNUSED;
+		pass->has_depth_input_attachment = false;
 
 		uint32_t color_attachment_count = 0;
-		uint32_t input_attachment_count = 0;
-		bool has_depth_attachment = false;
-		uint32_t depth_attachment_index = 0;
+		// uint32_t input_attachment_count = 0;
 		for (uint32_t j = 0; j < pass_spec->image_ref_count; ++j) {
 			const struct rg_image_ref_spec *ref_spec = &pass_spec->image_refs[j];
 			// RG_CHECK(ref_spec->image_id != RG_IMAGE_NONE,
@@ -651,14 +723,20 @@ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_graph *graph) {
 
 			RG_CHECK(!(
 				(ref_spec->usage & RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT) &&
-				has_depth_attachment
+				pass->has_depth_attachment
 			), "a pass cannot have more than one depth attachment");
 			
-			color_attachment_count += !!(ref_spec->usage & RG_IMAGE_USE_COLOR_ATTACHMENT_BIT);
-			input_attachment_count += !!(ref_spec->usage & RG_IMAGE_USE_INPUT_ATTACHMENT_BIT);
+			if (ref_spec->usage & RG_IMAGE_USE_COLOR_ATTACHMENT_BIT) {
+				color_attachment_count += 1;
+			}
+			// input_attachment_count += !!(ref_spec->usage & RG_IMAGE_USE_INPUT_ATTACHMENT_BIT);
 			if (ref_spec->usage & RG_IMAGE_USE_DEPTH_ATTACHMENT_BIT) {
-				depth_attachment_index = j;
-				has_depth_attachment = true;
+				pass->depth_attachment = j;
+				pass->has_depth_attachment = true;
+				if (ref_spec->usage & RG_IMAGE_USE_INPUT_ATTACHMENT_BIT) {
+					pass->has_depth_input_attachment = true;
+					pass->depth_input_attachment_index = ref_spec->input_attachment_index;
+				}
 			}
 
 			VkAccessFlags2 access_flags = ref_spec->access != 0
@@ -723,21 +801,27 @@ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_graph *graph) {
 		pass->color_attachment_count = color_attachment_count;
 		RG_CHECK(color_attachment_count < 8, "too many color attachments");
 		for (uint32_t j = 0, k = 0; j < pass_spec->image_ref_count; ++j) {
-			if (pass_spec->image_refs[j].usage & RG_IMAGE_USE_COLOR_ATTACHMENT_BIT)
-				pass->color_attachments[k++] = j;
+			rg_image_ref_use_flags usage = pass_spec->image_refs[j].usage;
+			if (usage & RG_IMAGE_USE_COLOR_ATTACHMENT_BIT) {
+				pass->color_attachments[k] = j;
+				if (usage & RG_IMAGE_USE_INPUT_ATTACHMENT_BIT) {
+					pass->color_input_attachment_indices[k]
+						= pass_spec->image_refs[j].input_attachment_index;
+				} else {
+					pass->color_input_attachment_indices[k] = k;
+				}
+				k += 1;
+			}
 		}
 
-		pass->has_depth_attachment = has_depth_attachment;
-		pass->depth_attachment = depth_attachment_index;
-
-		pass->input_attachment_count = input_attachment_count;
-		RG_CHECK(input_attachment_count < 8, "too many input attachments");
+		// pass->input_attachment_count = input_attachment_count;
+		// RG_CHECK(input_attachment_count < 8, "too many input attachments");
 		// pass->input_attachments_own
 		// 	= calloc(pass->input_attachment_count, sizeof(*pass->input_attachments_own));
-		for (uint32_t j = 0, k = 0; j < pass_spec->image_ref_count; ++j) {
-			if (pass_spec->image_refs[j].usage & RG_IMAGE_USE_INPUT_ATTACHMENT_BIT)
-				pass->input_attachments[k++] = j;
-		}
+		// for (uint32_t j = 0, k = 0; j < pass_spec->image_ref_count; ++j) {
+		// 	if (pass_spec->image_refs[j].usage & RG_IMAGE_USE_INPUT_ATTACHMENT_BIT)
+		// 		pass->input_attachments[k++] = j;
+		// }
 	}
 
 	graph->current.swapchain_image.name = "Swapchain";
@@ -778,9 +862,68 @@ void rg_build_graph(const struct rg_graph_spec *spec, struct rg_graph *graph) {
 		}
 	}
 
+	// Check if input attachments are valid
+	// We do it now because I think we need everyting to be
+	// fully initialized before doing rg_impl_can_merge.
+	// Maybe we don't need usage maps but w/e.
+	for (uint32_t i = 0; i < graph->pass_count; ++i) {
+		struct rg_pass *pass = &graph->passes_own[i];
+		for (uint32_t j = 0; j < pass->image_ref_count; ++j) {
+			struct rg_image_ref *ref = &pass->image_refs_own[j];
+			if (ref->access_flags & VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT) {
+				for (uint32_t k = i; k --> 0;) {
+					bool can_merge = rg_impl_can_merge(graph, k + 1, k, false);
+					struct rg_pass *src_pass = &graph->passes_own[k];
+					if (!can_merge) {
+						struct rg_graph_image *img = ref->image_index == UINT32_MAX
+							? &graph->current.swapchain_image : &graph->images_own[ref->image_index];
+						RG_DEBUG_PRINTF("Could not find source for input attachment '%s' of pass '%s'.\n",
+							img->name, pass->name);
+						RG_DEBUG_PRINTF("Can't merge passes '%s' and '%s', and did not find the attachment yet.\n",
+							graph->passes_own[k + 1].name, graph->passes_own[k].name);
+						rg_impl_can_merge(graph, k + 1, k, true); // show why didn't merge.
+						RG_CHECK(false, "Could not find source for input attachment");
+					}
+					for (uint32_t l = 0; l < src_pass->image_ref_count; ++l) {
+						struct rg_image_ref *src_ref = &src_pass->image_refs_own[l];
+						// Any usage in the source pass works.
+						if (src_ref->image_index == ref->image_index) {
+							goto found_source;
+						}
+					}
+				}
+			found_source:
+			}
+		}
+	}
+
 	rg_impl_build_merge_passes(graph);
 	
 	graph->current.command_buffer = VK_NULL_HANDLE;
+
+#define P(...) fprintf(stdout, __VA_ARGS__)
+	for (uint32_t i = 0; i < graph->pass_count; ++i) {
+		struct rg_pass *p = &graph->passes_own[i];
+		P("Render Pass \"%s\":\n", p->name);
+		P("  Compute: %s\n", p->compute ? "Yes" : "No");
+		P("  Merged with previous: %s\n", p->merged_with_prev ? "Yes" : "No");
+		P("  Merged with next:     %s\n", p->merged_with_next ? "Yes" : "No");
+		if (p->has_depth_attachment)
+			P("  Depth Attachment: %u\n", p->depth_attachment);
+		if (p->color_attachment_count) {
+			P("  Color Attachments: (%u)\n", p->color_attachment_count);
+			for (uint32_t i = 0; i < p->color_attachment_count; ++i) {
+				P("    - %u\n", p->color_attachments[i]);
+			}
+		}
+		P("  Images: (%u)\n", p->image_ref_count);
+		for (uint32_t i = 0; i < p->image_ref_count; ++i) {
+			struct rg_image_ref *r = &p->image_refs_own[i];
+			P("    - (%u) %u \"%s\"\n", i, r->image_index,
+				r->image_index == UINT32_MAX ? "Swapchain" : graph->images_own[r->image_index].name);
+		}
+	}
+#undef P
 }
 
 void rg_free_graph(struct rg_graph *graph) {
@@ -798,51 +941,51 @@ static inline void rg_i_debug_vkCmdPipelineBarrier2(
 	const VkDependencyInfo *pDependencyInfo
 ) {
 #if defined(RG_DEBUG_PIPELINE_BARRIER_CALLS) && RG_DEBUG_PIPELINE_BARRIER_CALLS
-	RG_DEBUG_PRINTF2("vkCmdPipelineBarrier2(%p, &(VkDependencyInfo){\n", commandBuffer);
-	RG_DEBUG_PRINTF2("\t.imageMemoryBarrierCount = %u,\n", pDependencyInfo->imageMemoryBarrierCount);
-	RG_DEBUG_PRINTF2("\t.pImageMemoryBarriers = (VkImageMemoryBarrier[]){\n");
+	RG_DEBUG_PRINTF("vkCmdPipelineBarrier2(%p, &(VkDependencyInfo){\n", commandBuffer);
+	RG_DEBUG_PRINTF("\t.imageMemoryBarrierCount = %u,\n", pDependencyInfo->imageMemoryBarrierCount);
+	RG_DEBUG_PRINTF("\t.pImageMemoryBarriers = (VkImageMemoryBarrier[]){\n");
 	for (uint32_t i = 0; i < pDependencyInfo->imageMemoryBarrierCount; ++i) {
 		const VkImageMemoryBarrier2 *barrier = &pDependencyInfo->pImageMemoryBarriers[i];
-		RG_DEBUG_PRINTF2("\t\t(VkImageMemoryBarrier){\n");
-		RG_DEBUG_PRINTF2("\t\t\t.image = ... (%p)\n", barrier->image);
-		RG_DEBUG_PRINTF2("\t\t\t.srcAccessMask = ");
+		RG_DEBUG_PRINTF("\t\t(VkImageMemoryBarrier){\n");
+		RG_DEBUG_PRINTF("\t\t\t.image = ... (%p)\n", barrier->image);
+		RG_DEBUG_PRINTF("\t\t\t.srcAccessMask = ");
 		for (unsigned j = 0, cnt = 0; j < 64; ++j) {
 			VkFlags64 bit = barrier->srcAccessMask & (1ull << j);
 			if (!bit) { if (cnt == 0 && j == 63) RG_DEBUG_PRINTF("0"); continue; };
 			if (cnt != 0) RG_DEBUG_PRINTF("|");
-			RG_DEBUG_PRINTF2("%s", pshine_vk_access_bit_string(bit)); cnt += 1;
+			RG_DEBUG_PRINTF("%s", rg_i_vk_access_bit_string(bit)); cnt += 1;
 		}
-		RG_DEBUG_PRINTF2(",\n");
-		RG_DEBUG_PRINTF2("\t\t\t.srcStageMask = ");
+		RG_DEBUG_PRINTF(",\n");
+		RG_DEBUG_PRINTF("\t\t\t.srcStageMask = ");
 		for (unsigned j = 0, cnt = 0; j < 64; ++j) {
 			VkFlags64 bit = barrier->srcStageMask & (1ull << j);
 			if (!bit) { if (cnt == 0 && j == 63) RG_DEBUG_PRINTF("0"); continue; };
-			if (cnt != 0) RG_DEBUG_PRINTF2("|");
-			RG_DEBUG_PRINTF2("%s", pshine_vk_stage_bit_string(bit)); cnt += 1;
+			if (cnt != 0) RG_DEBUG_PRINTF("|");
+			RG_DEBUG_PRINTF("%s", rg_i_vk_stage_bit_string(bit)); cnt += 1;
 		}
-		RG_DEBUG_PRINTF2(",\n");
-		RG_DEBUG_PRINTF2("\t\t\t.dstAccessMask = ");
+		RG_DEBUG_PRINTF(",\n");
+		RG_DEBUG_PRINTF("\t\t\t.dstAccessMask = ");
 		for (unsigned j = 0, cnt = 0; j < 64; ++j) {
 			VkFlags64 bit = barrier->dstAccessMask & (1ull << j);
 			if (!bit) { if (cnt == 0 && j == 63) RG_DEBUG_PRINTF("0"); continue; };
-			if (cnt != 0) RG_DEBUG_PRINTF2("|");
-			RG_DEBUG_PRINTF2("%s", pshine_vk_access_bit_string(bit)); cnt += 1;
+			if (cnt != 0) RG_DEBUG_PRINTF("|");
+			RG_DEBUG_PRINTF("%s", rg_i_vk_access_bit_string(bit)); cnt += 1;
 		}
-		RG_DEBUG_PRINTF2(",\n");
-		RG_DEBUG_PRINTF2("\t\t\t.dstStageMask = ");
+		RG_DEBUG_PRINTF(",\n");
+		RG_DEBUG_PRINTF("\t\t\t.dstStageMask = ");
 		for (unsigned j = 0, cnt = 0; j < 64; ++j) {
 			VkFlags64 bit = barrier->dstStageMask & (1ull << j);
-			if (!bit) { if (cnt == 0 && j == 63) RG_DEBUG_PRINTF2("0"); continue; };
-			if (cnt != 0) RG_DEBUG_PRINTF2("|");
-			RG_DEBUG_PRINTF2("%s", pshine_vk_stage_bit_string(bit)); cnt += 1;
+			if (!bit) { if (cnt == 0 && j == 63) RG_DEBUG_PRINTF("0"); continue; };
+			if (cnt != 0) RG_DEBUG_PRINTF("|");
+			RG_DEBUG_PRINTF("%s", rg_i_vk_stage_bit_string(bit)); cnt += 1;
 		}
-		RG_DEBUG_PRINTF2(",\n");
-		RG_DEBUG_PRINTF2("\t\t\t.oldLayout = VK_IMAGE_LAYOUT_%s,\n",
-			pshine_vk_layout_string(barrier->oldLayout));
-		RG_DEBUG_PRINTF2("\t\t\t.newLayout = VK_IMAGE_LAYOUT_%s,\n",
-			pshine_vk_layout_string(barrier->newLayout));
-		RG_DEBUG_PRINTF2("\t\t\t...\n");
-		RG_DEBUG_PRINTF2("\t\t},\n");
+		RG_DEBUG_PRINTF(",\n");
+		RG_DEBUG_PRINTF("\t\t\t.oldLayout = VK_IMAGE_LAYOUT_%s,\n",
+			rg_i_vk_layout_string(barrier->oldLayout));
+		RG_DEBUG_PRINTF("\t\t\t.newLayout = VK_IMAGE_LAYOUT_%s,\n",
+			rg_i_vk_layout_string(barrier->newLayout));
+		RG_DEBUG_PRINTF("\t\t\t...\n");
+		RG_DEBUG_PRINTF("\t\t},\n");
 	}
 	RG_DEBUG_PRINTF("\t},\n");
 	RG_DEBUG_PRINTF("\t.dependencyFlags = %s,\n",
@@ -1020,11 +1163,29 @@ static VkRenderingAttachmentInfo rg_i_vulkan_from_image_ref(
 	};
 }
 
+VkRenderingInputAttachmentIndexInfo rg_get_input_attachment_index_info(struct rg_pass *pass) {
+	return (VkRenderingInputAttachmentIndexInfo){
+		.sType = VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO,
+		.colorAttachmentCount = pass->color_attachment_count,
+		.pColorAttachmentInputIndices = pass->color_input_attachment_indices,
+		.pDepthInputAttachmentIndex = pass->has_depth_input_attachment
+			? &pass->depth_input_attachment_index
+			: nullptr,
+	};
+}
+
 void rg_graph_begin_pass(struct rg_graph *graph) {
 	PSHINE_PERF_FUNC();
 	struct rg_pass *pass = &graph->passes_own[graph->current.pass_index];
 	RG_DEBUG_PRINTF("begin_pass %s%s\n", pass->name, pass->merged_with_prev ? " (<-merged)" : "");
-	if (pass->merged_with_prev) return;
+
+	if (pass->merged_with_prev) {
+		if (graph->current.command_buffer) {
+			auto indices = rg_get_input_attachment_index_info(pass);
+			vkCmdSetRenderingInputAttachmentIndices(graph->current.command_buffer, &indices);
+		}
+		return;
+	}
 
 	for (uint32_t i = 0; i < pass->image_ref_count; ++i) {
 		struct rg_image_ref *ref = &pass->image_refs_own[i];
@@ -1068,7 +1229,6 @@ void rg_graph_begin_pass(struct rg_graph *graph) {
 		);
 
 	if (graph->current.command_buffer) {
-		// fprintf(stderr, "vkCmdBeginRendering();\n");
 		vkCmdBeginRendering(graph->current.command_buffer, &(VkRenderingInfo){
 			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
 			.renderArea = pass->render_area.extent.width != 0
@@ -1080,15 +1240,15 @@ void rg_graph_begin_pass(struct rg_graph *graph) {
 				? &depth_attachment : nullptr,
 			.layerCount = 1,
 		});
+		auto indices = rg_get_input_attachment_index_info(pass);
+		vkCmdSetRenderingInputAttachmentIndices(graph->current.command_buffer, &indices);
 	}
 }
 
 void rg_graph_end_pass(struct rg_graph *graph) {
 	PSHINE_PERF_FUNC();
-	// RG_DEBUG_PRINTF("current pass index: %u\n", graph->current.pass_index);
 	struct rg_pass *pass = &graph->passes_own[graph->current.pass_index];
 	if (!pass->compute && !pass->merged_with_next && graph->current.command_buffer) {
-		// fprintf(stderr, "vkCmdEndRendering();\n");
 		vkCmdEndRendering(graph->current.command_buffer);
 	}
 

@@ -1,3 +1,8 @@
+[game]
+window_width = 1600
+window_height = 1000
+
+[world]
 systems = [
 	"data/solar_system.toml",
 	"data/test_system.toml",

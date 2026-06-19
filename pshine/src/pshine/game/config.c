@@ -249,9 +249,22 @@ void load_game_config(struct pshine_game *game, const char *fpath) {
 		free(errbuf);
 		return;
 	}
-	struct toml_datum_t default_system = toml_int_in(tab, "default_system");
+	free(errbuf);
+	toml_table_t *gtab = toml_table_in(tab, "game");
+	if (gtab != nullptr) {
+		struct toml_datum_t window_width = toml_int_in(gtab, "window_width");
+		if (window_width.ok) game->renderer->settings.window_width = window_width.u.i;
+		struct toml_datum_t window_height = toml_int_in(gtab, "window_height");
+		if (window_height.ok) game->renderer->settings.window_height = window_height.u.i;
+	}
+	toml_table_t *wtab = toml_table_in(tab, "world");
+	if (wtab == nullptr) {
+		PSHINE_ERROR("Failed to parse game config: no world table");
+		exit(1); // TODO: recover
+	}
+	struct toml_datum_t default_system = toml_int_in(wtab, "default_system");
 	if (default_system.ok) game->current_star_system = default_system.u.i;
-	toml_array_t *arr = toml_array_in(tab, "systems");
+	toml_array_t *arr = toml_array_in(wtab, "systems");
 	game->star_system_count = 0;
 	if (arr != nullptr) {
 		game->star_system_count = toml_array_nelem(arr);
@@ -289,5 +302,4 @@ void load_game_config(struct pshine_game *game, const char *fpath) {
 			free(proj.u.s);
 		}
 	}
-	free(errbuf);
 }

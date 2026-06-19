@@ -5,8 +5,11 @@
 
 layout (location = 0) out vec4 o_col;
 layout (location = 0) in vec2 i_uv;
-layout (input_attachment_index = 0, set = 0, binding = 0) uniform SUBPASS_INPUT(u_input_color);
-layout (input_attachment_index = 1, set = 0, binding = 1) uniform SUBPASS_INPUT(u_depth);
+// layout (input_attachment_index = 0, set = 0, binding = 0) uniform SUBPASS_INPUT(u_input_color);
+// layout (input_attachment_index = 1, set = 0, binding = 1) uniform SUBPASS_INPUT(u_depth);
+
+layout (set = 0, binding = 0) uniform sampler2D u_color;
+// layout (set = 0, binding = 1, r32f) uniform readonly image2D u_depth;
 
 layout (push_constant) uniform BUFFER(GraphicsSettingsConsts, u_consts);
 
@@ -34,7 +37,7 @@ float random2d(vec2 uv) {
 }
 
 void main() {
-	vec4 col0 = subpassLoad(u_input_color).rgba;
+	vec4 col0 = texelFetch(u_color, ivec2(gl_FragCoord.xy), 0);
 	o_col = vec4(uncharted2_filmic(col0.rgb), col0.a);
   o_col += vec4(vec3(mix(-1.0, 1.0, random2d(i_uv)) * 0.5 / 1024.0), 0.0);
 }

@@ -3,3 +3,5 @@ CompileFlags:
 
 Diagnostics:
   UnusedIncludes: None
+  ClangTidy:
+    Remove: bugprone-sizeof-expression

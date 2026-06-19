@@ -168,6 +168,11 @@ void pshine_init_game(struct pshine_game *game) {
 		pshine_pcg64_init(&game->rng64, now.sec, now.nsec);
 	}
 
+	game->renderer->settings.do_bloom = true;
+	game->renderer->settings.render_ships = true;
+	game->renderer->settings.window_width = 1920;
+	game->renderer->settings.window_height = 1080;
+
 	for (size_t i = 0; i < 1; ++i) {
 		size_t idx = PSHINE_DYNA_ALLOC(game->jobs);
 		game->jobs.ptr[idx].callback = sleep_job;
