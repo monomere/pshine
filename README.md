@@ -1,21 +1,31 @@
 # PlanetShine
 
+
 <img align="right" src="data/screenshots/atmo-2025-04-06.png" width="50%" />
 
-Graphics playground. Eternally WIP.
+<img align="right" style="margin-top: 1rem" src="data/screenshots/pshine-2026-06-24.png" width="60%" />
+
+[![NO AI](noai.svg)](https://github.com/nuxy/no-ai-badge#no-ai-badge)
+
+Graphics playground. Eternally WIP. No AI was used in making this code, at all.
 
 **TODO:**
 
-- [x] Actual atmosphere rendering.
-- [x] Move the backend to vulkan (shouldn't be super hard).
+- [ ] Rendering
+  - [x] Actual atmosphere rendering
+  - [x] Vulkan backend
+  - [ ] Fix PBR
+  - [ ] Better effects
+  - [ ] Animations
+- [ ] Gameplay
+  - [ ] Ship cabin view
+  - [ ] Better controls
 - [ ] Orbits
   - [x] Elliptic orbits, propagation
-  - [ ] Non-elliptic orbits untested.
-- [ ] Terrain generation, textures.
-  - [x] Textures.
-  - [ ] Working on terrain in the [`terrain` branch](https://github.com/monomere/pshine/tree/terrain).
-- [ ] Mesh LOD.
-  - [x] Primitive sphere LODs.
+  - [ ] Non-elliptic orbits untested
+- [ ] Planets
+  - [x] Textures
+  - [ ] Planetary terrain
 
 ## Setting Up
 
