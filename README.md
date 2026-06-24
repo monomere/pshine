@@ -1,4 +1,4 @@
-# PlanetShine
+# [Moved to Codeberg!](https://codeberg.org/monomere/pshine)
 
 
 <img align="right" src="data/screenshots/atmo-2025-04-06.png" width="50%" />
